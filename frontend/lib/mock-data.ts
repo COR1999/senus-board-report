@@ -1,3 +1,4 @@
+// lib/mock-data.ts
 export const mockMetrics = {
   revenue: {
     value: '€836,991',
@@ -34,4 +35,31 @@ export const mockChartData = [
   { month: 'Oct', revenue: 280000 },
   { month: 'Nov', revenue: 520000 },
   { month: 'Dec', revenue: 836991 },
+]
+
+export const mockReports = [
+  {
+    id: 1,
+    name: 'Q4 2025 Financial Report',
+    date: '2025-12-31',
+    status: 'completed' as const,
+  },
+  {
+    id: 2,
+    name: 'Q3 2025 Board Report',
+    date: '2025-09-30',
+    status: 'completed' as const,
+  },
+  {
+    id: 3,
+    name: 'H1 2025 Investor Update',
+    date: '2025-06-30',
+    status: 'completed' as const,
+  },
+  {
+    id: 4,
+    name: 'Q1 2025 Performance Review',
+    date: '2025-03-31',
+    status: 'completed' as const,
+  },
 ]
