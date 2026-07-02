@@ -1,0 +1,37 @@
+export const mockMetrics = {
+  revenue: {
+    value: '€836,991',
+    change: 38,
+    trend: 'up' as const,
+  },
+  customers: {
+    value: '158',
+    change: 2.5,
+    trend: 'up' as const,
+  },
+  cash: {
+    value: '€1.2M',
+    change: 15,
+    trend: 'up' as const,
+  },
+  ebitda: {
+    value: '€150K',
+    change: 22,
+    trend: 'up' as const,
+  },
+}
+
+export const mockChartData = [
+  { month: 'Jan', revenue: 60000 },
+  { month: 'Feb', revenue: 75000 },
+  { month: 'Mar', revenue: 95000 },
+  { month: 'Apr', revenue: 110000 },
+  { month: 'May', revenue: 132000 },
+  { month: 'Jun', revenue: 158000 },
+  { month: 'Jul', revenue: 185000 },
+  { month: 'Aug', revenue: 215000 },
+  { month: 'Sep', revenue: 245000 },
+  { month: 'Oct', revenue: 280000 },
+  { month: 'Nov', revenue: 520000 },
+  { month: 'Dec', revenue: 836991 },
+]
