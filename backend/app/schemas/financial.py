@@ -1,7 +1,7 @@
 """Pydantic schemas for financial data."""
 from pydantic import BaseModel, Field
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Dict, Any
 
 
 class FinancialMetricsBase(BaseModel):
@@ -17,16 +17,16 @@ class FinancialMetricsBase(BaseModel):
 
 class FinancialMetricsCreate(FinancialMetricsBase):
     """Schema for creating metrics."""
-    document_id: int
+    document_id: str
 
 
 class FinancialMetricsResponse(FinancialMetricsBase):
     """Schema for metrics response."""
     
-    id: int
-    document_id: int
+    id: str
+    document_id: str
     created_at: datetime
-    updated_at: datetime
+    updated_at: Optional[datetime] = None
     
     class Config:
         from_attributes = True
@@ -40,12 +40,20 @@ class DocumentBase(BaseModel):
 class DocumentResponse(DocumentBase):
     """Schema for document response."""
     
-    id: int
+    id: str
     created_at: datetime
     extracted_at: Optional[datetime] = None
     
     class Config:
         from_attributes = True
+
+
+class DocumentWithText(DocumentResponse):
+    """Schema for document response with extracted text."""
+    
+    extracted_text: str
+    status: str
+    financial_metrics: Optional[FinancialMetricsResponse] = None
 
 
 class ReportBase(BaseModel):
@@ -57,10 +65,10 @@ class ReportBase(BaseModel):
 class ReportResponse(ReportBase):
     """Schema for report response."""
     
-    id: int
-    document_id: int
+    id: str
+    document_id: str
     created_at: datetime
-    updated_at: datetime
+    updated_at: Optional[datetime] = None
     
     class Config:
         from_attributes = True

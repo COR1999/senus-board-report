@@ -4,7 +4,8 @@ from sqlalchemy.orm import Session
 from datetime import datetime, timezone
 from app.database.session import get_db
 from app.models.document import Document
-from app.schemas.financial import DocumentResponse
+from app.schemas.financial import DocumentResponse, DocumentWithText
+from app.services.pdf_service import PDFExtractionService
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
@@ -14,34 +15,51 @@ async def upload_document(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
 ):
-    """Upload a PDF document."""
-    # Check if filename exists
+    """Upload a PDF document and extract text."""
+    # Validate file
     if not file.filename or not file.filename.endswith('.pdf'):
         raise HTTPException(status_code=400, detail="Only PDF files allowed")
     
-    doc = Document(
-        filename=file.filename,
-        file_path=f"/uploads/{file.filename}",
-    )
-    db.add(doc)
-    db.commit()
-    db.refresh(doc)
+    try:
+        # Read file content
+        file_content = await file.read()
+        
+        # Extract text from PDF
+        file_path, extracted_text = PDFExtractionService.extract_text_from_upload(
+            file_content, 
+            file.filename
+        )
+        
+        # Create document record
+        doc = Document(
+            filename=file.filename,
+            file_path=file_path,
+            extracted_text=extracted_text,
+            extracted_at=datetime.now(timezone.utc),
+        )
+        db.add(doc)
+        db.commit()
+        db.refresh(doc)
+        
+        return DocumentResponse.model_validate(doc)
     
-    return DocumentResponse.model_validate(doc)
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error processing PDF: {str(e)}")
 
 
-@router.get("/{document_id}", response_model=DocumentResponse)
+@router.get("/{document_id}", response_model=DocumentWithText)
 async def get_document(
     document_id: int,
     db: Session = Depends(get_db),
 ):
-    """Get document by ID."""
+    """Get document by ID with extracted text."""
     doc = db.query(Document).filter(Document.id == document_id).first()
     
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
     
-    return DocumentResponse.model_validate(doc)
+    return DocumentWithText.model_validate(doc)
 
 
 @router.get("", response_model=list[DocumentResponse])
@@ -62,11 +80,12 @@ async def extract_document(
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
     
-    doc.extracted_at = datetime.now(timezone.utc)
-    db.commit()
+    if not doc.extracted_text:
+        raise HTTPException(status_code=400, detail="No text extracted from document")
     
     return {
         "status": "extracted",
         "document_id": document_id,
-        "message": "Document extracted successfully"
+        "text_length": len(doc.extracted_text),
+        "message": "Document text extracted successfully"
     }
