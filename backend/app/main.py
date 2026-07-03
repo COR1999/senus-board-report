@@ -138,7 +138,7 @@ def create_app() -> FastAPI:
             ]
         else:
             openapi_schema["servers"] = [
-                {"url": "https://your-railway-url.up.railway.app", "description": "Production"},
+                {"url": "https://senus-board-report-production.up.railway.app", "description": "Production"},
             ]
         
         app.openapi_schema = openapi_schema
