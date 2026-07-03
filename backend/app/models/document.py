@@ -1,38 +1,27 @@
-"""Document model."""
-from datetime import datetime
-from typing import TYPE_CHECKING, Optional
-from sqlalchemy import Column, Integer, String, DateTime, Text, func  
-from sqlalchemy.orm import relationship, Mapped, mapped_column
-from app.database.base import Base
+"""
+Document SQLAlchemy model.
+"""
 
-if TYPE_CHECKING:
-    from app.models.financial_metrics import FinancialMetrics
-    from app.models.report import Report
+from datetime import datetime
+from sqlalchemy import Column, Integer, String, Text, DateTime
+from sqlalchemy.orm import relationship
+
+from app.core.database import Base
+
 
 class Document(Base):
-    """PDF document model."""
-    
+    """
+    Document model for storing uploaded PDF files and extracted text.
+    """
     __tablename__ = "documents"
-    
-    id: Mapped[int] = mapped_column(primary_key=True, index=True)
-    filename: Mapped[str] = mapped_column(String(255), nullable=False)
-    file_path: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
-    extracted_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
-    extracted_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
-    
+
+    id = Column(Integer, primary_key=True, index=True)
+    filename = Column(String(255), nullable=False)
+    extracted_text = Column(Text, nullable=True)
+    status = Column(String(50), default="processing", nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    extracted_at = Column(DateTime, nullable=True)
+
     # Relationships
-    metrics: Mapped[list["FinancialMetrics"]] = relationship(
-        "FinancialMetrics", 
-        back_populates="document", 
-        cascade="all, delete-orphan"
-    )
-    report: Mapped[Optional["Report"]] = relationship(
-        "Report", 
-        back_populates="document", 
-        cascade="all, delete-orphan", 
-        uselist=False
-    )
-    
-    def __repr__(self):
-        return f"<Document(id={self.id}, filename={self.filename})>"
+    financial_metrics = relationship("FinancialMetrics", back_populates="document", cascade="all, delete-orphan")
+    reports = relationship("Report", back_populates="document", cascade="all, delete-orphan")

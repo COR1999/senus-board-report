@@ -1,32 +1,60 @@
-"""Application configuration management."""
-from pydantic_settings import BaseSettings
+"""
+Application configuration and settings.
+"""
+
+from functools import lru_cache
 from typing import Optional
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field
 
 
 class Settings(BaseSettings):
     """Application settings from environment variables."""
-    
-    # App
-    APP_NAME: str = "Senus Board Report API"
-    APP_VERSION: str = "1.0.0"
-    
-    # Environment
-    ENVIRONMENT: str = "development"
-    DEBUG: bool = True
-    
+
+    model_config = SettingsConfigDict(env_file=".env", case_sensitive=False)
+
     # Database
-    DATABASE_URL: str = "postgresql://user:password@localhost/senus_db"
-    
-    # API Keys
-    GEMINI_API_KEY: str = ""
-    OPENAI_API_KEY: str = ""
-    
+    DATABASE_URL: str = Field(
+        default="postgresql://user:password@localhost/senus_board",
+        description="PostgreSQL database URL"
+    )
+
+    # Gemini API
+    GEMINI_API_KEY: Optional[str] = Field(
+        default=None,
+        description="Google Gemini API key"
+    )
+
+    # OpenAI API
+    OPENAI_API_KEY: Optional[str] = Field(
+        default=None,
+        description="OpenAI API key"
+    )
+
+    # Environment
+    ENVIRONMENT: str = Field(
+        default="development",
+        description="Application environment"
+    )
+
+    # Application
+    APP_NAME: str = "Senus Board Intelligence Platform"
+    APP_VERSION: str = "1.0.0"
+    DEBUG: bool = False
+
     # CORS
-    FRONTEND_URL: str = "http://localhost:3000"
-    
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
+    allowed_origins: list = [
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "https://senus-board.vercel.app",
+    ]
+
+    # Logging
+    log_level: str = "INFO"
 
 
-settings = Settings()
+@lru_cache()
+def get_settings() -> Settings:
+    """Get cached settings instance."""
+    return Settings()

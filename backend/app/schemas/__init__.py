@@ -1,14 +1,35 @@
 """Schemas package."""
+
 from app.schemas.financial import (
-    FinancialMetricsResponse,
+    # Financial Metrics
+    FinancialMetricsBase,
     FinancialMetricsCreate,
+    FinancialMetricsResponse,
+    # Document
+    DocumentBase,
+    DocumentCreate,
     DocumentResponse,
+    DocumentWithText,
+    # Report
+    ReportBase,
+    ReportCreate,
     ReportResponse,
+    ReportWithDocument,
+    # Health
+    HealthResponse,
 )
 
 __all__ = [
-    "FinancialMetricsResponse",
+    "FinancialMetricsBase",
     "FinancialMetricsCreate",
+    "FinancialMetricsResponse",
+    "DocumentBase",
+    "DocumentCreate",
     "DocumentResponse",
+    "DocumentWithText",
+    "ReportBase",
+    "ReportCreate",
     "ReportResponse",
+    "ReportWithDocument",
+    "HealthResponse",
 ]

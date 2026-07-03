@@ -1,74 +1,101 @@
-"""Pydantic schemas for financial data."""
-from pydantic import BaseModel, Field
+"""
+Pydantic schemas for financial data.
+"""
+
 from datetime import datetime
-from typing import Optional, Dict, Any
+from typing import Optional, List, Dict, Any
+from pydantic import BaseModel, Field, ConfigDict
 
 
+# ==================== Financial Metrics ====================
 class FinancialMetricsBase(BaseModel):
     """Base financial metrics schema."""
-    
-    revenue: float = Field(..., gt=0, description="Revenue in EUR")
-    customers: int = Field(..., gt=0, description="Number of customers")
-    cash: float = Field(..., ge=0, description="Cash balance in EUR")
-    ebitda: Optional[float] = Field(None, description="EBITDA in EUR")
-    gross_margin: Optional[float] = Field(None, ge=0, le=100, description="Gross margin %")
-    operating_margin: Optional[float] = Field(None, description="Operating margin %")
+    revenue: Optional[float] = Field(None, description="Annual revenue in thousands")
+    customers: Optional[int] = Field(None, description="Number of customers")
+    cash: Optional[float] = Field(None, description="Cash on hand in thousands")
+    ebitda: Optional[float] = Field(None, description="EBITDA in thousands")
+    gross_margin: Optional[float] = Field(None, description="Gross margin percentage (0-100)")
+    operating_margin: Optional[float] = Field(None, description="Operating margin percentage (0-100)")
 
 
 class FinancialMetricsCreate(FinancialMetricsBase):
-    """Schema for creating metrics."""
-    document_id: str
+    """Schema for creating financial metrics."""
+    document_id: int
 
 
 class FinancialMetricsResponse(FinancialMetricsBase):
-    """Schema for metrics response."""
+    """Financial metrics response schema."""
+    id: Optional[int] = None
+    document_id: Optional[int] = None
+    extracted_at: Optional[datetime] = None
     
-    id: str
-    document_id: str
-    created_at: datetime
-    updated_at: Optional[datetime] = None
-    
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
+# ==================== Document ====================
 class DocumentBase(BaseModel):
     """Base document schema."""
-    filename: str = Field(..., min_length=1, max_length=255)
+    filename: str
+    file_size: int
+
+
+class DocumentCreate(DocumentBase):
+    """Schema for creating documents."""
+    pass
 
 
 class DocumentResponse(DocumentBase):
-    """Schema for document response."""
-    
-    id: str
+    """Document response schema."""
+    id: int
+    file_path: str
+    upload_status: str
     created_at: datetime
-    extracted_at: Optional[datetime] = None
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class DocumentWithText(DocumentResponse):
-    """Schema for document response with extracted text."""
-    
-    extracted_text: str
-    status: str
+    """Document with extracted text and metrics."""
+    extracted_text: Optional[str] = None
+    extracted_at: Optional[datetime] = None
     financial_metrics: Optional[FinancialMetricsResponse] = None
 
 
+# ==================== Report ====================
 class ReportBase(BaseModel):
     """Base report schema."""
-    ai_commentary: Optional[str] = None
-    summary: Optional[str] = None
+    report_type: str = "financial_analysis"
+
+
+class ReportCreate(ReportBase):
+    """Schema for creating reports."""
+    document_id: int
+    include_metrics: bool = True
+    include_commentary: bool = True
 
 
 class ReportResponse(ReportBase):
-    """Schema for report response."""
-    
-    id: str
-    document_id: str
+    """Report response schema."""
+    id: int
+    document_id: int
+    ai_commentary: Optional[str] = None
+    summary: Optional[Dict[str, Any]] = None
+    raw_metrics: Optional[Dict[str, Any]] = None
     created_at: datetime
-    updated_at: Optional[datetime] = None
+    updated_at: datetime
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ReportWithDocument(ReportResponse):
+    """Report with associated document."""
+    document: DocumentResponse
+
+
+# ==================== Health Check ====================
+class HealthResponse(BaseModel):
+    """Health check response schema."""
+    status: str
+    database: str
+    gemini_api: str
+    version: str
