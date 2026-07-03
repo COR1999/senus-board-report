@@ -1,9 +1,6 @@
-"""
-Application configuration and settings.
-"""
-
 from functools import lru_cache
 from typing import Optional
+import os
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
@@ -43,15 +40,32 @@ class Settings(BaseSettings):
     APP_VERSION: str = "1.0.0"
     DEBUG: bool = False
 
-    # CORS
-    allowed_origins: list = [
-        "http://localhost:3000",
-        "http://localhost:5173",
-        "https://senus-board.vercel.app",
-    ]
+    # CORS - Dynamic configuration
+    FRONTEND_URL: str = Field(
+        default="http://localhost:3000",
+        description="Frontend application URL"
+    )
 
     # Logging
     log_level: str = "INFO"
+
+    @property
+    def allowed_origins(self) -> list:
+        """Get allowed CORS origins based on environment."""
+        origins = [
+            "http://localhost:3000",
+            "http://localhost:5173",
+            "http://127.0.0.1:3000",
+            "http://127.0.0.1:5173",
+            self.FRONTEND_URL,
+            "https://senus-board.vercel.app",
+        ]
+        
+        # Allow all origins in development
+        if self.DEBUG or self.ENVIRONMENT == "development":
+            origins.append("*")
+        
+        return list(set(origins))  # Remove duplicates
 
 
 @lru_cache()

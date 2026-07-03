@@ -41,11 +41,14 @@ async def init_db():
     
     logger.info("Initializing database...")
     
+    # Create async engine with production pooling
     _engine = create_async_engine(
         db_url,
         echo=False,
         future=True,
-        pool_pre_ping=True,
+        pool_pre_ping=True,      # Test connections before using
+        pool_size=5,              # Number of persistent connections
+        max_overflow=10,          # Extra connections if pool is full
     )
     
     _async_session_maker = async_sessionmaker(
@@ -79,4 +82,4 @@ async def close_db():
     global _engine
     if _engine:
         await _engine.dispose()
-        logger.info("Database connection closed")
+        logger.info("✅ Database connection closed")

@@ -131,11 +131,15 @@ def create_app() -> FastAPI:
             "altText": "Senus Board Logo"
         }
         
-        # Add server info
-        openapi_schema["servers"] = [
-            {"url": "http://127.0.0.1:8000", "description": "Development"},
-            {"url": "https://api.senus-board.com", "description": "Production"}
-        ]
+        # Add dynamic server info based on environment
+        if settings.DEBUG:
+            openapi_schema["servers"] = [
+                {"url": "http://127.0.0.1:8000", "description": "Development"},
+            ]
+        else:
+            openapi_schema["servers"] = [
+                {"url": "https://your-railway-url.up.railway.app", "description": "Production"},
+            ]
         
         app.openapi_schema = openapi_schema
         return app.openapi_schema
