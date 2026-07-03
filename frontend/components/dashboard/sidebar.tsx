@@ -1,47 +1,38 @@
-"use client"
+'use client'
 
-import * as React from "react"
-import Link from "next/link"
-import { usePathname } from "next/navigation"
+import * as React from 'react'
+import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import {
   LayoutDashboard,
   FileText,
   FolderOpen,
   Settings,
   Menu,
-} from "lucide-react"
-import { cn } from "@/lib/utils"
-import { Button } from "@/components/ui/button"
+} from 'lucide-react'
+import { cn } from '@/lib/utils'
+import { Button } from '@/components/ui/button'
 import {
   Sheet,
   SheetContent,
   SheetTrigger,
-} from "@/components/ui/sheet"
+} from '@/components/ui/sheet'
 
 export interface SidebarProps extends React.HTMLAttributes<HTMLDivElement> {}
 
-/**
- * Responsive Sidebar component for the executive dashboard.
- * Renders as a fixed sidebar on desktop (md screens and up), and
- * automatically transitions to a top navigation bar with a collapsible left Drawer (Sheet) on mobile.
- */
-export function Sidebar({ className, ...props }: SidebarProps) {
-  const pathname = usePathname()
-  const [isOpen, setIsOpen] = React.useState(false)
+const menuItems = [
+  { label: 'Dashboard', href: '/', icon: LayoutDashboard },
+  { label: 'Reports', href: '/reports', icon: FileText },
+  { label: 'Documents', href: '/documents', icon: FolderOpen },
+  { label: 'Settings', href: '/settings', icon: Settings },
+]
 
-  const menuItems = [
-    { label: "Dashboard", href: "/", icon: LayoutDashboard },
-    { label: "Reports", href: "/reports", icon: FileText },
-    { label: "Documents", href: "/documents", icon: FolderOpen },
-    { label: "Settings", href: "/settings", icon: Settings },
-  ]
-
-  // Clean and modern environmental SaaS logo (Senus)
-  const Logo = () => (
+// Logo Component (moved outside)
+function Logo() {
+  return (
     <Link
       href="/"
       className="flex items-center gap-2.5 font-semibold text-foreground transition-opacity hover:opacity-90"
-      onClick={() => setIsOpen(false)}
     >
       <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-600 text-white shadow-md shadow-emerald-600/20 dark:bg-emerald-500 dark:shadow-emerald-500/10">
         <svg
@@ -65,36 +56,43 @@ export function Sidebar({ className, ...props }: SidebarProps) {
       </div>
     </Link>
   )
+}
 
-  // Navigation Links component
-  const NavLinks = () => (
+// Navigation Links (moved outside)
+interface NavLinksProps {
+  onClose?: () => void
+}
+
+function NavLinks({ onClose }: NavLinksProps) {
+  const pathname = usePathname()
+
+  return (
     <nav className="flex-1 space-y-1.5 px-4 py-6">
       {menuItems.map((item) => {
         const Icon = item.icon
-        // Strict active check or prefix check for child pages (e.g., active on /reports/1 if href is /reports)
         const isActive =
-          item.href === "/"
-            ? pathname === "/"
-            : pathname === item.href || pathname.startsWith(item.href + "/")
+          item.href === '/'
+            ? pathname === '/'
+            : pathname === item.href || pathname.startsWith(item.href + '/')
 
         return (
           <Link
             key={item.label}
             href={item.href}
-            onClick={() => setIsOpen(false)}
+            onClick={() => onClose?.()}
             className={cn(
-              "flex items-center gap-3.5 rounded-lg px-3.5 py-2.5 text-sm font-medium transition-all duration-200",
+              'flex items-center gap-3.5 rounded-lg px-3.5 py-2.5 text-sm font-medium transition-all duration-200',
               isActive
-                ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400"
-                : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400'
+                : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'
             )}
           >
             <Icon
               className={cn(
-                "h-4 w-4",
+                'h-4 w-4',
                 isActive
-                  ? "text-emerald-600 dark:text-emerald-400"
-                  : "text-muted-foreground group-hover/link:text-foreground"
+                  ? 'text-emerald-600 dark:text-emerald-400'
+                  : 'text-muted-foreground'
               )}
             />
             <span>{item.label}</span>
@@ -103,28 +101,39 @@ export function Sidebar({ className, ...props }: SidebarProps) {
       })}
     </nav>
   )
+}
 
-  // Sidebar Footer profile section (CEO/Executive profile)
-  const FooterProfile = () => (
-    <div className="mt-auto border-t border-border/40 p-4 bg-muted/20">
+// Footer Profile (moved outside)
+function FooterProfile() {
+  return (
+    <div className="mt-auto border-t border-border/40 bg-muted/20 p-4">
       <div className="flex items-center gap-3">
         <div className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-100 text-emerald-800 font-semibold text-xs dark:bg-emerald-900/30 dark:text-emerald-400">
           SJ
         </div>
         <div className="flex flex-col min-w-0 flex-1">
-          <span className="text-xs font-semibold text-foreground truncate">Sarah Jenkins</span>
-          <span className="text-[10px] text-muted-foreground truncate font-medium">CEO & Co-Founder</span>
+          <span className="truncate text-xs font-semibold text-foreground">
+            Sarah Jenkins
+          </span>
+          <span className="truncate text-[10px] font-medium text-muted-foreground">
+            CEO & Co-Founder
+          </span>
         </div>
       </div>
     </div>
   )
+}
+
+// Main Sidebar Component
+export function Sidebar({ className, ...props }: SidebarProps) {
+  const [isOpen, setIsOpen] = React.useState(false)
 
   return (
     <>
-      {/* 1. Desktop Sidebar (Visible on medium/large viewports) */}
+      {/* Desktop Sidebar */}
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-border/60 bg-card md:flex",
+          'fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-border/60 bg-card md:flex',
           className
         )}
         {...props}
@@ -136,15 +145,15 @@ export function Sidebar({ className, ...props }: SidebarProps) {
         <FooterProfile />
       </aside>
 
-      {/* 2. Mobile Sticky Header & Sheet (Visible on small viewports) */}
-      <header className="fixed top-0 left-0 right-0 z-30 flex h-14 items-center justify-between border-b border-border/60 bg-card px-4 md:hidden">
+      {/* Mobile Header & Sheet */}
+      <header className="fixed left-0 right-0 top-0 z-30 flex h-14 items-center justify-between border-b border-border/60 bg-card px-4 md:hidden">
         <Logo />
         <Sheet open={isOpen} onOpenChange={setIsOpen}>
           <SheetTrigger asChild>
             <Button
               variant="ghost"
               size="icon"
-              className="h-9 w-9 text-muted-foreground hover:text-foreground hover:bg-muted/50"
+              className="h-9 w-9 text-muted-foreground hover:bg-muted/50 hover:text-foreground"
             >
               <Menu className="h-5 w-5" />
               <span className="sr-only">Toggle navigation menu</span>
@@ -152,12 +161,12 @@ export function Sidebar({ className, ...props }: SidebarProps) {
           </SheetTrigger>
           <SheetContent
             side="left"
-            className="w-72 p-0 flex flex-col h-full bg-card"
+            className="flex h-full w-72 flex-col bg-card p-0"
           >
             <div className="flex h-14 items-center border-b border-border/40 px-6">
               <Logo />
             </div>
-            <NavLinks />
+            <NavLinks onClose={() => setIsOpen(false)} />
             <FooterProfile />
           </SheetContent>
         </Sheet>
