@@ -35,3 +35,10 @@ backend/senus.db
 # Build
 dist/
 coverage/
+
+# Python virtual env
+venv/
+backend/venv/
+
+# SQLite database
+backend/senus.db

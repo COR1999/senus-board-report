@@ -1,0 +1,1 @@
+"""Models package - models are imported in main.py to avoid circular imports."""
