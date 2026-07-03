@@ -24,7 +24,7 @@ class Report(Base):
     document_id: Mapped[int] = mapped_column(ForeignKey("documents.id"))
     ai_commentary: Mapped[Optional[str]] = mapped_column(default=None)
     summary: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True, default=None)
-    raw_metrics: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True, default=None)
+    # raw_metrics: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         default=datetime.utcnow,

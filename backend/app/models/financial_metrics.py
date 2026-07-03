@@ -31,7 +31,7 @@ class FinancialMetrics(Base):
     ebitda: Mapped[Optional[float]] = mapped_column(default=None)
     gross_margin: Mapped[Optional[float]] = mapped_column(default=None)
     operating_margin: Mapped[Optional[float]] = mapped_column(default=None)
-    extracted_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+    # extracted_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
 
     # Relationship
     document: Mapped["Document"] = relationship(back_populates="financial_metrics")

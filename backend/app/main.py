@@ -15,7 +15,8 @@ from fastapi.openapi.utils import get_openapi
 
 from app.core.config import get_settings
 from app.core.database import init_db, close_db
-from app.api.routes import documents, reports
+from app.api.routes import documents, reports, metrics
+
 
 # Configure logging
 logging.basicConfig(
@@ -73,6 +74,7 @@ def create_app() -> FastAPI:
     # Include routes
     app.include_router(documents.router, tags=["documents"])
     app.include_router(reports.router, tags=["reports"])
+    app.include_router(metrics.router, tags=["metrics"])
 
     # Health check endpoint
     @app.get("/health", tags=["system"])
@@ -131,7 +133,7 @@ def create_app() -> FastAPI:
         
         # Add server info
         openapi_schema["servers"] = [
-            {"url": "http://localhost:8000", "description": "Development"},
+            {"url": "http://127.0.0.1:8000", "description": "Development"},
             {"url": "https://api.senus-board.com", "description": "Production"}
         ]
         
