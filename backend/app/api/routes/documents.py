@@ -34,75 +34,54 @@ async def upload_document(
 ) -> DocumentWithText:
     """
     Upload a PDF document and extract text and financial metrics.
-    
-    Process:
-    1. Validate file (PDF only)
-    2. Extract text using PyMuPDF
-    3. Extract financial metrics using regex + optional Gemini AI
-    4. Save document and metrics to database
     """
-    try:
-        # Validate file type
-        if not file.filename or not file.filename.lower().endswith(".pdf"):
-            raise HTTPException(
-                status_code=400,
-                detail="Only PDF files are supported"
-            )
+    file_path_var: str = ""
 
-        # Read file content
+    try:
+        # 1. Validate file
+        if not file.filename or not file.filename.lower().endswith(".pdf"):
+            raise HTTPException(status_code=400, detail="Only PDF files are supported")
+
         content = await file.read()
         if not content:
-            raise HTTPException(
-                status_code=400,
-                detail="File is empty"
-            )
+            raise HTTPException(status_code=400, detail="File is empty")
 
         logger.info(f"Processing document: {file.filename} ({len(content)} bytes)")
 
-        # Extract text using PDF service
+        # 2. Extract text from PDF
         try:
-            file_path: str
-            extracted_text: str
-            file_path, extracted_text = pdf_service.extract_text_from_upload(
-                content, 
-                file.filename  # type: ignore
+            file_path_var, extracted_text = pdf_service.extract_text_from_upload(
+                content, file.filename
             )
-            logger.info(f"PDF saved to: {file_path}")
         except Exception as e:
-            logger.error(f"PDF extraction failed: {e}")
             raise HTTPException(
-                status_code=400,
-                detail=f"Failed to extract text from PDF: {str(e)}"
+                status_code=400, detail=f"Failed to extract text from PDF: {str(e)}"
             )
 
         if not extracted_text or len(extracted_text.strip()) < 10:
-            raise HTTPException(
-                status_code=400,
-                detail="No readable text found in PDF"
-            )
+            raise HTTPException(status_code=400, detail="No readable text found in PDF")
 
-        # Create document record
+        # 3. Create Document record
         document = Document(
-            filename=file.filename,  # type: ignore
+            filename=file.filename,
+            file_path=file_path_var,
+            file_size=len(content),
             extracted_text=extracted_text,
             status="processing",
             created_at=datetime.utcnow(),
         )
-        
         db.add(document)
         await db.flush()
-        document_id: int = document.id  # type: ignore
 
-        logger.info(f"Document created with ID: {document_id}")
+        document_id = document.id
 
-        # Extract metrics
-        financial_metrics: FinancialMetrics | None = None
+        # 4. Extract financial metrics
+        financial_metrics = None
         try:
             metrics_dict = await gemini_service.extract_financial_metrics_from_text(
-                extracted_text,
-                use_ai=gemini_service.is_available()
+                extracted_text, use_ai=gemini_service.is_available()
             )
-            
+
             financial_metrics = FinancialMetrics(
                 document_id=document_id,
                 revenue=metrics_dict.get("revenue"),
@@ -113,43 +92,44 @@ async def upload_document(
                 operating_margin=metrics_dict.get("operating_margin"),
                 extracted_at=datetime.utcnow(),
             )
-            
             db.add(financial_metrics)
-            logger.info(f"Financial metrics extracted: {metrics_dict}")
 
         except Exception as e:
             logger.warning(f"Metric extraction failed (non-critical): {e}")
 
-        # Update document status
-        document.status = "completed"  # type: ignore
-        document.extracted_at = datetime.utcnow()  # type: ignore
+        # 5. Update document
+        document.status = "completed"
+        document.extracted_at = datetime.utcnow()
 
         await db.commit()
         logger.info(f"Document {document_id} processing completed")
 
-        # Build response
-        metrics_response: FinancialMetricsResponse | None = None
+        # 6. Build metrics response
+        metrics_response = None
         if financial_metrics:
             metrics_response = FinancialMetricsResponse(
-                id=financial_metrics.id,  # type: ignore
-                document_id=financial_metrics.document_id,  # type: ignore
-                revenue=financial_metrics.revenue,  # type: ignore
-                customers=financial_metrics.customers,  # type: ignore
-                cash=financial_metrics.cash,  # type: ignore
-                ebitda=financial_metrics.ebitda,  # type: ignore
-                gross_margin=financial_metrics.gross_margin,  # type: ignore
-                operating_margin=financial_metrics.operating_margin,  # type: ignore
-                extracted_at=financial_metrics.extracted_at,  # type: ignore
+                id=financial_metrics.id,
+                document_id=financial_metrics.document_id,
+                revenue=financial_metrics.revenue,
+                customers=financial_metrics.customers,
+                cash=financial_metrics.cash,
+                ebitda=financial_metrics.ebitda,
+                gross_margin=financial_metrics.gross_margin,
+                operating_margin=financial_metrics.operating_margin,
+                extracted_at=financial_metrics.extracted_at,
             )
 
+        # 7. Return response
         return DocumentWithText(
-            id=document.id,  # type: ignore
-            filename=document.filename,  # type: ignore
-            extracted_text=document.extracted_text,  # type: ignore
-            status=document.status,  # type: ignore
-            created_at=document.created_at,  # type: ignore
-            extracted_at=document.extracted_at,  # type: ignore
+            id=document.id,
+            filename=document.filename,
+            extracted_text=document.extracted_text,
+            status=document.status,
+            created_at=document.created_at,
+            extracted_at=document.extracted_at,
             financial_metrics=metrics_response,
+            file_size=document.file_size or len(content),
+            file_path=document.file_path or file_path_var,
         )
 
     except HTTPException:
@@ -157,10 +137,7 @@ async def upload_document(
     except Exception as e:
         logger.error(f"Unexpected error uploading document: {e}", exc_info=True)
         await db.rollback()
-        raise HTTPException(
-            status_code=500,
-            detail="Failed to process document"
-        )
+        raise HTTPException(status_code=500, detail="Failed to process document")
 
 
 @router.get("/{document_id}", response_model=DocumentWithText)
@@ -170,57 +147,50 @@ async def get_document(
 ) -> DocumentWithText:
     """Retrieve a document with extracted text and metrics."""
     try:
-        result = await db.execute(
-            select(Document).where(Document.id == document_id)
-        )
+        result = await db.execute(select(Document).where(Document.id == document_id))
         document = result.scalars().first()
 
         if not document:
             raise HTTPException(
-                status_code=404,
-                detail=f"Document {document_id} not found"
+                status_code=404, detail=f"Document {document_id} not found"
             )
 
-        # Fetch metrics
         metrics_result = await db.execute(
-            select(FinancialMetrics).where(
-                FinancialMetrics.document_id == document_id
-            )
+            select(FinancialMetrics).where(FinancialMetrics.document_id == document_id)
         )
         metrics = metrics_result.scalars().first()
 
-        metrics_response: FinancialMetricsResponse | None = None
+        metrics_response = None
         if metrics:
             metrics_response = FinancialMetricsResponse(
-                id=metrics.id,  # type: ignore
-                document_id=metrics.document_id,  # type: ignore
-                revenue=metrics.revenue,  # type: ignore
-                customers=metrics.customers,  # type: ignore
-                cash=metrics.cash,  # type: ignore
-                ebitda=metrics.ebitda,  # type: ignore
-                gross_margin=metrics.gross_margin,  # type: ignore
-                operating_margin=metrics.operating_margin,  # type: ignore
-                extracted_at=metrics.extracted_at,  # type: ignore
+                id=metrics.id,
+                document_id=metrics.document_id,
+                revenue=metrics.revenue,
+                customers=metrics.customers,
+                cash=metrics.cash,
+                ebitda=metrics.ebitda,
+                gross_margin=metrics.gross_margin,
+                operating_margin=metrics.operating_margin,
+                extracted_at=metrics.extracted_at,
             )
 
         return DocumentWithText(
-            id=document.id,  # type: ignore
-            filename=document.filename,  # type: ignore
-            extracted_text=document.extracted_text,  # type: ignore
-            status=document.status,  # type: ignore
-            created_at=document.created_at,  # type: ignore
-            extracted_at=document.extracted_at,  # type: ignore
+            id=document.id,
+            filename=document.filename,
+            extracted_text=document.extracted_text,
+            status=document.status,
+            created_at=document.created_at,
+            extracted_at=document.extracted_at,
             financial_metrics=metrics_response,
+            file_size=document.file_size or 0,
+            file_path=document.file_path or "",
         )
 
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error retrieving document: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail="Failed to retrieve document"
-        )
+        raise HTTPException(status_code=500, detail="Failed to retrieve document")
 
 
 @router.get("", response_model=List[DocumentWithText])
@@ -242,46 +212,43 @@ async def list_documents(
         response: List[DocumentWithText] = []
         for doc in documents:
             metrics_result = await db.execute(
-                select(FinancialMetrics).where(
-                    FinancialMetrics.document_id == doc.id  # type: ignore
-                )
+                select(FinancialMetrics).where(FinancialMetrics.document_id == doc.id)
             )
             metrics = metrics_result.scalars().first()
 
-            metrics_response: FinancialMetricsResponse | None = None
+            metrics_response = None
             if metrics:
                 metrics_response = FinancialMetricsResponse(
-                    id=metrics.id,  # type: ignore
-                    document_id=metrics.document_id,  # type: ignore
-                    revenue=metrics.revenue,  # type: ignore
-                    customers=metrics.customers,  # type: ignore
-                    cash=metrics.cash,  # type: ignore
-                    ebitda=metrics.ebitda,  # type: ignore
-                    gross_margin=metrics.gross_margin,  # type: ignore
-                    operating_margin=metrics.operating_margin,  # type: ignore
-                    extracted_at=metrics.extracted_at,  # type: ignore
+                    id=metrics.id,
+                    document_id=metrics.document_id,
+                    revenue=metrics.revenue,
+                    customers=metrics.customers,
+                    cash=metrics.cash,
+                    ebitda=metrics.ebitda,
+                    gross_margin=metrics.gross_margin,
+                    operating_margin=metrics.operating_margin,
+                    extracted_at=metrics.extracted_at,
                 )
 
-            response.append(DocumentWithText(
-                id=doc.id,  # type: ignore
-                filename=doc.filename,  # type: ignore
-                extracted_text=doc.extracted_text,  # type: ignore
-                status=doc.status,  # type: ignore
-                created_at=doc.created_at,  # type: ignore
-                extracted_at=doc.extracted_at,  # type: ignore
-                financial_metrics=metrics_response,
-            ))
+            response.append(
+                DocumentWithText(
+                    id=doc.id,
+                    filename=doc.filename,
+                    extracted_text=doc.extracted_text,
+                    status=doc.status,
+                    created_at=doc.created_at,
+                    extracted_at=doc.extracted_at,
+                    financial_metrics=metrics_response,
+                    file_size=doc.file_size or 0,
+                    file_path=doc.file_path or "",
+                )
+            )
 
         return response
 
     except Exception as e:
         logger.error(f"Error listing documents: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail="Failed to list documents"
-        )
-
-
+        raise HTTPException(status_code=500, detail="Failed to list documents")
 @router.delete("/{document_id}")
 async def delete_document(
     document_id: int,
@@ -289,27 +256,24 @@ async def delete_document(
 ) -> dict:
     """Delete a document and associated metrics/reports."""
     try:
-        # Delete metrics first (foreign key constraint)
+        # Delete associated financial metrics first
         await db.execute(
-            delete(FinancialMetrics).where(
-                FinancialMetrics.document_id == document_id
-            )
+            delete(FinancialMetrics).where(FinancialMetrics.document_id == document_id)
         )
 
-        # Delete document
+        # Delete the document
         result = await db.execute(
             delete(Document).where(Document.id == document_id)
         )
 
-        if result.rowcount == 0:  # type: ignore
-            raise HTTPException(
-                status_code=404,
-                detail="Document not found"
-            )
+        # ✅ Safe way to check if anything was deleted (Pylance friendly)
+        rows_deleted = getattr(result, "rowcount", 0) or 0
+
+        if rows_deleted == 0:
+            raise HTTPException(status_code=404, detail="Document not found")
 
         await db.commit()
         logger.info(f"Document {document_id} deleted")
-
         return {"message": f"Document {document_id} deleted successfully"}
 
     except HTTPException:
@@ -317,7 +281,4 @@ async def delete_document(
     except Exception as e:
         logger.error(f"Error deleting document: {e}")
         await db.rollback()
-        raise HTTPException(
-            status_code=500,
-            detail="Failed to delete document"
-        )
+        raise HTTPException(status_code=500, detail="Failed to delete document")

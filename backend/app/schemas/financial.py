@@ -36,7 +36,7 @@ class FinancialMetricsResponse(FinancialMetricsBase):
 class DocumentBase(BaseModel):
     """Base document schema."""
     filename: str
-    file_size: int
+    file_size: Optional[int] = None
 
 
 class DocumentCreate(DocumentBase):
@@ -45,17 +45,15 @@ class DocumentCreate(DocumentBase):
 
 
 class DocumentResponse(DocumentBase):
-    """Document response schema."""
     id: int
-    file_path: str
-    upload_status: str
+    file_path: Optional[str] = None
+    status: str
     created_at: datetime
-    
+
     model_config = ConfigDict(from_attributes=True)
 
 
 class DocumentWithText(DocumentResponse):
-    """Document with extracted text and metrics."""
     extracted_text: Optional[str] = None
     extracted_at: Optional[datetime] = None
     financial_metrics: Optional[FinancialMetricsResponse] = None

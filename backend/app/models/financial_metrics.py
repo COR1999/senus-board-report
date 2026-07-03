@@ -1,7 +1,3 @@
-"""
-Financial Metrics SQLAlchemy model using SQLAlchemy 2.0 style.
-"""
-
 from datetime import datetime
 from typing import Optional, TYPE_CHECKING
 
@@ -15,23 +11,16 @@ if TYPE_CHECKING:
 
 
 class FinancialMetrics(Base):
-    """
-    Financial metrics model for storing extracted financial data.
-    """
     __tablename__ = "financial_metrics"
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
-    document_id: Mapped[int] = mapped_column(
-        ForeignKey("documents.id"),
-        unique=True,
-    )
+    document_id: Mapped[int] = mapped_column(ForeignKey("documents.id"), unique=True)
     revenue: Mapped[Optional[float]] = mapped_column(default=None)
     customers: Mapped[Optional[int]] = mapped_column(default=None)
     cash: Mapped[Optional[float]] = mapped_column(default=None)
     ebitda: Mapped[Optional[float]] = mapped_column(default=None)
     gross_margin: Mapped[Optional[float]] = mapped_column(default=None)
     operating_margin: Mapped[Optional[float]] = mapped_column(default=None)
-    # extracted_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+    extracted_at: Mapped[Optional[datetime]] = mapped_column(default=None)
 
-    # Relationship
     document: Mapped["Document"] = relationship(back_populates="financial_metrics")
