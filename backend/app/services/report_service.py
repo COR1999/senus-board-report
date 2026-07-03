@@ -4,9 +4,8 @@ import logging
 import re
 from datetime import datetime
 from typing import Any, Dict, List, Optional
-from fastapi import APIRouter, Depends, HTTPException
 
-from sqlalchemy import select
+from sqlalchemy import select, delete as sql_delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.report import Report
@@ -22,22 +21,17 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/reports", tags=["reports"])
-
-
-
 
 class ReportService:
     def __init__(self, db: AsyncSession):
         self.db = db
-        # Initialize Gemini service
         if GeminiAnalysisService:
             self.gemini = GeminiAnalysisService()
         else:
             self.gemini = None
 
     # ============================================================
-    # Public API (all async)
+    # Public API (ALL ASYNC)
     # ============================================================
     async def get_or_create_report(self, document_id: int) -> Report:
         """Get existing report or trigger generation."""
@@ -98,25 +92,26 @@ class ReportService:
         
         query = query.order_by(Report.created_at.desc())
         result = await self.db.execute(query)
-        return list(result.scalars().all())  # ← Wrap with list()
+        return list(result.scalars().all())
 
     async def delete_report(self, report_id: int) -> bool:
         """Delete a report by ID."""
-        from sqlalchemy import delete as sql_delete
-        
+        # Check if exists
         stmt = select(Report).where(Report.id == report_id)
         result = await self.db.execute(stmt)
+        report = result.scalars().first()
         
-        if not result.scalars().first():
+        if not report:
             return False
         
+        # Delete it
         delete_stmt = sql_delete(Report).where(Report.id == report_id)
         await self.db.execute(delete_stmt)
         await self.db.commit()
         return True
 
     # ============================================================
-    # Core Generation Logic (async)
+    # Core Generation Logic (ASYNC)
     # ============================================================
     async def _generate_with_gemini_or_fallback(
         self, document: Document, report: Report
@@ -152,15 +147,13 @@ class ReportService:
         return report
 
     async def _call_gemini(self, document: Document) -> Dict[str, Any]:
-        """Call Gemini to generate report content (async wrapper)."""
-        # Triple-check that Gemini is available and client exists
+        """Call Gemini to generate report content."""
         if not self.gemini or not self.gemini.client or not types:
             return self._fallback_generation(document)
 
         prompt = self._build_prompt(document)
 
         try:
-            # Call Gemini (blocking call wrapped in async context)
             response = self.gemini.client.models.generate_content(
                 model="gemini-2.0-flash",
                 contents=prompt,
@@ -175,7 +168,6 @@ class ReportService:
         except Exception as e:
             logger.warning(f"Gemini call failed, falling back: {e}")
             
-            # Handle quota errors
             if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
                 if self.gemini:
                     self.gemini._disable_ai_temporarily(60)
@@ -210,9 +202,8 @@ Return ONLY valid JSON with this exact structure:
         import json
 
         text = getattr(response, "text", "") or ""
-        
-        # Extract JSON from response
         match = re.search(r"\{.*\}", text, re.DOTALL)
+        
         if match:
             try:
                 return json.loads(match.group())
@@ -233,7 +224,6 @@ Return ONLY valid JSON with this exact structure:
         text = document.extracted_text or ""
         findings = []
 
-        # Basic regex extraction
         if re.search(r"revenue|sales", text, re.I):
             findings.append("Revenue figures detected.")
         if re.search(r"ebitda|cash flow", text, re.I):

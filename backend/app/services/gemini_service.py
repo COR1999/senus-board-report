@@ -1,11 +1,12 @@
 """
-Google Gemini AI Service – Clean & Modern Version with Quota Handling
+Google Gemini AI Service – Synchronous Version with Quota Handling
 """
 
 import logging
 import re
 import hashlib
 import time
+import json
 from typing import Optional, Dict, Any
 from enum import Enum
 import os
@@ -24,7 +25,7 @@ class GeminiModel(str, Enum):
 
 class GeminiAnalysisService:
     _cache = TTLCache(maxsize=1000, ttl=86400)
-    _ai_disabled_until: float = 0          # Class-level quota cooldown
+    _ai_disabled_until: float = 0
 
     def __init__(self, api_key: Optional[str] = None, enable_cache: bool = True):
         self.api_key = api_key or os.getenv("GEMINI_API_KEY")
@@ -66,29 +67,39 @@ class GeminiAnalysisService:
         if self.enable_cache:
             self._cache[key] = value
 
-    async def extract_financial_metrics_from_text(
+    # ============================================================
+    # SYNC VERSION (no await needed)
+    # ============================================================
+    def extract_financial_metrics_from_text(
         self,
         extracted_text: str,
         use_ai: bool = True,
     ) -> Dict[str, Optional[float]]:
-        """Main entry point for metric extraction."""
+        """
+        Extract financial metrics from text.
+        Uses regex first, then AI if available.
+        """
         if not extracted_text:
             return self._empty_metrics()
 
         cache_key = self._get_cache_key("metrics", extracted_text)
         if cached := self._get_from_cache(cache_key):
+            logger.debug("Metrics retrieved from cache")
             return cached
 
+        # Try regex extraction first (fast)
         metrics = self._parse_financial_metrics(extracted_text)
 
+        # Fill gaps with AI (if available)
         if use_ai and self.is_available():
             try:
-                ai_metrics = await self._extract_with_ai(extracted_text)
+                ai_metrics = self._extract_with_ai(extracted_text)
                 for key in metrics:
                     if metrics[key] is None and ai_metrics.get(key):
                         metrics[key] = ai_metrics[key]
+                logger.info("AI supplemented regex extraction")
             except Exception as e:
-                logger.warning(f"AI extraction failed: {e}")
+                logger.warning(f"AI extraction failed (using regex only): {e}")
 
         self._set_cache(cache_key, metrics)
         return metrics
@@ -104,52 +115,67 @@ class GeminiAnalysisService:
         }
 
     def _parse_financial_metrics(self, text: str) -> Dict[str, Optional[float]]:
-        """Regex-based extraction"""
+        """Regex-based extraction (fast, no AI needed)."""
         metrics = self._empty_metrics()
         text = text.lower()
 
-        # Revenue
+        # Revenue patterns
         for pattern in [
             r"revenue[:\s]+[€$]?(\d+\.?\d*)\s*(m|k|b)?",
             r"annual revenue[:\s]+[€$]?(\d+\.?\d*)\s*(m|k|b)?",
+            r"total revenue[:\s]+[€$]?(\d+\.?\d*)\s*(m|k|b)?",
         ]:
             if match := re.search(pattern, text):
                 val = float(match.group(1))
-                mul = {"k": 1000, "m": 1_000_000, "b": 1_000_000_000}.get(match.group(2), 1)
+                mul = {"k": 1000, "m": 1_000_000, "b": 1_000_000_000}.get(
+                    match.group(2), 1
+                )
                 metrics["revenue"] = val * mul
                 break
 
         # Customers
-        if match := re.search(r"(?:customers?|users?)[:\s]+(\d+(?:,\d{3})*)", text):
+        if match := re.search(
+            r"(?:customers?|users?|clients?)[:\s]+(\d+(?:,\d{3})*)", text
+        ):
             metrics["customers"] = float(match.group(1).replace(",", ""))
 
-        # Cash
-        if match := re.search(r"cash[:\s]+[€$]?(\d+\.?\d*)\s*(m|k|b)?", text):
+        # Cash / Cash reserves
+        if match := re.search(
+            r"(?:cash|cash reserves)[:\s]+[€$]?(\d+\.?\d*)\s*(m|k|b)?", text
+        ):
             val = float(match.group(1))
-            mul = {"k": 1000, "m": 1_000_000, "b": 1_000_000_000}.get(match.group(2), 1)
+            mul = {"k": 1000, "m": 1_000_000, "b": 1_000_000_000}.get(
+                match.group(2), 1
+            )
             metrics["cash"] = val * mul
 
         # EBITDA
-        if match := re.search(r"ebitda[:\s]+[€$]?(\d+\.?\d*)\s*(m|k|b)?", text):
+        if match := re.search(
+            r"ebitda[:\s]+[€$]?(\d+\.?\d*)\s*(m|k|b)?", text
+        ):
             val = float(match.group(1))
-            mul = {"k": 1000, "m": 1_000_000, "b": 1_000_000_000}.get(match.group(2), 1)
+            mul = {"k": 1000, "m": 1_000_000, "b": 1_000_000_000}.get(
+                match.group(2), 1
+            )
             metrics["ebitda"] = val * mul
 
-        # Margins
+        # Gross margin
         if match := re.search(r"gross\s+margin[:\s]+(\d+\.?\d*)%?", text):
             metrics["gross_margin"] = float(match.group(1))
+
+        # Operating margin
         if match := re.search(r"operating\s+margin[:\s]+(\d+\.?\d*)%?", text):
             metrics["operating_margin"] = float(match.group(1))
 
-        logger.info(f"Regex extracted: {metrics}")
+        logger.debug(f"Regex metrics: {metrics}")
         return metrics
 
-    async def _extract_with_ai(self, text: str) -> Dict[str, Optional[float]]:
-        """AI-based extraction using Gemini"""
-        if not self.client:
+    def _extract_with_ai(self, text: str) -> Dict[str, Optional[float]]:
+        """AI-based metric extraction using Gemini (SYNC)."""
+        if not self.client or not self.is_available():
             return self._empty_metrics()
 
-        prompt = f"""Extract the following financial metrics from the text below.
+        prompt = f"""Extract the following financial metrics from the text.
 Return ONLY valid JSON with these exact keys (use null if missing):
 
 {{
@@ -174,15 +200,24 @@ Text:
                 ),
             )
 
-            json_text = re.search(r"\{.*\}", response.text or "", re.DOTALL)
+            # Extract JSON from response
+            json_text = re.search(r"\{.*\}", (response.text or ""), re.DOTALL)
             if json_text:
-                import json
-                return json.loads(json_text.group())
+                try:
+                    result = json.loads(json_text.group())
+                    logger.info("AI extraction successful")
+                    return result
+                except json.JSONDecodeError:
+                    logger.warning("Failed to parse AI response as JSON")
 
         except Exception as e:
             error_str = str(e)
+            
+            # Handle quota errors
             if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str:
-                self._disable_ai_temporarily(60)   # Disable AI for 60 seconds
-            logger.warning(f"Gemini AI call failed: {e}")
+                self._disable_ai_temporarily(60)
+                logger.error(f"Gemini quota exceeded, disabling for 60 seconds: {e}")
+            else:
+                logger.warning(f"Gemini AI call failed: {e}")
 
         return self._empty_metrics()
