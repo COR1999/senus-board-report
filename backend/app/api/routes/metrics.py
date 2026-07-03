@@ -3,7 +3,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from datetime import datetime, timezone
-from app.database.session import get_db
+from app.core.database import get_db
 from app.models.financial_metrics import FinancialMetrics
 from app.models.document import Document
 from app.schemas.financial import FinancialMetricsResponse, FinancialMetricsCreate
