@@ -110,7 +110,7 @@ export async function uploadPDF(file: File): Promise<{ id: string; message: stri
 export async function extractFromPDF(documentId: string): Promise<ExtractedPdfData> {
   try {
     const res = await fetch(`${API_URL}/api/documents/${documentId}`, {
-      method: 'POST',
+      method: 'GET',
       headers: {
         'Content-Type': 'application/json',
       },

@@ -35,10 +35,11 @@ class MetricsService:
         return cash_balance / monthly_burn_rate
 
     @staticmethod
-    def calculate_debt_ratios(debt: float, ebitda: float, cash: float) -> Dict[str, float]:
+    def calculate_debt_ratios(debt: float, ebitda: float, cash: float, revenue: float | None = None) -> Dict[str, float]:
         """Calculate debt service ratios."""
+        debt_to_revenue = debt / revenue if revenue and revenue > 0 else 0.0
         return {
             "net_debt": debt - cash,
             "debt_to_ebitda": debt / ebitda if ebitda > 0 else 0.0,
-            "debt_to_revenue": debt / ebitda if ebitda > 0 else 0.0,
+            "debt_to_revenue": debt_to_revenue,
         }
