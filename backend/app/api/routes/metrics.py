@@ -12,38 +12,11 @@ from app.schemas.financial import (
     FinancialMetricsResponse,
     FinancialMetricsCreate
 )
+from app.services.metrics_service import MetricsService
 
 router = APIRouter(prefix="/metrics", tags=["metrics"])
 
 # Metrics endpoints power the dashboard KPIs and the document-level metric detail views.
-
-
-# ---------------------------
-# Helpers
-# ---------------------------
-
-def format_currency(amount: float | None, currency: str = "EUR") -> str:
-    """Format amount as currency string."""
-    if amount is None:
-        return f"{currency} 0"
-
-    symbol = "€" if currency.upper() == "EUR" else "$"
-
-    if amount >= 1_000_000:
-        return f"{symbol}{amount / 1_000_000:.1f}M"
-    elif amount >= 1_000:
-        return f"{symbol}{amount / 1_000:.0f}K"
-    return f"{symbol}{amount:.0f}"
-
-
-def get_trend(change: float) -> str:
-    return "up" if change > 0 else "down" if change < 0 else "neutral"
-
-
-def calc_change(current: float, previous: float | None) -> float:
-    if not previous or previous == 0:
-        return 0.0
-    return ((current - previous) / previous) * 100
 
 
 # ---------------------------
@@ -111,7 +84,10 @@ async def create_metrics(
         db.add(metrics)
     else:
         for key, value in metrics_data.model_dump(exclude={"document_id"}).items():
-            setattr(metrics, key, value)
+            if key == "customers":
+                setattr(metrics, key, int(value) if value is not None else None)
+            else:
+                setattr(metrics, key, value)
 
     metrics.extracted_at = datetime.utcnow()
     await db.commit()
@@ -177,7 +153,7 @@ async def get_detailed_metrics(
 
         "growth_metrics": {
             "revenue": revenue,
-            "revenue_formatted": format_currency(revenue),
+            "revenue_formatted": MetricsService.format_currency(revenue),
             "customers": customers,
             "revenue_per_customer": (revenue / customers) if customers else 0,
             "cagr_target_2030": 50.0,
@@ -185,7 +161,7 @@ async def get_detailed_metrics(
 
         "profitability": {
             "ebitda": ebitda,
-            "ebitda_formatted": format_currency(ebitda),
+            "ebitda_formatted": MetricsService.format_currency(ebitda),
             "gross_margin_percent": gross_margin,
             "operating_margin_percent": operating_margin,
             "ebitda_margin_percent": (ebitda / revenue * 100) if revenue else 0,
@@ -193,7 +169,7 @@ async def get_detailed_metrics(
 
         "liquidity": {
             "cash": cash,
-            "cash_formatted": format_currency(cash),
+            "cash_formatted": MetricsService.format_currency(cash),
             "cash_to_revenue_percent": (cash / revenue * 100) if revenue else 0,
         },
 
@@ -229,16 +205,16 @@ async def get_dashboard_metrics(db: AsyncSession = Depends(get_db)):
     previous = rows[1] if len(rows) > 1 else None
 
     def change(curr, prev):
-        return calc_change(curr, prev)
+        return MetricsService.calculate_change(curr, prev)
 
     return {
         "revenue": {
-            "value": format_currency(latest.revenue),
+            "value": MetricsService.format_currency(latest.revenue),
             "change": round(change(
                 latest.revenue,
                 previous.revenue if previous else None
             ), 1),
-            "trend": get_trend(change(
+            "trend": MetricsService.get_trend(change(
                 latest.revenue,
                 previous.revenue if previous else None
             )),
@@ -249,29 +225,29 @@ async def get_dashboard_metrics(db: AsyncSession = Depends(get_db)):
                 latest.customers,
                 previous.customers if previous else None
             ), 1),
-            "trend": get_trend(change(
+            "trend": MetricsService.get_trend(change(
                 latest.customers,
                 previous.customers if previous else None
             )),
         },
         "cash": {
-            "value": format_currency(latest.cash),
+            "value": MetricsService.format_currency(latest.cash),
             "change": round(change(
                 latest.cash,
                 previous.cash if previous else None
             ), 1),
-            "trend": get_trend(change(
+            "trend": MetricsService.get_trend(change(
                 latest.cash,
                 previous.cash if previous else None
             )),
         },
         "ebitda": {
-            "value": format_currency(latest.ebitda),
+            "value": MetricsService.format_currency(latest.ebitda),
             "change": round(change(
                 latest.ebitda,
                 previous.ebitda if previous else None
             ), 1),
-            "trend": get_trend(change(
+            "trend": MetricsService.get_trend(change(
                 latest.ebitda,
                 previous.ebitda if previous else None
             )),

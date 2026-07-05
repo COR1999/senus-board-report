@@ -249,5 +249,8 @@ async def regenerate_report(document_id: int, db: AsyncSession = Depends(get_db)
         "status": report.status,
         "ai_commentary": report.ai_commentary,
         "key_findings": report.key_findings,
-        "financial_metrics": metrics.__dict__ if metrics else {},
+        "financial_metrics": (
+            FinancialMetricsResponse.model_validate(metrics).model_dump()
+            if metrics else {}
+        ),
     }
