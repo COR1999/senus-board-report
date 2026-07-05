@@ -27,4 +27,4 @@ wheels/
 *.swo
 venv/
 env/
-uploads/*
+uploads/
