@@ -1,277 +1,104 @@
-"""
-Report generation endpoints.
-Creates AI-powered financial analysis reports from uploaded documents.
-"""
+from __future__ import annotations
 
 import logging
-from datetime import datetime
-from typing import List
 
-from fastapi import APIRouter, HTTPException, Depends
-from sqlalchemy import select, delete
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.models.document import Document
 from app.models.financial_metrics import FinancialMetrics
-from app.models.report import Report
-from app.schemas.report import ReportResponse, ReportCreate
-from app.services.gemini_service import GeminiAnalysisService
+from app.services.report_service import ReportService
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
-gemini_service = GeminiAnalysisService()
+
+# Report endpoints support report creation, retrieval, regeneration, and dashboard payloads.
 
 
-@router.post("", response_model=ReportResponse)
-async def generate_report(
-    document_id: int,
-    db: AsyncSession = Depends(get_db),
-) -> ReportResponse:
-    """
-    Generate an AI-powered report from an uploaded document.
-    
-    Process:
-    1. Retrieve document and metrics
-    2. Generate executive summary using Gemini
-    3. Generate bullet-point summary
-    4. Save report to database
-    
-    Args:
-        document_id: ID of document to analyze
-        db: Database session
-        
-    Returns:
-        ReportResponse with AI commentary and summary
-        
-    Raises:
-        HTTPException: If document not found or generation fails
-    """
+@router.get("/{report_id}")
+async def get_report(report_id: int, db: AsyncSession = Depends(get_db)):
+    """Fetch a report by ID."""
+    service = ReportService(db)
+    report = await service.get_report(report_id)
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+    return report
+
+
+@router.get("/document/{document_id}")
+async def list_reports_for_document(document_id: int, db: AsyncSession = Depends(get_db)):
+    """List all reports for a document."""
+    service = ReportService(db)
+    return await service.list_reports(document_id=document_id)
+
+
+@router.post("/document/{document_id}")
+async def generate_or_get_report(document_id: int, db: AsyncSession = Depends(get_db)):
+    """Generate or retrieve a report for a document."""
     try:
-        # Fetch document
-        result = await db.execute(
-            select(Document).where(Document.id == document_id)
-        )
-        document = result.scalars().first()
-
-        if not document:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Document {document_id} not found"
-            )
-
-        # Fetch metrics
-        metrics_result = await db.execute(
-            select(FinancialMetrics).where(
-                FinancialMetrics.document_id == document_id
-            )
-        )
-        metrics = metrics_result.scalars().first()
-
-        metrics_dict = {
-            "revenue": metrics.revenue if metrics else None,
-            "customers": metrics.customers if metrics else None,
-            "cash": metrics.cash if metrics else None,
-            "ebitda": metrics.ebitda if metrics else None,
-            "gross_margin": metrics.gross_margin if metrics else None,
-            "operating_margin": metrics.operating_margin if metrics else None,
-        }
-
-        logger.info(f"Generating report for document {document_id}")
-
-        # Generate AI commentary
-        try:
-            ai_commentary = await gemini_service.generate_ai_commentary(
-                document.extracted_text,
-                metrics_dict,
-                company_name=document.filename.replace(".pdf", "")
-            )
-        except Exception as e:
-            logger.warning(f"Failed to generate AI commentary: {e}")
-            ai_commentary = "Report generation in progress. Please try again shortly."
-
-        # Generate summary bullets
-        try:
-            summary_bullets = await gemini_service.generate_report_summary(
-                document.extracted_text,
-                metrics_dict
-            )
-        except Exception as e:
-            logger.warning(f"Failed to generate summary: {e}")
-            summary_bullets = ["Report processing complete."]
-
-        # Create report record
-        report = Report(
-            document_id=document_id,
-            ai_commentary=ai_commentary,
-            summary=summary_bullets,
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow(),
-        )
-
-        db.add(report)
-        await db.commit()
-        await db.refresh(report)
-
-        logger.info(f"Report {report.id} created for document {document_id}")
-
-        return ReportResponse(
-            id=report.id,
-            document_id=report.document_id,
-            ai_commentary=report.ai_commentary,
-            summary=report.summary,
-            created_at=report.created_at,
-            updated_at=report.updated_at,
-        )
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error generating report: {e}", exc_info=True)
-        await db.rollback()
-        raise HTTPException(
-            status_code=500,
-            detail="Failed to generate report"
-        )
+        service = ReportService(db)
+        return await service.get_or_create_report(document_id)
+    except Exception as exc:
+        logger.error("Error generating report: %s", exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
-@router.get("/{report_id}", response_model=ReportResponse)
-async def get_report(
-    report_id: int,
-    db: AsyncSession = Depends(get_db),
-) -> ReportResponse:
-    """
-    Retrieve a report by ID.
-    
-    Args:
-        report_id: Report ID
-        db: Database session
-        
-    Returns:
-        ReportResponse
-        
-    Raises:
-        HTTPException: If report not found
-    """
-    try:
-        result = await db.execute(
-            select(Report).where(Report.id == report_id)
-        )
-        report = result.scalars().first()
+@router.post("/{report_id}/regenerate")
+async def regenerate_report(report_id: int, db: AsyncSession = Depends(get_db)):
+    """Force regenerate an existing report."""
+    service = ReportService(db)
+    report = await service.get_report(report_id)
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
 
-        if not report:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Report {report_id} not found"
-            )
-
-        return ReportResponse(
-            id=report.id,
-            document_id=report.document_id,
-            ai_commentary=report.ai_commentary,
-            summary=report.summary,
-            created_at=report.created_at,
-            updated_at=report.updated_at,
-        )
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error retrieving report: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail="Failed to retrieve report"
-        )
-
-
-@router.get("", response_model=List[ReportResponse])
-async def list_reports(
-    document_id: int = None,
-    skip: int = 0,
-    limit: int = 20,
-    db: AsyncSession = Depends(get_db),
-) -> List[ReportResponse]:
-    """
-    List reports with optional filtering by document.
-    
-    Args:
-        document_id: Filter by document (optional)
-        skip: Pagination offset
-        limit: Pagination limit
-        db: Database session
-        
-    Returns:
-        List of reports
-    """
-    try:
-        query = select(Report)
-        
-        if document_id:
-            query = query.where(Report.document_id == document_id)
-        
-        query = query.order_by(Report.created_at.desc()).offset(skip).limit(limit)
-        
-        result = await db.execute(query)
-        reports = result.scalars().all()
-
-        return [
-            ReportResponse(
-                id=r.id,
-                document_id=r.document_id,
-                ai_commentary=r.ai_commentary,
-                summary=r.summary,
-                created_at=r.created_at,
-                updated_at=r.updated_at,
-            )
-            for r in reports
-        ]
-
-    except Exception as e:
-        logger.error(f"Error listing reports: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail="Failed to list reports"
-        )
+    return await service.generate_report(report.document_id, force=True)
 
 
 @router.delete("/{report_id}")
-async def delete_report(
-    report_id: int,
-    db: AsyncSession = Depends(get_db),
-) -> dict:
-    """
-    Delete a report.
-    
-    Args:
-        report_id: Report ID
-        db: Database session
-        
-    Returns:
-        Confirmation message
-    """
-    try:
-        result = await db.execute(
-            delete(Report).where(Report.id == report_id)
-        )
+async def delete_report(report_id: int, db: AsyncSession = Depends(get_db)):
+    """Delete a report by ID."""
+    service = ReportService(db)
+    success = await service.delete_report(report_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Report not found")
+    return {"deleted": True}
 
-        if result.rowcount == 0:
-            raise HTTPException(
-                status_code=404,
-                detail="Report not found"
-            )
 
-        await db.commit()
-        logger.info(f"Report {report_id} deleted")
+@router.get("/{report_id}/dashboard")
+async def get_dashboard_data(report_id: int, db: AsyncSession = Depends(get_db)):
+    """Get formatted dashboard data for the frontend."""
+    service = ReportService(db)
+    report = await service.get_report(report_id)
 
-        return {"message": f"Report {report_id} deleted successfully"}
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
 
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error deleting report: {e}")
-        await db.rollback()
-        raise HTTPException(
-            status_code=500,
-            detail="Failed to delete report"
-        )
+    stmt = (
+        select(FinancialMetrics)
+        .where(FinancialMetrics.document_id == report.document_id)
+        .order_by(FinancialMetrics.extracted_at.desc())
+    )
+    result = await db.execute(stmt)
+    metrics = result.scalars().first()
+
+    return {
+        "report_id": report.id,
+        "document": {
+            "id": report.document_id,
+            "name": report.document.filename if report.document else "Unknown",
+        },
+        "financial_metrics": {
+            "revenue": metrics.revenue if metrics else 0,
+            "customers": metrics.customers if metrics else 0,
+            "cash": metrics.cash if metrics else 0,
+            "ebitda": metrics.ebitda if metrics else 0,
+            "gross_margin": metrics.gross_margin if metrics else 0,
+            "operating_margin": metrics.operating_margin if metrics else 0,
+        },
+        "key_findings": report.key_findings or [],
+        "ai_commentary": report.ai_commentary,
+        "generated_at": report.created_at,
+        "model": report.model_version,
+    }

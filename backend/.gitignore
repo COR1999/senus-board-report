@@ -1,8 +1,18 @@
+# Bytecode / Python cache
 __pycache__/
 *.py[cod]
 *$py.class
+
+# Compiled extensions
 *.so
+
+# Python environments
 .Python
+venv/
+env/
+.venv/
+
+# Build / packaging
 build/
 develop-eggs/
 dist/
@@ -18,12 +28,35 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+
+# Environment variables
 .env
 .env.local
 .env.*.local
+
+# IDEs / editors
 .vscode/
 .idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Swap files
 *.swp
 *.swo
-venv/
-env/
+
+# Testing / caches
+.pytest_cache/
+
+# Databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+*.log
+logs/
+
+# Misc project folders
+uploads/

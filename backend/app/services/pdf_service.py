@@ -19,12 +19,9 @@ class PDFExtractionService:
     def save_pdf(cls, file_content: bytes, filename: str) -> str:
         """Save PDF file and return file path."""
         cls.ensure_upload_dir()
-        
-        # Sanitize filename
         filename = Path(filename).name
         file_path = cls.UPLOAD_DIR / filename
         
-        # Save file
         with open(file_path, "wb") as f:
             f.write(file_content)
         
@@ -37,16 +34,13 @@ class PDFExtractionService:
             raise FileNotFoundError(f"PDF file not found: {file_path}")
         
         try:
-            # Open PDF
             pdf_document = fitz.open(file_path)
             extracted_text: str = ""
             
-            # Extract text from each page
             for page_num in range(len(pdf_document)):
                 page = pdf_document[page_num]
-                page_text = page.get_text()  # type: ignore
+                page_text = page.get_text()
                 
-                # Ensure it's a string
                 if isinstance(page_text, str):
                     extracted_text += f"\n--- Page {page_num + 1} ---\n"
                     extracted_text += page_text
@@ -63,10 +57,6 @@ class PDFExtractionService:
     @classmethod
     def extract_text_from_upload(cls, file_content: bytes, filename: str) -> Tuple[str, str]:
         """Upload PDF and extract text. Returns (file_path, extracted_text)."""
-        # Save file
         file_path = cls.save_pdf(file_content, filename)
-        
-        # Extract text
         extracted_text = cls.extract_text(file_path)
-        
         return file_path, extracted_text
