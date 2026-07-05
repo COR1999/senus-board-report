@@ -5,7 +5,7 @@ from typing import Optional, List, TYPE_CHECKING, Any
 
 from sqlalchemy import ForeignKey, String, Index, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.dialects.postgresql import JSONB   # or keep JSON
+from sqlalchemy.dialects.postgresql import JSONB
 
 from app.core.database import Base
 
@@ -20,19 +20,19 @@ class Report(Base):
 
     document_id: Mapped[int] = mapped_column(
         ForeignKey("documents.id", ondelete="CASCADE"),
-        unique=True,           # One report per document (remove if you want multiple versions)
+        unique=True,
         index=True,
-        nullable=False
+        nullable=False,
     )
 
-    # === Content fields ===
+    # Content generated for the report.
     ai_commentary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    key_findings: Mapped[Optional[List[str]]] = mapped_column(JSONB, nullable=True)   # explicit bullet points
-    summary: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)            # raw metrics / structured data
+    key_findings: Mapped[Optional[List[str]]] = mapped_column(JSONB, nullable=True)
+    summary: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
 
-    # === Metadata ===
-    status: Mapped[str] = mapped_column(String(20), default="pending", index=True)   # pending, completed, failed
-    generation_source: Mapped[Optional[str]] = mapped_column(String(30), nullable=True)  # gemini, fallback, manual
+    # Processing and lifecycle metadata.
+    status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
+    generation_source: Mapped[Optional[str]] = mapped_column(String(30), nullable=True)
     model_version: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     version: Mapped[int] = mapped_column(default=1, index=True)
 
@@ -41,7 +41,7 @@ class Report(Base):
         default=datetime.utcnow, onupdate=datetime.utcnow
     )
 
-    # Relationships
+    # Relationship back to the parent document.
     document: Mapped["Document"] = relationship(back_populates="reports")
 
     __table_args__ = (

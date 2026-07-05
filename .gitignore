@@ -32,6 +32,9 @@ Thumbs.db
 # SQLite
 backend/senus.db
 
+# Uploaded PDFs and generated assets
+backend/uploads/
+
 # Build
 dist/
 coverage/

@@ -23,4 +23,5 @@ class FinancialMetrics(Base):
     operating_margin: Mapped[Optional[float]] = mapped_column(default=None)
     extracted_at: Mapped[Optional[datetime]] = mapped_column(default=datetime.utcnow)
 
+    # Relationship back to the source document.
     document: Mapped["Document"] = relationship(back_populates="financial_metrics")
