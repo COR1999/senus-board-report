@@ -1,7 +1,7 @@
 // lib/data-service.ts
 import { mockMetrics, mockChartData, mockReports } from '@/lib/mock-data'
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000'
+const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '')
 
 export interface MetricValue {
   value: string
@@ -95,7 +95,7 @@ export async function uploadPDF(file: File): Promise<{ id: string; message: stri
     const formData = new FormData()
     formData.append('file', file)
 
-    const res = await fetch(`${API_URL}/documents/upload`, {
+    const res = await fetch(`${API_URL}/api/documents/upload`, {
       method: 'POST',
       body: formData,
     })
@@ -109,7 +109,7 @@ export async function uploadPDF(file: File): Promise<{ id: string; message: stri
 
 export async function extractFromPDF(documentId: string): Promise<ExtractedPdfData> {
   try {
-    const res = await fetch(`${API_URL}/documents/${documentId}/extract`, {
+    const res = await fetch(`${API_URL}/api/documents/${documentId}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
