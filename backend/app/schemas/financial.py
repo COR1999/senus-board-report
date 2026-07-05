@@ -57,6 +57,7 @@ class DocumentWithText(DocumentResponse):
     extracted_text: Optional[str] = None
     extracted_at: Optional[datetime] = None
     financial_metrics: Optional[FinancialMetricsResponse] = None
+    report_id: Optional[int] = Field(None, description="Associated report ID if available")
 
 
 # ==================== Report ====================

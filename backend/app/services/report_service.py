@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.report import Report
 from app.models.document import Document
+from app.models.financial_metrics import FinancialMetrics
 
 # ====================== Gemini Integration ======================
 try:
@@ -29,6 +30,108 @@ class ReportService:
             self.gemini = GeminiAnalysisService()
         else:
             self.gemini = None
+
+    @staticmethod
+    def _normalize_metric_value(value: Any, default: Any = 0, *, cast_int: bool = False) -> Any:
+        """Normalize metric values from Gemini or fallback payloads."""
+        if isinstance(value, dict):
+            if "value" in value:
+                value = value["value"]
+            elif "amount" in value:
+                value = value["amount"]
+            else:
+                return default
+
+        if isinstance(value, str):
+            cleaned = value.replace(",", "").strip()
+            try:
+                value = float(cleaned)
+            except ValueError:
+                return default
+
+        if cast_int:
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                return default
+
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return default
+
+    def _extract_metrics_payload(self, content: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        """Extract a normalized metrics payload from Gemini or fallback content."""
+        if not content:
+            return None
+
+        payload = content.get("financial_metrics")
+        if isinstance(payload, dict):
+            metrics_payload = payload
+        else:
+            payload = content.get("summary")
+            metrics_payload = payload if isinstance(payload, dict) else content
+
+        if not metrics_payload:
+            return None
+
+        return {
+            "revenue": self._normalize_metric_value(metrics_payload.get("revenue"), 0.0),
+            "customers": self._normalize_metric_value(metrics_payload.get("customers"), 0, cast_int=True),
+            "cash": self._normalize_metric_value(metrics_payload.get("cash"), 0.0),
+            "ebitda": self._normalize_metric_value(metrics_payload.get("ebitda"), 0.0),
+            "gross_margin": self._normalize_metric_value(metrics_payload.get("gross_margin"), 0.0),
+            "operating_margin": self._normalize_metric_value(metrics_payload.get("operating_margin"), 0.0),
+        }
+
+    async def _save_metrics(self, document_id: int, content: Optional[Dict[str, Any]]) -> Optional[FinancialMetrics]:
+        """Persist normalized metrics for a document, updating the existing row when present."""
+        metrics_payload = self._extract_metrics_payload(content)
+        if not metrics_payload:
+            return None
+
+        stmt = select(FinancialMetrics).where(FinancialMetrics.document_id == document_id)
+        result = await self.db.execute(stmt)
+        metrics = result.scalars().first()
+
+        if metrics is None:
+            metrics = FinancialMetrics(document_id=document_id)
+            self.db.add(metrics)
+
+        for key, value in metrics_payload.items():
+            setattr(metrics, key, value)
+
+        metrics.extracted_at = datetime.utcnow()
+
+        await self.db.flush()
+        return metrics
+
+    @staticmethod
+    def _parse_currency_value(raw_value: Any, default: float = 0.0) -> float:
+        """Parse values like 354.8k, 735,189, or 1.1m into floats."""
+        if raw_value is None:
+            return default
+
+        if isinstance(raw_value, (int, float)):
+            return float(raw_value)
+
+        if not isinstance(raw_value, str):
+            raw_value = str(raw_value)
+
+        cleaned = raw_value.replace(",", "").replace("€", "").replace("$", "").strip()
+        if not cleaned:
+            return default
+
+        multiplier = 1.0
+        suffix = cleaned[-1].lower() if cleaned else ""
+        if suffix in {"k", "m", "b"}:
+            multiplier = {"k": 1_000, "m": 1_000_000, "b": 1_000_000_000}[suffix]
+            cleaned = cleaned[:-1]
+
+        try:
+            return float(cleaned) * multiplier
+        except ValueError:
+            return default
 
     # ============================================================
     # Public API (ALL ASYNC)
@@ -114,14 +217,17 @@ class ReportService:
     # Core Generation Logic (ASYNC)
     # ============================================================
     async def _generate_with_gemini_or_fallback(
-        self, document: Document, report: Report
-    ) -> Report:
+    self, document: Document, report: Report
+) -> Report:
         """Core generation logic – Gemini first, then fallback."""
+
         report.status = "pending"
         await self.db.commit()
 
         try:
-            # Check if Gemini is available AND properly initialized
+            # ============================================================
+            # Generate content
+            # ============================================================
             if self.gemini and self.gemini.is_available() and self.gemini.client:
                 content = await self._call_gemini(document)
                 report.generation_source = "gemini"
@@ -129,21 +235,39 @@ class ReportService:
                 content = self._fallback_generation(document)
                 report.generation_source = "fallback"
 
-            report.ai_commentary = content.get("ai_commentary")
+            # ============================================================
+            # AI LAYER ONLY (no financial duplication anymore)
+            # ============================================================
+            report.ai_commentary = content.get("ai_commentary", "")
             report.key_findings = content.get("key_findings", [])
-            report.summary = content.get("summary", {})
-            report.status = "completed"
             report.model_version = content.get("model_version", "gemini-2.0-flash")
+            report.summary = {
+                "company_name": content.get("company_name") or document.filename,
+                "reporting_period": content.get("reporting_period") or "unknown",
+                "metrics": self._extract_metrics_payload(content) or {},
+                "key_findings": content.get("key_findings", []),
+                "ai_commentary": content.get("ai_commentary", ""),
+                "model_version": content.get("model_version", "gemini-2.0-flash"),
+            }
+
+            report.status = "completed"
+            try:
+                await self._save_metrics(document.id, content)
+            except Exception as e:
+                logger.warning(f"Failed to save financial metrics: {e}")
 
         except Exception as e:
             logger.error(f"Report generation failed for doc {document.id}: {e}")
+
             report.status = "failed"
             report.ai_commentary = f"Generation failed: {str(e)}"
             report.generation_source = "error"
 
         report.updated_at = datetime.utcnow()
+
         await self.db.commit()
         await self.db.refresh(report)
+
         return report
 
     async def _call_gemini(self, document: Document) -> Dict[str, Any]:
@@ -175,26 +299,41 @@ class ReportService:
             return self._fallback_generation(document)
 
     def _build_prompt(self, document: Document) -> str:
-        """Build the Gemini prompt for report generation."""
+        """Build prompt to extract structured financial data."""
         text = document.extracted_text or ""
         return f"""
-You are a senior financial analyst.
+    You are a senior financial analyst. Extract ALL financial metrics from this document.
 
-Create a professional financial report for the following document:
+    **Document:** {document.filename}
 
-**Filename:** {document.filename}
-**File Size:** {document.file_size} bytes
+    **Text:**
+    {text[:10000]}
 
-**Extracted Text (truncated):**
-{text[:8000]}
-
-Return ONLY valid JSON with this exact structure:
-{{
-  "ai_commentary": "2-3 paragraph executive summary in professional tone",
-  "key_findings": ["bullet 1", "bullet 2", "bullet 3", "bullet 4"],
-  "summary": {{ "revenue": "...", "ebitda": "...", "other": {{}} }},
-  "model_version": "gemini-2.0-flash"
-}}
+    Return ONLY valid JSON with this EXACT structure:
+    {{
+    "company_name": "string",
+    "reporting_period": "string (e.g., '30 June 2025')",
+    "financial_metrics": {{
+        "revenue": {{"value": number, "currency": "string", "period": "string"}},
+        "gross_profit": {{"value": number, "currency": "string"}},
+        "operating_profit": {{"value": number, "currency": "string"}},
+        "ebitda": {{"value": number, "currency": "string"}},
+        "net_income": {{"value": number, "currency": "string"}},
+        "customers": {{"value": number}},
+        "cash": {{"value": number, "currency": "string"}},
+        "debt": {{"value": number, "currency": "string"}}
+    }},
+    "key_insights": [
+        "insight 1",
+        "insight 2",
+        "insight 3"
+    ],
+    "growth_rates": {{
+        "revenue_yoy": "percentage string",
+        "customer_growth": "percentage string"
+    }},
+    "ai_commentary": "2-3 sentence executive summary"
+    }}
         """.strip()
 
     def _parse_gemini_response(self, response: Any) -> Dict[str, Any]:
@@ -213,34 +352,143 @@ Return ONLY valid JSON with this exact structure:
         return self._fallback_generation(None)
 
     def _fallback_generation(self, document: Optional[Document]) -> Dict[str, Any]:
-        """Generate fallback content when Gemini is unavailable."""
+        """Generate fallback content with proper financial data extraction."""
         if not document:
             return {
                 "ai_commentary": "Report generation is currently unavailable.",
                 "key_findings": [],
-                "summary": {},
+                "summary": {
+                    "revenue": 0,
+                    "customers": 0,
+                    "cash": 0,
+                    "ebitda": 0,
+                    "gross_margin": 0,
+                    "operating_margin": 0,
+                },
             }
 
         text = document.extracted_text or ""
         findings = []
+        
+        # ============================================================
+        # Extract Revenue
+        # ============================================================
+        revenue = 0.0
+        revenue_patterns = [
+            r"Group\s+Revenue\s+(?:up\s+[\d.]+%\s+)?to\s+€?([\d,]+(?:\.\d+)?)\s*(k|m|b)?",
+            r"Turnover\s+€?([\d,]+(?:\.\d+)?)\s*(k|m|b)?",
+            r"(?:Group\s+)?[Rr]evenue[:\s]+€?([\d,]+(?:\.\d+)?)\s*(k|m|b)?",
+        ]
+        for pattern in revenue_patterns:
+            revenue_match = re.search(pattern, text, re.IGNORECASE)
+            if revenue_match:
+                revenue = self._parse_currency_value(
+                    f"{revenue_match.group(1)}{revenue_match.group(2) or ''}"
+                )
+                if revenue > 0:
+                    break
+        
+        # ============================================================
+        # Extract Cash
+        # ============================================================
+        cash = 0.0
+        cash_patterns = [
+            r"Cash\s+and\s+cash\s+equivalents\s+€?([\d,]+(?:\.\d+)?)\s*(k|m|b)?",
+            r"Cash\s+and\s+bank\s+debt\s+balances\s+were\s+€?([\d,]+(?:\.\d+)?)\s*(k|m|b)?",
+            r"[Cc]ash\s+(?:balance|position)[:\s]+€?([\d,]+(?:\.\d+)?)\s*(k|m|b)?",
+        ]
+        for pattern in cash_patterns:
+            cash_match = re.search(pattern, text, re.IGNORECASE)
+            if cash_match:
+                cash = self._parse_currency_value(
+                    f"{cash_match.group(1)}{cash_match.group(2) or ''}"
+                )
+                if cash > 0:
+                    break
+        
+        # Extract Operating Margin - simpler
+        operating_margin = 0.0
+        om_match = re.search(r"group\s+operating\s+loss\s+of\s+€?([\d,]+(?:\.\d+)?)\s*(k|m|b)?", text, re.IGNORECASE)
+        if om_match:
+            loss_val = self._parse_currency_value(
+                f"{om_match.group(1)}{om_match.group(2) or ''}"
+            )
+            if revenue > 0:
+                operating_margin = -(loss_val / revenue) * 100
+        
+        # Extract Gross Margin - simpler
+        gross_margin = 0.0
+        gm_match = re.search(r"gross\s+margin\s+of\s+([\d.]+)", text, re.IGNORECASE)
+        if gm_match:
+            try:
+                gross_margin = float(gm_match.group(1))
+            except (ValueError, IndexError):
+                gross_margin = 0.0
+        
+        # ============================================================
+        # Extract EBITDA
+        # ============================================================
+        ebitda = 0.0
+        ebitda_patterns = [
+            r"EBITDA[:\s]+€?([\d,]+(?:\.\d+)?)\s*(k|m|b)?",
+            r"[Ee]BITDA\s+of\s+€?([\d,]+(?:\.\d+)?)\s*(k|m|b)?",
+        ]
+        for pattern in ebitda_patterns:
+            ebitda_match = re.search(pattern, text, re.IGNORECASE)
+            if ebitda_match:
+                ebitda = self._parse_currency_value(
+                    f"{ebitda_match.group(1)}{ebitda_match.group(2) or ''}"
+                )
+                if ebitda > 0:
+                    break
+        
+        # Extract Customers - simpler version
+        customers = 0
+        customers_match = re.search(r"(\d+)\s+customer", text, re.IGNORECASE)
+        if customers_match:
+            try:
+                customers = int(customers_match.group(1))
+            except (ValueError, IndexError):
+                customers = 0
 
-        if re.search(r"revenue|sales", text, re.I):
-            findings.append("Revenue figures detected.")
-        if re.search(r"ebitda|cash flow", text, re.I):
-            findings.append("EBITDA or cash flow data present.")
-        if re.search(r"margin", text, re.I):
-            findings.append("Margin metrics identified.")
+        
+        # ============================================================
+        # Generate Key Findings
+        # ============================================================
+        if revenue > 0:
+            findings.append(f"Revenue of €{revenue:,.0f}")
+        if cash > 0:
+            findings.append(f"Cash position of €{cash:,.0f}")
+        if gross_margin > 0:
+            findings.append(f"Gross margin of {gross_margin:.1f}%")
+        if customers > 0:
+            findings.append(f"{customers:,} customer accounts")
+        if ebitda > 0:
+            findings.append(f"EBITDA of €{ebitda:,.0f}")
+
+        # ============================================================
+        # Generate AI Commentary
+        # ============================================================
+        commentary = f"Financial analysis of {document.filename}. "
+        if revenue > 0:
+            commentary += f"Revenue: €{revenue:,.0f}. "
+        if customers > 0:
+            commentary += f"Customers: {customers:,}. "
+        if cash > 0:
+            commentary += f"Cash: €{cash:,.0f}. "
+        if gross_margin > 0:
+            commentary += f"Gross margin: {gross_margin:.1f}%."
 
         return {
-            "ai_commentary": (
-                f"Fallback report for {document.filename}. "
-                "AI service is currently unavailable. Basic content generated."
-            ),
-            "key_findings": findings or ["Unable to extract automatic key findings."],
+            "ai_commentary": commentary,
+            "key_findings": findings if findings else ["Document processed successfully."],
             "summary": {
-                "filename": document.filename,
-                "file_size": document.file_size,
-                "status": "fallback",
+                "revenue": {"value": revenue, "currency": "EUR"},
+                "customers": customers,
+                "cash": {"value": cash, "currency": "EUR"},
+                "ebitda": {"value": ebitda, "currency": "EUR"},
+                "gross_margin": gross_margin,
+                "operating_margin": operating_margin,
             },
             "model_version": "fallback-v1",
         }
