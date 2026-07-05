@@ -4,13 +4,14 @@ node_modules/
 out/
 
 # Python
-backend/.venv/
-backend/venv/
 __pycache__/
 *.py[cod]
 *.egg-info/
 dist/
 build/
+venv/
+backend/venv/
+backend/.venv/
 
 # Environment
 .env
@@ -32,16 +33,8 @@ Thumbs.db
 # SQLite
 backend/senus.db
 
-# Uploaded PDFs and generated assets
+# Uploads
 backend/uploads/
 
-# Build
-dist/
+# Coverage
 coverage/
-
-# Python virtual env
-venv/
-backend/venv/
-
-# SQLite database
-backend/senus.db
