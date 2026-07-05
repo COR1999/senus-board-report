@@ -14,6 +14,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
 
+# Report endpoints support report creation, retrieval, regeneration, and dashboard payloads.
+
 
 @router.get("/{report_id}")
 async def get_report(report_id: int, db: AsyncSession = Depends(get_db)):

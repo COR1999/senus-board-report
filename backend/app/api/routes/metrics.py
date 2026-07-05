@@ -15,6 +15,8 @@ from app.schemas.financial import (
 
 router = APIRouter(prefix="/metrics", tags=["metrics"])
 
+# Metrics endpoints power the dashboard KPIs and the document-level metric detail views.
+
 
 # ---------------------------
 # Helpers

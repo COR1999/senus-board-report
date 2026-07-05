@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
 
+# Shared PDF extraction service for upload and document processing flows.
 pdf_service = PDFExtractionService()
 
 

@@ -23,7 +23,7 @@ class Document(Base):
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
     extracted_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
 
-    # Relationships
+    # One document can carry one metrics snapshot and multiple report versions.
     financial_metrics: Mapped[Optional["FinancialMetrics"]] = relationship(
         back_populates="document", cascade="all, delete-orphan"
     )
