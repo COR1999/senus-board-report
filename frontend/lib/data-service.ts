@@ -132,6 +132,28 @@ export async function getReports(): Promise<Report[]> {
   }
 }
 
+export interface DocumentItem {
+  id: number
+  filename: string
+  file_size: number | null
+  status: string
+  created_at: string
+}
+
+export async function getDocuments(): Promise<DocumentItem[]> {
+  try {
+    const res = await fetch(`${API_URL}/api/documents`, {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+    })
+    if (!res.ok) throw new Error(`Failed to fetch documents: ${res.statusText}`)
+    return res.json()
+  } catch (error) {
+    console.warn('Failed to fetch documents:', error)
+    return []
+  }
+}
+
 export async function uploadPDF(file: File): Promise<{ id: string; message: string }> {
   try {
     const formData = new FormData()
