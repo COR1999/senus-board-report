@@ -5,6 +5,9 @@ from app.schemas.financial import (
     FinancialMetricsBase,
     FinancialMetricsCreate,
     FinancialMetricsResponse,
+    # Dashboard Summary
+    KPIMetric,
+    DashboardSummaryResponse,
     # Document
     DocumentBase,
     DocumentCreate,
@@ -24,6 +27,8 @@ __all__ = [
     "FinancialMetricsBase",
     "FinancialMetricsCreate",
     "FinancialMetricsResponse",
+    "KPIMetric",
+    "DashboardSummaryResponse",
     "DocumentBase",
     "DocumentCreate",
     "DocumentResponse",

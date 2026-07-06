@@ -6,7 +6,7 @@ from httpx import AsyncClient, ASGITransport
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.pool import NullPool
+from sqlalchemy.pool import StaticPool
 import os
 
 from app.core.database import Base, get_db
@@ -35,7 +35,7 @@ async def test_async_engine():
     engine = create_async_engine(
         TEST_DATABASE_URL,
         echo=False,
-        poolclass=NullPool,
+        poolclass=StaticPool,
     )
 
     # Create tables

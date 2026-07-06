@@ -1,13 +1,15 @@
 // lib/data-service.ts
-import { mockMetrics, mockChartData, mockReports } from '@/lib/mock-data'
-import { FALLBACK_INSIGHTS, type Insight } from '@/lib/insights'
+import { mockMetrics, mockChartData, mockReports, mockSegments } from '@/lib/mock-data'
 
 const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '')
 
 export interface MetricValue {
   value: string
   change: number
-  trend: 'up' | 'down'
+  trend: 'up' | 'down' | 'neutral'
+  /** Raw values, oldest -> newest, for sparkline rendering. `null` means that
+   * document didn't report the field (missing, not zero). */
+  history: (number | null)[]
 }
 
 export interface Metrics {
@@ -18,8 +20,18 @@ export interface Metrics {
 }
 
 export interface ChartDataPoint {
-  month: string
-  revenue: number
+  /** Display label for the period, e.g. "Dec 2025". Not guaranteed monthly --
+   * filings may be half-yearly or irregular, so this is a label, not a fixed cadence. */
+  period: string
+  /** Revenue for this period. `null` means the document didn't report it (missing, not zero). */
+  revenue: number | null
+}
+
+export interface SegmentValue {
+  segment: string
+  value: number
+  /** 0-100, share of total revenue this segment represents */
+  percentage: number
 }
 
 export interface Report {
@@ -47,53 +59,32 @@ export async function getMetrics(): Promise<Metrics> {
   }
 }
 
-// export async function getChartData(): Promise<ChartDataPoint[]> {
-//   try {
-//     const res = await fetch(`${API_URL}/metrics`, {
-//       method: 'GET',
-//       headers: {
-//         'Content-Type': 'application/json',
-//       },
-//     })
-//     if (!res.ok) throw new Error(`Failed to fetch chart data: ${res.statusText}`)
-//     const data = await res.json()
-//     // Transform backend response to chart format if needed
-//     return mockChartData // TODO: Transform actual data from backend
-//   } catch (error) {
-//     console.warn('Failed to fetch chart data, using mock data:', error)
-//     return mockChartData
-//   }
-// }
 export async function getChartData(): Promise<ChartDataPoint[]> {
   try {
-    // For now, return mock chart data
-    // TODO: Add /api/metrics/chart endpoint to backend
-    return mockChartData
+    const res = await fetch(`${API_URL}/metrics/dashboard/revenue-trend`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    })
+    if (!res.ok) throw new Error(`Failed to fetch chart data: ${res.statusText}`)
+    return res.json()
   } catch (error) {
-    console.warn('Using mock chart data:', error)
+    console.warn('Failed to fetch from backend, using mock chart data:', error)
     return mockChartData
   }
 }
 
 /**
- * AI-generated board commentary from the current KPIs, via our own
- * /api/insights Next.js route (not the Python backend -- OpenAI is called
- * server-side there, keeping OPENAI_API_KEY out of the client bundle).
+ * Revenue split by customer segment (Government / Corporate / Agriculture).
+ * NOTE: there is no backend extraction for this yet -- segment data isn't
+ * captured anywhere in FinancialMetrics (see backend/docs/metrics-expansion-plan.md,
+ * which flags similar narrative-derived breakdowns like Channels/Bookings as
+ * needing separate LLM-based extraction work). This returns mock data only,
+ * by design, until that backend work exists.
  */
-export async function getAiInsights(metrics: Metrics): Promise<Insight[]> {
-  try {
-    const res = await fetch('/api/insights', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ metrics }),
-    })
-    if (!res.ok) throw new Error(`Failed to fetch insights: ${res.statusText}`)
-    const data = await res.json()
-    return data.insights
-  } catch (error) {
-    console.warn('Failed to fetch AI insights, using fallback:', error)
-    return FALLBACK_INSIGHTS
-  }
+export async function getSegmentBreakdown(): Promise<SegmentValue[]> {
+  return mockSegments
 }
 
 export async function getReports(): Promise<Report[]> {
