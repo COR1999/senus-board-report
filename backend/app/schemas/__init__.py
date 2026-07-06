@@ -5,8 +5,9 @@ from app.schemas.financial import (
     FinancialMetricsBase,
     FinancialMetricsCreate,
     FinancialMetricsResponse,
-    # Revenue Trend
-    RevenueTrendPoint,
+    # Dashboard Summary
+    KPIMetric,
+    DashboardSummaryResponse,
     # Document
     DocumentBase,
     DocumentCreate,
@@ -26,7 +27,8 @@ __all__ = [
     "FinancialMetricsBase",
     "FinancialMetricsCreate",
     "FinancialMetricsResponse",
-    "RevenueTrendPoint",
+    "KPIMetric",
+    "DashboardSummaryResponse",
     "DocumentBase",
     "DocumentCreate",
     "DocumentResponse",

@@ -6,7 +6,10 @@ const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').rep
 export interface MetricValue {
   value: string
   change: number
-  trend: 'up' | 'down'
+  trend: 'up' | 'down' | 'neutral'
+  /** Raw values, oldest -> newest, for sparkline rendering. `null` means that
+   * document didn't report the field (missing, not zero). */
+  history: (number | null)[]
 }
 
 export interface Metrics {

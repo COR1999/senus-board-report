@@ -3,7 +3,7 @@ Pydantic schemas for financial data.
 """
 
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Literal, Optional
 from pydantic import BaseModel, Field, ConfigDict
 
 
@@ -32,14 +32,28 @@ class FinancialMetricsResponse(FinancialMetricsBase):
     model_config = ConfigDict(from_attributes=True)
 
 
-# ==================== Revenue Trend ====================
-class RevenueTrendPoint(BaseModel):
-    """One point on the revenue trend chart."""
-    period: str = Field(..., description="Display label for the period, e.g. 'Dec 2025'")
-    revenue: Optional[float] = Field(
-        None,
-        description="Revenue for this period. Null means the document didn't report it -- never 0.",
+# ==================== Dashboard Summary ====================
+class KPIMetric(BaseModel):
+    """A single KPI card's data: current value, delta vs previous, and sparkline history."""
+    value: str = Field(..., description="Pre-formatted display value, e.g. '€836K'")
+    change: float = Field(..., description="Percent change vs previous period")
+    trend: Literal["up", "down", "neutral"]
+    history: List[Optional[float]] = Field(
+        default_factory=list,
+        description=(
+            "Raw numeric values, oldest→newest, for sparkline rendering. "
+            "A null entry means that document didn't report the field (missing, "
+            "not zero) -- never coerce missing data to 0."
+        ),
     )
+
+
+class DashboardSummaryResponse(BaseModel):
+    """Response for GET /metrics/dashboard/summary."""
+    revenue: KPIMetric
+    customers: KPIMetric
+    cash: KPIMetric
+    ebitda: KPIMetric
 
 
 # ==================== Document ====================

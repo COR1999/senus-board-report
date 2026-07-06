@@ -10,10 +10,10 @@ vi.mock('next/navigation', () => ({
 describe('DashboardContainer', () => {
   beforeEach(() => {
     vi.spyOn(dataService, 'getMetrics').mockResolvedValue({
-      revenue: { value: 'ANY_REVENUE', change: 10, trend: 'up' },
-      customers: { value: 'ANY_CUSTOMERS', change: 5, trend: 'up' },
-      cash: { value: 'ANY_CASH', change: -2, trend: 'down' },
-      ebitda: { value: 'ANY_EBITDA', change: 3, trend: 'up' },
+      revenue: { value: 'ANY_REVENUE', change: 10, trend: 'up', history: [1, 2, 3] },
+      customers: { value: 'ANY_CUSTOMERS', change: 5, trend: 'up', history: [1, 2, 3] },
+      cash: { value: 'ANY_CASH', change: -2, trend: 'down', history: [3, 2, 1] },
+      ebitda: { value: 'ANY_EBITDA', change: 3, trend: 'up', history: [] },
     })
 
     vi.spyOn(dataService, 'getChartData').mockResolvedValue([])
