@@ -52,9 +52,18 @@ to a legitimate zero):
     "cash": Optional[float], "cash_prior": Optional[float],
     "ebitda": Optional[float], "ebitda_prior": Optional[float],
     "customers": Optional[int],
+    "bookings_value": Optional[float], "bookings_customers": Optional[int],
+    "bookings_pipeline": Optional[float],
     "gross_margin": Optional[float], "gross_margin_prior": Optional[float],
     "operating_margin": Optional[float], "operating_margin_prior": Optional[float],
 }
+
+`bookings_value`/`bookings_customers`/`bookings_pipeline` are narrative-only
+(same reliability class as `customers` -- not a structured table value),
+e.g. "pipeline deals of approx. €700k across 21 enterprise customers
+closed in the period (further approx. €500k of open pipeline)". No
+`_prior` variants: this filing doesn't state a prior-period comparative
+for bookings.
 
 `ebitda`/`gross_margin`/`operating_margin` are now *computed* from
 structured P&L/cash-flow lines (operating result + depreciation add-back,
@@ -477,6 +486,24 @@ class FinancialMetricsExtractor:
             r"(\d[\d,]*)\s+customers?",
         ], text)
 
+        # --- Bookings (narrative only -- same reliability class as
+        # customers above, not a structured table value). e.g. "pipeline
+        # deals of approx. €700k across 21 enterprise customers closed in
+        # the period (further approx. €500k of open pipeline)". \s+ (not a
+        # literal space) between words since this filing's OCR text wraps
+        # mid-sentence with real newlines. ---
+        bookings_match = re.search(
+            r"pipeline\s+deals\s+of\s+approx\.?\s*[€$£]?([\d,.]+\s*[kKmMbB]?)"
+            r"\s+across\s+(\d+)\s+enterprise\s+customers\s+closed",
+            text, re.IGNORECASE,
+        )
+        bookings_value_raw = bookings_match.group(1) if bookings_match else None
+        bookings_customers_raw = bookings_match.group(2) if bookings_match else None
+
+        bookings_pipeline_raw = cls._find_first([
+            r"further\s+approx\.?\s*[€$£]?([\d,.]+\s*[kKmMbB]?)\s+of\s+open\s+pipeline",
+        ], text)
+
         # -----------------------------------------------------
         # NORMALISE
         # -----------------------------------------------------
@@ -499,6 +526,9 @@ class FinancialMetricsExtractor:
         capital_employed = cls._to_number_or_none(capital_employed_raw)
         capital_employed_prior = cls._to_number_or_none(capital_employed_prior_raw)
         customers = int(customers_raw.replace(",", "")) if customers_raw else None
+        bookings_value = cls._to_number_or_none(bookings_value_raw)
+        bookings_customers = int(bookings_customers_raw) if bookings_customers_raw else None
+        bookings_pipeline = cls._to_number_or_none(bookings_pipeline_raw)
 
         # net_cash_used_operating and total_debt are stored as positive
         # magnitudes (this filing prints them as negative/liability figures
@@ -571,6 +601,9 @@ class FinancialMetricsExtractor:
             "ebitda": ebitda,
             "ebitda_prior": ebitda_prior,
             "customers": customers,
+            "bookings_value": bookings_value,
+            "bookings_customers": bookings_customers,
+            "bookings_pipeline": bookings_pipeline,
             "gross_margin": gross_margin,
             "gross_margin_prior": gross_margin_prior,
             "operating_margin": operating_margin,
@@ -607,6 +640,7 @@ class FinancialMetricsExtractor:
                 "cash", "cash_prior",
                 "ebitda", "ebitda_prior",
                 "customers",
+                "bookings_value", "bookings_customers", "bookings_pipeline",
                 "gross_margin", "gross_margin_prior",
                 "operating_margin", "operating_margin_prior",
             )

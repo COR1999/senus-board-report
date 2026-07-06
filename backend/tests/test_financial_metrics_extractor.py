@@ -67,6 +67,10 @@ Net Cash used in operating activities
 -450,181
 
 Senus recorded revenue of €836,991, serving 138 customer accounts.
+
+Continued momentum with agri corporates and financial institutions with pipeline deals of
+approx. €700k across 21 enterprise customers closed in the period (further approx. €500k
+of open pipeline).
 """
 
 
@@ -89,6 +93,32 @@ class TestExtractComputesEbitdaFromStructuredLines:
         # rewritten to fix -- "EBITDA positive during FY2028" must never
         # produce ebitda=2028 or similar narrative leakage.
         assert result["ebitda"] != 2028
+
+
+class TestExtractBookings:
+    r"""
+    Narrative-only, same reliability class as `customers` (not a
+    structured table value) -- e.g. "pipeline deals of approx. €700k
+    across 21 enterprise customers closed in the period (further approx.
+    €500k of open pipeline)". The real filing wraps this sentence across
+    multiple OCR'd lines, so SYNTHETIC_FILING mirrors that exact wrapping
+    to make sure `\s+` (not literal spaces) correctly bridges the linebreaks.
+    """
+
+    def test_extracts_closed_value_and_customer_count(self):
+        result = FME.extract(SYNTHETIC_FILING)
+        assert result["bookings_value"] == 700_000.0
+        assert result["bookings_customers"] == 21
+
+    def test_extracts_open_pipeline(self):
+        result = FME.extract(SYNTHETIC_FILING)
+        assert result["bookings_pipeline"] == 500_000.0
+
+    def test_missing_bookings_sentence_is_none_not_zero(self):
+        result = FME.extract("No bookings narrative in this document at all.")
+        assert result["bookings_value"] is None
+        assert result["bookings_customers"] is None
+        assert result["bookings_pipeline"] is None
 
 
 class TestExtractPriorPeriodComparative:
@@ -200,6 +230,9 @@ class TestExtractAgainstRealFiling:
         assert result["cash"] == 735_189.0
         assert result["ebitda"] == -473_739.0
         assert result["customers"] == 138
+        assert result["bookings_value"] == 700_000.0
+        assert result["bookings_customers"] == 21
+        assert result["bookings_pipeline"] == 500_000.0
 
     def test_extract_balance_sheet_matches_known_real_values(self, real_text):
         result = FME.extract_balance_sheet(real_text)

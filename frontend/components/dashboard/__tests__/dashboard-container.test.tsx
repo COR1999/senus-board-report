@@ -18,6 +18,7 @@ describe('DashboardContainer', () => {
       cash_runway: { value: 'ANY_CASH_RUNWAY', change: 1, trend: 'up', history: [] },
       interest_cover: { value: 'ANY_INTEREST_COVER', change: 1, trend: 'up', history: [] },
       roce: { value: 'ANY_ROCE', change: 1, trend: 'up', history: [] },
+      bookings: { value: 'ANY_BOOKINGS', change: 0, trend: 'neutral', history: [] },
     })
 
     vi.spyOn(dataService, 'getChartData').mockResolvedValue([])
@@ -59,5 +60,12 @@ describe('DashboardContainer', () => {
     expect(await screen.findByText('ANY_CASH_RUNWAY')).toBeInTheDocument()
     expect(await screen.findByText('ANY_INTEREST_COVER')).toBeInTheDocument()
     expect(await screen.findByText('ANY_ROCE')).toBeInTheDocument()
+  })
+
+  it('renders the Bookings KPI card with an explanatory subtitle', async () => {
+    render(<DashboardContainer />)
+
+    expect(await screen.findByText('ANY_BOOKINGS')).toBeInTheDocument()
+    expect(await screen.findByText('new business closed this period')).toBeInTheDocument()
   })
 })

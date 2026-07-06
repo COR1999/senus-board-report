@@ -45,6 +45,9 @@ _COLUMNS_ADDED_AFTER_INITIAL_RELEASE = {
         ("ebitda_prior", "FLOAT"),
         ("gross_margin_prior", "FLOAT"),
         ("operating_margin_prior", "FLOAT"),
+        ("bookings_value", "FLOAT"),
+        ("bookings_customers", "INTEGER"),
+        ("bookings_pipeline", "FLOAT"),
     ],
 }
 

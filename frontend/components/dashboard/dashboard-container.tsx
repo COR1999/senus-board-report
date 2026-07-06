@@ -17,7 +17,7 @@ import {
   type SegmentValue,
   type Report,
 } from '@/lib/data-service'
-import { DollarSign, Users, Wallet, TrendingUp, Percent, Clock, ShieldCheck, Target } from 'lucide-react'
+import { DollarSign, Users, Wallet, TrendingUp, Percent, Clock, ShieldCheck, Target, Briefcase } from 'lucide-react'
 
 export function DashboardContainer() {
   const [metrics, setMetrics] = useState<Metrics | null>(null)
@@ -71,8 +71,8 @@ export function DashboardContainer() {
     return (
       <DashboardShell title="Executive Dashboard">
         <div className="animate-pulse space-y-4">
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-            {[...Array(4)].map((_, i) => (
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
+            {[...Array(5)].map((_, i) => (
               <div key={i} className="h-32 bg-muted rounded" />
             ))}
           </div>
@@ -86,6 +86,11 @@ export function DashboardContainer() {
     { key: 'customers' as const, title: 'Active Customers', icon: Users, timeframe: 'vs last quarter' },
     { key: 'cash' as const, title: 'Cash Position', icon: Wallet, timeframe: 'vs last month' },
     { key: 'ebitda' as const, title: 'EBITDA', icon: TrendingUp, timeframe: 'vs target' },
+    // "Bookings" = new contract value signed/closed in the period (distinct
+    // from Revenue, which is recognised over time as work is delivered) --
+    // the subtitle spells this out since it's finance/SaaS jargon that
+    // isn't self-evident from the number alone.
+    { key: 'bookings' as const, title: 'Bookings', icon: Briefcase, timeframe: 'new business closed this period' },
   ]
 
   // Cash & Liquidity / Solvency & Leverage / Returns / Profitability --
@@ -102,7 +107,7 @@ export function DashboardContainer() {
   return (
     <DashboardShell title="Executive Dashboard" description="Welcome to your AI-powered board reporting platform">
       {/* Growth & Revenue / Profitability KPI Cards */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
         {metricConfig.map(({ key, title, icon: Icon, timeframe }) => (
           <KpiCard
             key={key}

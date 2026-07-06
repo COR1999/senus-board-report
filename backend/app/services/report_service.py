@@ -125,6 +125,12 @@ class ReportService:
         metrics.gross_margin_prior = self._plain_metric_value(metrics_data.get("gross_margin_prior"))
         metrics.operating_margin_prior = self._plain_metric_value(metrics_data.get("operating_margin_prior"))
 
+        # Bookings -- narrative-only, same missing-means-None handling as
+        # the _prior fields above (never defaulted to 0).
+        metrics.bookings_value = self._plain_metric_value(metrics_data.get("bookings_value"))
+        metrics.bookings_customers = self._plain_metric_value(metrics_data.get("bookings_customers"))
+        metrics.bookings_pipeline = self._plain_metric_value(metrics_data.get("bookings_pipeline"))
+
         metrics.extracted_at = datetime.utcnow()
 
         await self.db.commit()
