@@ -18,6 +18,10 @@ describe('DashboardContainer', () => {
 
     vi.spyOn(dataService, 'getChartData').mockResolvedValue([])
 
+    vi.spyOn(dataService, 'getAiInsights').mockResolvedValue([
+      { text: 'ANY_INSIGHT_TEXT', type: 'positive' },
+    ])
+
     vi.spyOn(dataService, 'getReports').mockResolvedValue([
       { id: 1, name: 'ANY_REPORT', date: 'x', status: 'completed' },
     ])

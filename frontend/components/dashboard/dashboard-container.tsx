@@ -131,7 +131,7 @@ export function DashboardContainer() {
               <RevenueChart data={chartData} />
             </div>
             <div>
-              <AiInsights />
+              <AiInsights metrics={metrics} />
             </div>
           </div>
 
