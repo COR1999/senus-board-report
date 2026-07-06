@@ -119,6 +119,7 @@ export function DashboardContainer() {
                 value={metrics[key].value}
                 changePercentage={metrics[key].change}
                 trend={metrics[key].trend}
+                history={metrics[key].history} // sparkline data, see KpiCard/KpiSparkline
                 icon={Icon}
                 timeframe={timeframe}
               />

@@ -70,4 +70,48 @@ describe('KpiCard', () => {
     )
     expect(container.textContent).toContain('vs target')
   })
+
+  it('renders neutral trend without crashing', () => {
+    const { container } = render(
+      <KpiCard
+        title="Cash"
+        value="€0"
+        changePercentage={0}
+        trend="neutral"
+        icon={TrendingUp}
+      />
+    )
+    expect(container.textContent).toContain('0%')
+  })
+
+  it('renders a sparkline when history has 2+ points', () => {
+    const { container } = render(
+      <KpiCard
+        title="Revenue"
+        value="€836,000"
+        changePercentage={12.5}
+        trend="up"
+        icon={TrendingUp}
+        history={[100, 200, 300]}
+      />
+    )
+    expect(container.querySelector('.h-10.w-24')).not.toBeNull()
+  })
+
+  it('renders no sparkline when history is omitted, empty, or single-point', () => {
+    const { container: noHistory } = render(
+      <KpiCard title="Revenue" value="€836,000" changePercentage={12.5} trend="up" icon={TrendingUp} />
+    )
+    expect(noHistory.querySelector('.h-10.w-24')).toBeNull()
+
+    const { container: emptyHistory } = render(
+      <KpiCard title="Revenue" value="€836,000" changePercentage={12.5} trend="up" icon={TrendingUp} history={[]} />
+    )
+    expect(emptyHistory.querySelector('.h-10.w-24')).toBeNull()
+
+    const { container: singlePoint } = render(
+      <KpiCard title="Revenue" value="€836,000" changePercentage={12.5} trend="up" icon={TrendingUp} history={[100]} />
+    )
+    expect(singlePoint.querySelector('.h-10.w-24')).toBeNull()
+  })
 })

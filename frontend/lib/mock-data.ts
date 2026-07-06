@@ -4,21 +4,25 @@ export const mockMetrics = {
     value: '€836,991',
     change: 38,
     trend: 'up' as const,
+    history: [420000, 480000, 510000, 560000, 610000, 705000, 780000, 836991],
   },
   customers: {
     value: '158',
     change: 2.5,
     trend: 'up' as const,
+    history: [120, 128, 135, 140, 148, 152, 155, 158],
   },
   cash: {
     value: '€1.2M',
     change: 15,
     trend: 'up' as const,
+    history: [980000, 1010000, 1055000, 1090000, 1140000, 1180000, 1200000],
   },
   ebitda: {
     value: '€150K',
     change: 22,
     trend: 'up' as const,
+    history: [98000, 105000, 112000, 120000, 132000, 141000, 150000],
   },
 }
 

@@ -1,6 +1,7 @@
 import * as React from "react"
-import { ArrowUpRight, ArrowDownRight } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { getTrendStyle, type Trend } from "@/lib/format"
+import { KpiSparkline } from "@/components/dashboard/kpi-sparkline"
 import {
   Card,
   CardHeader,
@@ -23,9 +24,9 @@ export interface KpiCardProps extends React.ComponentPropsWithoutRef<typeof Card
    */
   changePercentage: number
   /**
-   * The direction of the trend (up or down)
+   * The direction of the trend (up, down, or neutral)
    */
-  trend: "up" | "down"
+  trend: Trend
   /**
    * A Lucide React icon component to display in the top right
    */
@@ -35,6 +36,11 @@ export interface KpiCardProps extends React.ComponentPropsWithoutRef<typeof Card
    * @default "vs last month"
    */
   timeframe?: string
+  /**
+   * Raw historical values, oldest -> newest, for an inline sparkline.
+   * Omitted, empty, or single-point history renders no sparkline.
+   */
+  history?: (number | null)[]
 }
 
 /**
@@ -48,10 +54,11 @@ export function KpiCard({
   trend,
   icon: Icon,
   timeframe = "vs last month",
+  history,
   className,
   ...props
 }: KpiCardProps) {
-  const isUp = trend === "up"
+  const { textClass, bgClass, Icon: TrendIcon } = getTrendStyle(trend)
 
   return (
     <Card
@@ -77,23 +84,21 @@ export function KpiCard({
         <div className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
           {value}
         </div>
-        <div className="flex items-center gap-1.5 text-xs font-medium">
-          <span
-            className={cn(
-              "inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-xs font-semibold",
-              isUp
-                ? "bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400"
-                : "bg-rose-500/10 text-rose-600 dark:bg-rose-500/20 dark:text-rose-400"
-            )}
-          >
-            {isUp ? (
-              <ArrowUpRight className="h-3 w-3" strokeWidth={2.5} />
-            ) : (
-              <ArrowDownRight className="h-3 w-3" strokeWidth={2.5} />
-            )}
-            {changePercentage}%
-          </span>
-          <span className="text-muted-foreground font-normal">{timeframe}</span>
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5 text-xs font-medium">
+            <span
+              className={cn(
+                "inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-xs font-semibold",
+                bgClass,
+                textClass
+              )}
+            >
+              <TrendIcon className="h-3 w-3" strokeWidth={2.5} />
+              {changePercentage}%
+            </span>
+            <span className="text-muted-foreground font-normal">{timeframe}</span>
+          </div>
+          {history && <KpiSparkline history={history} trend={trend} />}
         </div>
       </CardContent>
     </Card>
