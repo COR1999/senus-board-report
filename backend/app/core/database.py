@@ -6,8 +6,10 @@ Uses SQLAlchemy 2.0 async patterns.
 import logging
 from typing import AsyncGenerator
 
+from sqlalchemy import inspect, text
 from sqlalchemy.ext.asyncio import (
     create_async_engine,
+    AsyncConnection,
     AsyncSession,
     async_sessionmaker,
 )
@@ -26,6 +28,39 @@ class Base(DeclarativeBase):
 # Global engine and session factory
 _engine = None
 _async_session_maker = None
+
+# (table, [(column_name, sql_type), ...]) for columns added to an
+# ALREADY-EXISTING table after its initial release. `Base.metadata.create_all`
+# only creates missing *tables* -- it never alters an existing table's
+# columns, so a table that already exists in production (financial_metrics,
+# live on Railway since feature/kpi-system) needs this instead. There's no
+# Alembic in this project, so this is a small, targeted, idempotent
+# alternative: check via the inspector whether each column already exists
+# before adding it, rather than relying on non-portable `IF NOT EXISTS`
+# column syntax. Safe to run every startup.
+_COLUMNS_ADDED_AFTER_INITIAL_RELEASE = {
+    "financial_metrics": [
+        ("revenue_prior", "FLOAT"),
+        ("cash_prior", "FLOAT"),
+        ("ebitda_prior", "FLOAT"),
+        ("gross_margin_prior", "FLOAT"),
+        ("operating_margin_prior", "FLOAT"),
+    ],
+}
+
+
+async def _add_missing_columns(conn: AsyncConnection) -> None:
+    def get_existing_columns(sync_conn, table_name: str) -> set[str]:
+        return {col["name"] for col in inspect(sync_conn).get_columns(table_name)}
+
+    for table_name, columns in _COLUMNS_ADDED_AFTER_INITIAL_RELEASE.items():
+        existing = await conn.run_sync(get_existing_columns, table_name)
+        for column_name, sql_type in columns:
+            if column_name not in existing:
+                logger.info(f"Adding missing column {table_name}.{column_name}")
+                await conn.execute(
+                    text(f'ALTER TABLE {table_name} ADD COLUMN {column_name} {sql_type}')
+                )
 
 
 async def init_db():
@@ -61,7 +96,8 @@ async def init_db():
     # Create all tables
     async with _engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    
+        await _add_missing_columns(conn)
+
     logger.info("✅ Database initialized")
 
 

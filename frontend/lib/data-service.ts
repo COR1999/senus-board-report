@@ -18,6 +18,18 @@ export interface Metrics {
   customers: MetricValue
   cash: MetricValue
   ebitda: MetricValue
+  // Cash & Liquidity / Solvency & Leverage / Returns / Profitability --
+  // see backend/docs/metrics-expansion-plan.md. Field names match the
+  // backend's JSON keys exactly (snake_case) -- getMetrics() returns
+  // res.json() directly with no key-mapping layer, so these must line up
+  // with DashboardSummaryResponse's actual field names, not be renamed to
+  // camelCase. `value` may be "N/A" (no underlying data) or, for
+  // cash_runway specifically, "Cash flow +" when operations aren't
+  // burning cash (not a numeric months figure).
+  ebitda_margin: MetricValue
+  cash_runway: MetricValue
+  interest_cover: MetricValue
+  roce: MetricValue
 }
 
 export interface ChartDataPoint {

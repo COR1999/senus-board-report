@@ -14,6 +14,10 @@ describe('DashboardContainer', () => {
       customers: { value: 'ANY_CUSTOMERS', change: 5, trend: 'up', history: [1, 2, 3] },
       cash: { value: 'ANY_CASH', change: -2, trend: 'down', history: [3, 2, 1] },
       ebitda: { value: 'ANY_EBITDA', change: 3, trend: 'up', history: [] },
+      ebitda_margin: { value: 'ANY_EBITDA_MARGIN', change: 1, trend: 'up', history: [] },
+      cash_runway: { value: 'ANY_CASH_RUNWAY', change: 1, trend: 'up', history: [] },
+      interest_cover: { value: 'ANY_INTEREST_COVER', change: 1, trend: 'up', history: [] },
+      roce: { value: 'ANY_ROCE', change: 1, trend: 'up', history: [] },
     })
 
     vi.spyOn(dataService, 'getChartData').mockResolvedValue([])
@@ -45,5 +49,15 @@ describe('DashboardContainer', () => {
 
     // proves dashboard loaded
     expect(await screen.findByText('Executive Dashboard')).toBeInTheDocument()
+  })
+
+  it('renders the Cash, Solvency & Returns KPI section', async () => {
+    render(<DashboardContainer />)
+
+    expect(await screen.findByText('Cash, Solvency & Returns')).toBeInTheDocument()
+    expect(await screen.findByText('ANY_EBITDA_MARGIN')).toBeInTheDocument()
+    expect(await screen.findByText('ANY_CASH_RUNWAY')).toBeInTheDocument()
+    expect(await screen.findByText('ANY_INTEREST_COVER')).toBeInTheDocument()
+    expect(await screen.findByText('ANY_ROCE')).toBeInTheDocument()
   })
 })

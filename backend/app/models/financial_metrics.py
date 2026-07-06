@@ -29,6 +29,21 @@ class FinancialMetrics(Base):
     ebitda: Mapped[Optional[float]] = mapped_column(default=None)
     gross_margin: Mapped[Optional[float]] = mapped_column(default=None)
     operating_margin: Mapped[Optional[float]] = mapped_column(default=None)
+
+    # Prior-period comparative, extracted from the *same* filing's
+    # comparative column (e.g. "Turnover 354,813 340,931" -- most
+    # half-year/annual reports print the prior period right next to the
+    # current one). Lets YoY change/trend be computed for a single filing
+    # rather than only ever being 0%/neutral until a second document is
+    # ever uploaded. No `customers_prior`: the one narrative customer
+    # count in this filing is a fixed FY reference, not a period-over-period
+    # comparative pair, so there's nothing real to store there.
+    revenue_prior: Mapped[Optional[float]] = mapped_column(default=None)
+    cash_prior: Mapped[Optional[float]] = mapped_column(default=None)
+    ebitda_prior: Mapped[Optional[float]] = mapped_column(default=None)
+    gross_margin_prior: Mapped[Optional[float]] = mapped_column(default=None)
+    operating_margin_prior: Mapped[Optional[float]] = mapped_column(default=None)
+
     extracted_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
 
     # Relationship back to the source document.

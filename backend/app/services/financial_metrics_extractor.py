@@ -39,8 +39,8 @@ This rewrite fixes those issues by:
 
 This makes the extractor significantly more reliable for real-world annual reports.
 
-Public API (UNCHANGED)
-----------------------
+Public API
+----------
 
     FinancialMetricsExtractor.extract(text: str) -> Dict[str, Any]
 
@@ -48,17 +48,37 @@ Returns (each field is `None` when not found in the document, as opposed
 to a legitimate zero):
 
 {
-    "revenue": Optional[float],
-    "cash": Optional[float],
-    "ebitda": Optional[float],
+    "revenue": Optional[float], "revenue_prior": Optional[float],
+    "cash": Optional[float], "cash_prior": Optional[float],
+    "ebitda": Optional[float], "ebitda_prior": Optional[float],
     "customers": Optional[int],
-    "gross_margin": Optional[float],
-    "operating_margin": Optional[float]
+    "gross_margin": Optional[float], "gross_margin_prior": Optional[float],
+    "operating_margin": Optional[float], "operating_margin_prior": Optional[float],
 }
+
+`ebitda`/`gross_margin`/`operating_margin` are now *computed* from
+structured P&L/cash-flow lines (operating result + depreciation add-back,
+gross profit / revenue, operating result / revenue) rather than searched
+for as narrative text -- many real filings (including the one this was
+built against) have no literal "EBITDA" line at all.
+
+`_prior` fields are the same filing's own comparative-period column (most
+half-year/annual reports print the prior period right next to the current
+one, e.g. "Turnover 354,813 340,931") -- this lets YoY change be computed
+from a single filing instead of only ever reading 0% until a second
+document exists.
+
+    FinancialMetricsExtractor.extract_balance_sheet(text: str) -> Dict[str, Any]
+
+A second, independent method for the Cash & Liquidity / Solvency & Leverage
+/ Returns fields that live on the separate BalanceSheetMetrics table (see
+backend/docs/metrics-expansion-plan.md) -- these come from the balance
+sheet and cash flow statement, not the P&L, and aren't part of `extract()`'s
+original contract.
 """
 
 import re
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 
 
 class FinancialMetricsExtractor:
@@ -263,7 +283,7 @@ class FinancialMetricsExtractor:
 
         return combined[:max_chars]
 
-        # =========================================================
+    # =========================================================
     # TABLE / LINE PARSING CORE
     # =========================================================
 
@@ -319,19 +339,82 @@ class FinancialMetricsExtractor:
             or cls._find_value_same_line(lines, keyword)
         )
 
+    @classmethod
+    def _find_pair_next_lines(cls, lines: List[str], keyword: str) -> Tuple[Optional[str], Optional[str]]:
+        """
+        Same idea as `_find_value_next_line`, but also captures the prior-
+        period comparative. This PDF's extraction lays each column out on
+        its own line:
+
+            Turnover
+            354,813
+            340,931
+
+        so the current-period value is the first numeric token found after
+        the label line, and the prior-period value is the first numeric
+        token found after *that*. Returns (None, None) if the label isn't
+        found at all, or (current, None) if a prior-period token isn't
+        found (e.g. no comparative column in this filing).
+        """
+        # Bounded lookahead (not an unbounded forward scan): a label can
+        # itself wrap onto a second line (e.g. "...more than one" / "year"),
+        # so the current/prior values don't always start at exactly i+1/i+2.
+        # Capped at 4 lines so a single-column filing with no comparative
+        # doesn't walk into a later, unrelated row's value.
+        _MAX_LOOKAHEAD = 4
+
+        for i, line in enumerate(lines):
+            if keyword not in line.lower():
+                continue
+
+            found: List[str] = []
+            for line_ahead in lines[i + 1 : i + 1 + _MAX_LOOKAHEAD]:
+                for token in line_ahead.split():
+                    if cls._is_number(token):
+                        found.append(token)
+                if len(found) >= 2:
+                    break
+
+            current = found[0] if len(found) > 0 else None
+            prior = found[1] if len(found) > 1 else None
+            return current, prior
+        return None, None
+
+    @classmethod
+    def _find_pair_same_line(cls, lines: List[str], keyword: str) -> Tuple[Optional[str], Optional[str]]:
+        """Handles "Turnover 354,813 340,931" all on one line."""
+        for line in lines:
+            if keyword in line.lower():
+                tokens = [t for t in line.split() if cls._is_number(t)]
+                current = tokens[0] if len(tokens) > 0 else None
+                prior = tokens[1] if len(tokens) > 1 else None
+                return current, prior
+        return None, None
+
+    @classmethod
+    def _extract_table_pair(cls, lines: List[str], keyword: str) -> Tuple[Optional[str], Optional[str]]:
+        current, prior = cls._find_pair_next_lines(lines, keyword)
+        if current is None:
+            current, prior = cls._find_pair_same_line(lines, keyword)
+        return current, prior
+
+    @classmethod
+    def _to_number_or_none(cls, raw: Optional[str]) -> Optional[float]:
+        return cls._to_number(raw) if raw is not None else None
+
     # =========================================================
-    # MAIN EXTRACTION
+    # SHARED EXTRACTION CORE
     # =========================================================
 
     @classmethod
-    def extract(cls, text: str) -> Dict[str, Any]:
-
+    def _extract_all(cls, text: str) -> Dict[str, Any]:
+        """
+        Parses every field `extract()` and `extract_balance_sheet()` need,
+        once, so both public methods can pull their own subset of keys
+        without re-running section isolation/table parsing twice.
+        """
         if not text:
             text = ""
-
-        # -----------------------------------------------------
-        # 1. SPLIT INTO STRUCTURED SECTIONS
-        # -----------------------------------------------------
 
         pnl = cls._get_pnl(text)
         balance = cls._get_balance_sheet(text)
@@ -340,94 +423,208 @@ class FinancialMetricsExtractor:
         pnl_lines = cls._clean_lines(pnl)
         balance_lines = cls._clean_lines(balance)
         cashflow_lines = cls._clean_lines(cashflow)
-        all_lines = cls._clean_lines(text)
 
-        # -----------------------------------------------------
-        # 2. REVENUE (TURNOVER FIRST — MOST RELIABLE)
-        # -----------------------------------------------------
+        # --- Revenue (turnover first -- most reliable label) ---
+        revenue_raw, revenue_prior_raw = cls._extract_table_pair(pnl_lines, "turnover")
+        if revenue_raw is None:
+            revenue_raw, revenue_prior_raw = cls._extract_table_pair(pnl_lines, "revenue")
 
-        revenue_raw = (
-            cls._extract_table_value(pnl_lines, "turnover")
-            or cls._extract_table_value(pnl_lines, "revenue")
+        # --- Cash (balance sheet only) ---
+        cash_raw, cash_prior_raw = cls._extract_table_pair(balance_lines, "cash and cash equivalents")
+
+        # --- P&L lines feeding computed EBITDA/margins and Solvency/Returns ---
+        cost_of_sales_raw, cost_of_sales_prior_raw = cls._extract_table_pair(pnl_lines, "cost of sales")
+        gross_profit_raw, gross_profit_prior_raw = cls._extract_table_pair(pnl_lines, "gross profit")
+        admin_raw, admin_prior_raw = cls._extract_table_pair(pnl_lines, "administrative expenses")
+        interest_raw, interest_prior_raw = cls._extract_table_pair(pnl_lines, "interest payable")
+
+        # Operating result: label varies with sign (loss vs profit). Whichever
+        # label matches determines the sign -- a "profit" row is a positive
+        # contribution, a "loss" row is negative (matching how this business's
+        # actual filing prints a loss as a plain positive magnitude on its own
+        # row, with "loss"/"profit" only distinguished by the label text, not
+        # a minus sign).
+        operating_result_raw, operating_result_prior_raw = cls._extract_table_pair(pnl_lines, "group operating loss")
+        operating_is_loss = operating_result_raw is not None
+        if operating_result_raw is None:
+            operating_result_raw, operating_result_prior_raw = cls._extract_table_pair(pnl_lines, "group operating profit")
+
+        # --- Cash flow statement lines ---
+        depreciation_raw, depreciation_prior_raw = cls._extract_table_pair(cashflow_lines, "depreciation")
+        working_capital_raw, working_capital_prior_raw = cls._extract_table_pair(cashflow_lines, "movements in working capital")
+        net_cash_operating_raw, net_cash_operating_prior_raw = cls._extract_table_pair(
+            cashflow_lines, "net cash used in operating activities"
         )
 
-        if not revenue_raw:
-            revenue_raw = cls._find_first([
-                r"revenue[^0-9]*?(\d[\d,]*\.?\d*\s*[kKmMbB]?)",
-            ], pnl)
-
-        # -----------------------------------------------------
-        # 3. CASH (BALANCE SHEET ONLY)
-        # -----------------------------------------------------
-
-        cash_raw = cls._extract_table_value(
-            balance_lines,
-            "cash and cash equivalents"
+        # --- Balance sheet lines (Solvency & Returns) ---
+        # Bank debt is only reliably structured under this label in this
+        # filing's balance sheet (the narrative "Cash and bank debt balances
+        # were €735.1k and €76.5k respectively" sentence is a fragile
+        # two-values-in-one-sentence fallback we don't need here). Matched
+        # on a substring that stays on one OCR'd line -- the full label
+        # ("...more than one year") wraps across two lines in this filing,
+        # so matching the full phrase would never hit.
+        debt_raw, debt_prior_raw = cls._extract_table_pair(
+            balance_lines, "amounts falling due after more than one"
+        )
+        capital_employed_raw, capital_employed_prior_raw = cls._extract_table_pair(
+            balance_lines, "total assets less current liabilities"
         )
 
-        if not cash_raw:
-            cash_raw = cls._find_first([
-                r"cash\s+and\s+cash\s+equivalents[^0-9]*?(\d[\d,]*)",
-            ], balance)
-
-        # -----------------------------------------------------
-        # 4. EBITDA (STRICT RULE: ONLY P&L ROW)
-        # -----------------------------------------------------
-        #
-        # IMPORTANT:
-        # We intentionally do NOT search narrative text anymore.
-        # If EBITDA is not in the P&L table, we return 0.
-        #
-        # This fixes the "FY2028 EBITDA" bug permanently.
-        # -----------------------------------------------------
-
-        ebitda_raw = cls._extract_table_value(pnl_lines, "ebitda")
-
-        # -----------------------------------------------------
-        # 5. CUSTOMERS (NARRATIVE + TABLE SAFE)
-        # -----------------------------------------------------
-
+        # --- Customers (narrative + table safe, no prior column exists) ---
         customers_raw = cls._find_first([
             r"serving\s+(\d[\d,]*)\s+customer",
             r"(\d[\d,]*)\s+customers?",
         ], text)
 
         # -----------------------------------------------------
-        # 6. MARGINS (USUALLY NOT IN TABLES)
+        # NORMALISE
         # -----------------------------------------------------
-
-        gross_margin_raw = cls._find_first([
-            r"gross\s+margin[^0-9]*?(\d[\d.]*)\s*%",
-        ], text)
-
-        operating_margin_raw = cls._find_first([
-            r"operating\s+margin[^0-9]*?(\d[\d.]*)\s*%",
-        ], text)
-
-        # -----------------------------------------------------
-        # 7. FINAL NORMALISATION
-        # -----------------------------------------------------
-
-        # `None` here means "not found in the document" -- distinct from a
-        # legitimately-zero value (e.g. a pre-revenue or break-even
-        # company), which callers need to be able to tell apart.
-        revenue = cls._to_number(revenue_raw) if revenue_raw is not None else None
-        cash = cls._to_number(cash_raw) if cash_raw is not None else None
-        ebitda = cls._to_number(ebitda_raw) if ebitda_raw is not None else None
-
+        revenue = cls._to_number_or_none(revenue_raw)
+        revenue_prior = cls._to_number_or_none(revenue_prior_raw)
+        cash = cls._to_number_or_none(cash_raw)
+        cash_prior = cls._to_number_or_none(cash_prior_raw)
+        cost_of_sales = cls._to_number_or_none(cost_of_sales_raw)
+        cost_of_sales_prior = cls._to_number_or_none(cost_of_sales_prior_raw)
+        gross_profit = cls._to_number_or_none(gross_profit_raw)
+        gross_profit_prior = cls._to_number_or_none(gross_profit_prior_raw)
+        administrative_expenses = cls._to_number_or_none(admin_raw)
+        administrative_expenses_prior = cls._to_number_or_none(admin_prior_raw)
+        interest_expense = cls._to_number_or_none(interest_raw)
+        interest_expense_prior = cls._to_number_or_none(interest_prior_raw)
+        depreciation = cls._to_number_or_none(depreciation_raw)
+        depreciation_prior = cls._to_number_or_none(depreciation_prior_raw)
+        working_capital_change = cls._to_number_or_none(working_capital_raw)
+        working_capital_change_prior = cls._to_number_or_none(working_capital_prior_raw)
+        capital_employed = cls._to_number_or_none(capital_employed_raw)
+        capital_employed_prior = cls._to_number_or_none(capital_employed_prior_raw)
         customers = int(customers_raw.replace(",", "")) if customers_raw else None
-        gross_margin = float(gross_margin_raw) if gross_margin_raw else None
-        operating_margin = float(operating_margin_raw) if operating_margin_raw else None
 
-        # -----------------------------------------------------
-        # 8. RETURN STRUCTURE (UNCHANGED API)
-        # -----------------------------------------------------
+        # net_cash_used_operating and total_debt are stored as positive
+        # magnitudes (this filing prints them as negative/liability figures
+        # -- "cash used" and "debt owed" read more naturally as magnitudes
+        # for burn-rate division and net-debt subtraction respectively).
+        net_cash_used_operating = cls._to_number_or_none(net_cash_operating_raw)
+        if net_cash_used_operating is not None:
+            net_cash_used_operating = abs(net_cash_used_operating)
+        net_cash_used_operating_prior = cls._to_number_or_none(net_cash_operating_prior_raw)
+        if net_cash_used_operating_prior is not None:
+            net_cash_used_operating_prior = abs(net_cash_used_operating_prior)
+
+        total_debt = cls._to_number_or_none(debt_raw)
+        if total_debt is not None:
+            total_debt = abs(total_debt)
+        total_debt_prior = cls._to_number_or_none(debt_prior_raw)
+        if total_debt_prior is not None:
+            total_debt_prior = abs(total_debt_prior)
+
+        operating_result = cls._to_number_or_none(operating_result_raw)
+        if operating_result is not None and operating_is_loss:
+            operating_result = -operating_result
+        operating_result_prior = cls._to_number_or_none(operating_result_prior_raw)
+        if operating_result_prior is not None and operating_is_loss:
+            operating_result_prior = -operating_result_prior
+
+        # EBITDA = operating result (EBIT) + depreciation/amortisation
+        # add-back. There is no literal "EBITDA" line in this filing (or
+        # many real filings) -- this reconciles the same way the cash flow
+        # statement's own "Adjustments for:" section does (loss + interest
+        # + depreciation), just starting from EBIT instead of loss-after-interest
+        # so interest doesn't need to be added back separately.
+        ebitda = (
+            operating_result + depreciation
+            if operating_result is not None and depreciation is not None
+            else None
+        )
+        ebitda_prior = (
+            operating_result_prior + depreciation_prior
+            if operating_result_prior is not None and depreciation_prior is not None
+            else None
+        )
+
+        gross_margin = (
+            gross_profit / revenue * 100
+            if gross_profit is not None and revenue
+            else None
+        )
+        gross_margin_prior = (
+            gross_profit_prior / revenue_prior * 100
+            if gross_profit_prior is not None and revenue_prior
+            else None
+        )
+        operating_margin = (
+            operating_result / revenue * 100
+            if operating_result is not None and revenue
+            else None
+        )
+        operating_margin_prior = (
+            operating_result_prior / revenue_prior * 100
+            if operating_result_prior is not None and revenue_prior
+            else None
+        )
 
         return {
             "revenue": revenue,
+            "revenue_prior": revenue_prior,
             "cash": cash,
+            "cash_prior": cash_prior,
             "ebitda": ebitda,
+            "ebitda_prior": ebitda_prior,
             "customers": customers,
             "gross_margin": gross_margin,
+            "gross_margin_prior": gross_margin_prior,
             "operating_margin": operating_margin,
+            "operating_margin_prior": operating_margin_prior,
+            "total_debt": total_debt,
+            "total_debt_prior": total_debt_prior,
+            "interest_expense": interest_expense,
+            "interest_expense_prior": interest_expense_prior,
+            "cost_of_sales": cost_of_sales,
+            "cost_of_sales_prior": cost_of_sales_prior,
+            "administrative_expenses": administrative_expenses,
+            "administrative_expenses_prior": administrative_expenses_prior,
+            "working_capital_change": working_capital_change,
+            "working_capital_change_prior": working_capital_change_prior,
+            "capital_employed": capital_employed,
+            "capital_employed_prior": capital_employed_prior,
+            "net_cash_used_operating": net_cash_used_operating,
+            "net_cash_used_operating_prior": net_cash_used_operating_prior,
+            "operating_result": operating_result,
+            "operating_result_prior": operating_result_prior,
+        }
+
+    # =========================================================
+    # PUBLIC API
+    # =========================================================
+
+    @classmethod
+    def extract(cls, text: str) -> Dict[str, Any]:
+        all_fields = cls._extract_all(text)
+        return {
+            key: all_fields[key]
+            for key in (
+                "revenue", "revenue_prior",
+                "cash", "cash_prior",
+                "ebitda", "ebitda_prior",
+                "customers",
+                "gross_margin", "gross_margin_prior",
+                "operating_margin", "operating_margin_prior",
+            )
+        }
+
+    @classmethod
+    def extract_balance_sheet(cls, text: str) -> Dict[str, Any]:
+        all_fields = cls._extract_all(text)
+        return {
+            key: all_fields[key]
+            for key in (
+                "total_debt", "total_debt_prior",
+                "interest_expense", "interest_expense_prior",
+                "cost_of_sales", "cost_of_sales_prior",
+                "administrative_expenses", "administrative_expenses_prior",
+                "working_capital_change", "working_capital_change_prior",
+                "capital_employed", "capital_employed_prior",
+                "net_cash_used_operating", "net_cash_used_operating_prior",
+                "operating_result", "operating_result_prior",
+            )
         }

@@ -54,6 +54,15 @@ class DashboardSummaryResponse(BaseModel):
     customers: KPIMetric
     cash: KPIMetric
     ebitda: KPIMetric
+    # Cash & Liquidity / Solvency & Leverage / Returns / Profitability --
+    # see backend/docs/metrics-expansion-plan.md. `history` for these is
+    # at most [prior, current] (2 points) from the single filing's own
+    # comparative column, not a multi-document time series like the four
+    # KPIs above.
+    ebitda_margin: KPIMetric
+    cash_runway: KPIMetric
+    interest_cover: KPIMetric
+    roce: KPIMetric
 
 
 # ==================== Revenue Trend ====================

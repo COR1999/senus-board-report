@@ -8,6 +8,10 @@ const mockMetrics = {
   customers: { value: '158', change: 2.5, trend: 'up' as const, history: [] },
   cash: { value: '€1.2M', change: 0, trend: 'neutral' as const, history: [] },
   ebitda: { value: '€150K', change: 22, trend: 'up' as const, history: [] },
+  ebitda_margin: { value: '18.2%', change: 3.1, trend: 'up' as const, history: [] },
+  cash_runway: { value: '14.5 mo', change: 20.8, trend: 'up' as const, history: [] },
+  interest_cover: { value: '8.4x', change: 12, trend: 'up' as const, history: [] },
+  roce: { value: '24.1%', change: 5.4, trend: 'up' as const, history: [] },
 }
 
 describe('AiInsights', () => {

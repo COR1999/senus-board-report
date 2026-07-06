@@ -168,19 +168,42 @@ Use this as the task prompt for the implementation session:
 
 ## Acceptance checklist
 
-- [ ] `BalanceSheetMetrics` model + migration path (table auto-creates
-      via `Base.metadata.create_all` like the existing models — no
-      Alembic in this project)
-- [ ] Extractor pulls debt, interest, cost of sales, admin expenses,
+- [x] `BalanceSheetMetrics` model + migration path -- table auto-creates
+      via `Base.metadata.create_all` for a fresh DB; for the table that
+      already existed in production before this (`financial_metrics`'s
+      new `_prior` columns), added `_add_missing_columns` to
+      `app/core/database.py` since `create_all` never alters an existing
+      table's columns and there's no Alembic in this project. Verified
+      against the real Railway Postgres DB, not just a fresh local one.
+- [x] Extractor pulls debt, interest, cost of sales, admin expenses,
       working capital change, capital employed — verified against the
-      real Senus PDF
-- [ ] EBITDA margin, cash runway, a DSCR-or-interest-cover ratio, and
+      real Senus PDF (`FinancialMetricsExtractor.extract_balance_sheet()`)
+- [x] EBITDA margin, cash runway, a DSCR-or-interest-cover ratio, and
       ROCE all computed and exposed via the dashboard endpoint
-- [ ] `calculate_debt_ratios`/`calculate_margins` either wired up or
-      removed — no orphaned duplicate logic
-- [ ] YoY/MoM comparison is calendar-aware, not "latest two uploads"
-- [ ] All new/changed extraction fields follow the `None` = missing,
+      (`ebitda_margin`, `cash_runway`, `interest_cover`, `roce` on
+      `GET /metrics/dashboard/summary`)
+- [x] `calculate_debt_ratios`/`calculate_margins` either wired up or
+      removed — no orphaned duplicate logic. Removed both:
+      `calculate_margins` is fully superseded (gross/operating margin are
+      now computed directly from extracted P&L lines in the extractor,
+      more reliable than narrative regex); `calculate_debt_ratios` had no
+      caller and no planned one (interest_cover covers the Solvency KPI
+      slot instead).
+- [ ] YoY/MoM comparison is calendar-aware, not "latest two uploads" --
+      **not done as originally scoped**. Instead: the extractor now also
+      captures each field's *own filing's* prior-period comparative
+      column (e.g. "Turnover 354,813 340,931" -> `revenue`/`revenue_prior`),
+      and `/dashboard/summary` falls back to that when there's no second
+      DB row to diff against. This gives real YoY change today (this
+      filing is literally Senus's first-ever results as a public company,
+      so calendar-aware multi-filing comparison can't be exercised yet
+      regardless) rather than leaving every KPI at a fake 0%/neutral.
+      True calendar-aware comparison across multiple *uploaded* filings
+      is still an open item once a second filing ever exists.
+- [x] All new/changed extraction fields follow the `None` = missing,
       never silently `0`, convention
-- [ ] Verified against the real uploaded PDF, not just synthetic text
-- [ ] Backward-compatible API changes (existing dashboard consumers
-      don't break)
+- [x] Verified against the real uploaded PDF, not just synthetic text --
+      see `tests/test_financial_metrics_extractor.py::TestExtractAgainstRealFiling`
+- [x] Backward-compatible API changes (existing dashboard consumers
+      don't break) -- `history`/`change`/`trend` shape unchanged for the
+      four original KPIs, new fields are additive

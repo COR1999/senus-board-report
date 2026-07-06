@@ -8,6 +8,7 @@ from app.core.database import Base
 
 if TYPE_CHECKING:
     from app.models.financial_metrics import FinancialMetrics
+    from app.models.balance_sheet_metrics import BalanceSheetMetrics
     from app.models.report import Report
 
 
@@ -25,6 +26,11 @@ class Document(Base):
 
     # One document can carry one metrics snapshot and multiple report versions.
     financial_metrics: Mapped[Optional["FinancialMetrics"]] = relationship(
+        back_populates="document",
+        cascade="all, delete-orphan",
+        uselist=False
+    )
+    balance_sheet_metrics: Mapped[Optional["BalanceSheetMetrics"]] = relationship(
         back_populates="document",
         cascade="all, delete-orphan",
         uselist=False

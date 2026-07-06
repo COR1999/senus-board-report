@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.report import Report
 from app.models.document import Document
 from app.models.financial_metrics import FinancialMetrics
+from app.models.balance_sheet_metrics import BalanceSheetMetrics
 from app.services.gemini_service import GeminiAnalysisService
 from sqlalchemy.orm import selectinload
 
@@ -114,6 +115,51 @@ class ReportService:
             self._extract_metric_value(metrics_data.get("operating_margin"))
         )
 
+        # Prior-period comparative (same filing's own comparison column --
+        # see FinancialMetricsExtractor.extract()). No force_int/default-0
+        # normalization here: these are purely optional, missing-means-None
+        # fields, unlike the four required-baseline fields above.
+        metrics.revenue_prior = self._plain_metric_value(metrics_data.get("revenue_prior"))
+        metrics.cash_prior = self._plain_metric_value(metrics_data.get("cash_prior"))
+        metrics.ebitda_prior = self._plain_metric_value(metrics_data.get("ebitda_prior"))
+        metrics.gross_margin_prior = self._plain_metric_value(metrics_data.get("gross_margin_prior"))
+        metrics.operating_margin_prior = self._plain_metric_value(metrics_data.get("operating_margin_prior"))
+
+        metrics.extracted_at = datetime.utcnow()
+
+        await self.db.commit()
+
+    # =========================================================
+    # SAVE BALANCE SHEET METRICS (Cash/Solvency/Returns inputs)
+    # =========================================================
+    async def _save_balance_sheet_metrics(self, document_id: int, data: Dict[str, Any]):
+        """
+        Populated only from the deterministic baseline extractor -- unlike
+        `_save_metrics`, there's no Gemini/AI enrichment path for these
+        fields, so no merge step is needed here.
+        """
+        stmt = select(BalanceSheetMetrics).where(
+            BalanceSheetMetrics.document_id == document_id
+        )
+        result = await self.db.execute(stmt)
+        metrics = result.scalars().first()
+
+        if not metrics:
+            metrics = BalanceSheetMetrics(document_id=document_id)
+            self.db.add(metrics)
+
+        for field in (
+            "total_debt", "total_debt_prior",
+            "interest_expense", "interest_expense_prior",
+            "cost_of_sales", "cost_of_sales_prior",
+            "administrative_expenses", "administrative_expenses_prior",
+            "working_capital_change", "working_capital_change_prior",
+            "capital_employed", "capital_employed_prior",
+            "net_cash_used_operating", "net_cash_used_operating_prior",
+            "operating_result", "operating_result_prior",
+        ):
+            setattr(metrics, field, data.get(field))
+
         metrics.extracted_at = datetime.utcnow()
 
         await self.db.commit()
@@ -205,6 +251,11 @@ class ReportService:
             # 5. PERSIST (ALWAYS SAFE)
             # =====================================================
             await self._save_metrics(document.id, content)
+
+            balance_sheet_metrics = FinancialMetricsExtractor.extract_balance_sheet(
+                document.extracted_text or ""
+            )
+            await self._save_balance_sheet_metrics(document.id, balance_sheet_metrics)
 
             await self.db.commit()
             await self.db.refresh(report)
