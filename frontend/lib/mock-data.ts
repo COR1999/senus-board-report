@@ -24,6 +24,30 @@ export const mockMetrics = {
     trend: 'up' as const,
     history: [98000, 105000, 112000, 120000, 132000, 141000, 150000],
   },
+  ebitda_margin: {
+    value: '18.2%',
+    change: 3.1,
+    trend: 'up' as const,
+    history: [12.4, 13.8, 14.9, 15.6, 16.7, 17.5, 18.2],
+  },
+  cash_runway: {
+    value: '14.5 mo',
+    change: 20.8,
+    trend: 'up' as const,
+    history: [8.2, 9.5, 10.8, 11.9, 12.6, 13.4, 14.5],
+  },
+  interest_cover: {
+    value: '8.4x',
+    change: 12.0,
+    trend: 'up' as const,
+    history: [5.1, 5.8, 6.4, 7.0, 7.5, 7.9, 8.4],
+  },
+  roce: {
+    value: '24.1%',
+    change: 5.4,
+    trend: 'up' as const,
+    history: [18.9, 19.8, 20.9, 21.7, 22.5, 23.2, 24.1],
+  },
 }
 
 export const mockChartData = [
