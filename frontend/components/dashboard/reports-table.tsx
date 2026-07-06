@@ -1,3 +1,6 @@
+'use client'
+
+import { useMemo, useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Table,
@@ -9,32 +12,42 @@ import {
 } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Download } from 'lucide-react'
-
-export interface Report {
-  id: number
-  name: string
-  date: string
-  status: 'completed' | 'pending' | 'processing'
-}
+import { type Report } from '@/lib/data-service'
+import { exportReportsToCsv } from '@/lib/export-csv'
 
 interface ReportsTableProps {
   reports?: Report[]
 }
 
+const STATUS_STYLES: Record<Report['status'], string> = {
+  completed: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400',
+  pending: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400',
+  generating: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400',
+  failed: 'bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-400',
+}
+
+const STATUS_OPTIONS: Array<Report['status'] | 'all'> = ['all', 'completed', 'generating', 'pending', 'failed']
+
+function reportDisplayName(report: Report): string {
+  const name = report.summary?.company_name
+  return name && name.trim().length > 0 ? name : `Document #${report.document_id}`
+}
+
 export function ReportsTable({ reports = [] }: ReportsTableProps) {
-  const getStatusStyles = (status: string) => {
-    switch (status) {
-      case 'completed':
-        return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400'
-      case 'pending':
-        return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400'
-      case 'processing':
-        return 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400'
-      default:
-        return 'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400'
-    }
-  }
+  const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState<Report['status'] | 'all'>('all')
+
+  const filtered = useMemo(() => {
+    const query = search.trim().toLowerCase()
+    return reports.filter((report) => {
+      if (statusFilter !== 'all' && report.status !== statusFilter) return false
+      if (!query) return true
+      const haystack = `${reportDisplayName(report)} ${report.summary?.reporting_period ?? ''}`.toLowerCase()
+      return haystack.includes(query)
+    })
+  }, [reports, search, statusFilter])
 
   return (
     <Card className="col-span-full">
@@ -43,6 +56,38 @@ export function ReportsTable({ reports = [] }: ReportsTableProps) {
         <CardDescription>Latest financial and board reports</CardDescription>
       </CardHeader>
       <CardContent>
+        <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-1 flex-col gap-2 sm:max-w-sm sm:flex-row">
+            <Input
+              placeholder="Search reports..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              aria-label="Search reports"
+            />
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as Report['status'] | 'all')}
+              aria-label="Filter by status"
+              className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm text-foreground outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
+            >
+              {STATUS_OPTIONS.map((option) => (
+                <option key={option} value={option}>
+                  {option === 'all' ? 'All statuses' : option}
+                </option>
+              ))}
+            </select>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => exportReportsToCsv(filtered)}
+            disabled={filtered.length === 0}
+          >
+            <Download className="h-4 w-4" />
+            Export CSV
+          </Button>
+        </div>
+
         <Table>
           <TableHeader>
             <TableRow className="border-border/40 hover:bg-transparent">
@@ -53,30 +98,30 @@ export function ReportsTable({ reports = [] }: ReportsTableProps) {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {reports.length > 0 ? (
-              reports.map((report) => (
+            {filtered.length > 0 ? (
+              filtered.map((report) => (
                 <TableRow key={report.id} className="border-border/40">
-                  <TableCell className="font-medium">{report.name}</TableCell>
+                  <TableCell className="font-medium">{reportDisplayName(report)}</TableCell>
                   <TableCell className="text-muted-foreground">
-                    {new Date(report.date).toLocaleDateString('en-US', {
+                    {new Date(report.created_at).toLocaleDateString('en-US', {
                       year: 'numeric',
                       month: 'short',
                       day: 'numeric',
                     })}
                   </TableCell>
                   <TableCell>
-                    <Badge className={getStatusStyles(report.status)}>
-                      {report.status}
-                    </Badge>
+                    <Badge className={STATUS_STYLES[report.status]}>{report.status}</Badge>
                   </TableCell>
                   <TableCell className="text-right">
                     <Button
                       variant="ghost"
                       size="sm"
                       className="h-8 w-8 p-0 hover:bg-muted/50"
+                      disabled
+                      title="PDF export coming later"
                     >
                       <Download className="h-4 w-4" />
-                      <span className="sr-only">Download report</span>
+                      <span className="sr-only">Download report (PDF export coming later)</span>
                     </Button>
                   </TableCell>
                 </TableRow>
@@ -84,7 +129,7 @@ export function ReportsTable({ reports = [] }: ReportsTableProps) {
             ) : (
               <TableRow>
                 <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
-                  No reports available
+                  {reports.length === 0 ? 'No reports available' : 'No reports match your filters'}
                 </TableCell>
               </TableRow>
             )}
