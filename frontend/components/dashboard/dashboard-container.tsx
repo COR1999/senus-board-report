@@ -1,8 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Sidebar } from './sidebar'
-import { TopNav } from './top-nav'
+import { DashboardShell } from './dashboard-shell'
 import { KpiCard } from './kpi-card'
 import { RevenueChart } from './revenue-chart'
 import { SegmentBreakdown } from './segment-breakdown'
@@ -56,38 +55,25 @@ export function DashboardContainer() {
 
   if (error) {
     return (
-      <div className="flex min-h-screen flex-col bg-background">
-        <Sidebar />
-        <TopNav />
-        <main className="flex-1 md:ml-64 md:pt-0 pt-14">
-          <div className="p-8">
-            <div className="text-red-600 bg-red-50 dark:bg-red-950 p-4 rounded-lg">
-              Error: {error}
-            </div>
-          </div>
-        </main>
-      </div>
+      <DashboardShell title="Executive Dashboard">
+        <div className="text-red-600 bg-red-50 dark:bg-red-950 p-4 rounded-lg">
+          Error: {error}
+        </div>
+      </DashboardShell>
     )
   }
 
   if (loading || !metrics) {
     return (
-      <div className="flex min-h-screen flex-col bg-background">
-        <Sidebar />
-        <TopNav />
-        <main className="flex-1 md:ml-64 md:pt-0 pt-14">
-          <div className="p-8">
-            <div className="animate-pulse space-y-4">
-              <div className="h-10 bg-muted rounded w-1/4" />
-              <div className="grid gap-4 md:grid-cols-4">
-                {[...Array(4)].map((_, i) => (
-                  <div key={i} className="h-32 bg-muted rounded" />
-                ))}
-              </div>
-            </div>
+      <DashboardShell title="Executive Dashboard">
+        <div className="animate-pulse space-y-4">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+            {[...Array(4)].map((_, i) => (
+              <div key={i} className="h-32 bg-muted rounded" />
+            ))}
           </div>
-        </main>
-      </div>
+        </div>
+      </DashboardShell>
     )
   }
 
@@ -99,54 +85,36 @@ export function DashboardContainer() {
   ]
 
   return (
-    <div className="flex min-h-screen flex-col bg-background">
-      <Sidebar />
-      <TopNav />
+    <DashboardShell title="Executive Dashboard" description="Welcome to your AI-powered board reporting platform">
+      {/* KPI Cards Grid */}
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        {metricConfig.map(({ key, title, icon: Icon, timeframe }) => (
+          <KpiCard
+            key={key}
+            title={title}
+            value={metrics[key].value}
+            changePercentage={metrics[key].change}
+            trend={metrics[key].trend}
+            history={metrics[key].history} // sparkline data, see KpiCard/KpiSparkline
+            icon={Icon}
+            timeframe={timeframe}
+          />
+        ))}
+      </div>
 
-      {/* Main Content */}
-      <main className="flex-1 md:ml-64 md:pt-0 pt-14">
-        <div className="space-y-8 p-6 md:p-8">
-          {/* Header */}
-          <div className="flex flex-col gap-2">
-            <h1 className="text-3xl font-bold tracking-tight text-foreground">
-              Executive Dashboard
-            </h1>
-            <p className="text-muted-foreground">
-              Welcome to your AI-powered board reporting platform
-            </p>
-          </div>
-
-          {/* KPI Cards Grid */}
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-            {metricConfig.map(({ key, title, icon: Icon, timeframe }) => (
-              <KpiCard
-                key={key}
-                title={title}
-                value={metrics[key].value}
-                changePercentage={metrics[key].change}
-                trend={metrics[key].trend}
-                history={metrics[key].history} // sparkline data, see KpiCard/KpiSparkline
-                icon={Icon}
-                timeframe={timeframe}
-              />
-            ))}
-          </div>
-
-          {/* Charts & Insights Section */}
-          <div className="grid gap-6 lg:grid-cols-3">
-            <div className="lg:col-span-2">
-              <RevenueChart data={chartData} />
-            </div>
-            <div className="flex flex-col gap-6">
-              <AiInsights metrics={metrics} />
-              <SegmentBreakdown data={segments} />
-            </div>
-          </div>
-
-          {/* Reports Table */}
-          <ReportsTable reports={reports} />
+      {/* Charts & Insights Section */}
+      <div className="grid gap-6 lg:grid-cols-3">
+        <div className="lg:col-span-2">
+          <RevenueChart data={chartData} />
         </div>
-      </main>
-    </div>
+        <div className="flex flex-col gap-6">
+          <AiInsights metrics={metrics} />
+          <SegmentBreakdown data={segments} />
+        </div>
+      </div>
+
+      {/* Reports Table */}
+      <ReportsTable reports={reports} />
+    </DashboardShell>
   )
 }
