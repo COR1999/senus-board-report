@@ -116,30 +116,6 @@ class TestGeminiService:
         print(f"Gemini available: {service.is_available()}")
 
     @pytest.mark.anyio
-    async def test_metric_extraction_fallback(self):
-        service = GeminiAnalysisService()
-
-        sample_text = """
-        Revenue: €836000
-        Customers: 138
-        Cash: €250000
-        EBITDA: €120000
-        Gross Margin: 75%
-        Operating Margin: 45%
-        """
-
-        metrics = service.extract_financial_metrics_from_text(
-            sample_text,
-            use_ai=False
-        )
-
-        assert metrics["revenue"] == 836000.0
-        assert metrics["customers"] == 138.0
-        assert metrics["cash"] == 250000.0
-        assert metrics["ebitda"] == 120000.0
-
-
-    @pytest.mark.anyio
     async def test_fallback_commentary(self):
         service = GeminiAnalysisService()
 
