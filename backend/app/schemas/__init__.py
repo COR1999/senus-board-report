@@ -10,13 +10,14 @@ from app.schemas.financial import (
     DocumentCreate,
     DocumentResponse,
     DocumentWithText,
-    # Report
-    ReportBase,
-    ReportCreate,
+)
+from app.schemas.report import (
+    ReportMetricsSummary,
+    ReportSummary,
     ReportResponse,
-    ReportWithDocument,
-    # Health
-    HealthResponse,
+    ReportDeleteResponse,
+    DashboardDocument,
+    ReportDashboardResponse,
 )
 
 __all__ = [
@@ -27,9 +28,10 @@ __all__ = [
     "DocumentCreate",
     "DocumentResponse",
     "DocumentWithText",
-    "ReportBase",
-    "ReportCreate",
+    "ReportMetricsSummary",
+    "ReportSummary",
     "ReportResponse",
-    "ReportWithDocument",
-    "HealthResponse",
+    "ReportDeleteResponse",
+    "DashboardDocument",
+    "ReportDashboardResponse",
 ]

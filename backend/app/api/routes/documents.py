@@ -18,7 +18,7 @@ from app.models.report import Report
 from app.models.financial_metrics import FinancialMetrics
 from app.schemas.financial import DocumentWithText, FinancialMetricsResponse
 from app.services.pdf_service import PDFExtractionService
-from app.services.report_service import ReportService  # ✅ FIXED IMPORT
+from app.services.report_service import ReportService  
 
 logger = logging.getLogger(__name__)
 
@@ -215,39 +215,3 @@ async def delete_document(document_id: int, db: AsyncSession = Depends(get_db)):
     await db.commit()
 
     return {"message": "Deleted successfully"}
-
-
-# ============================================================
-# Regenerate report
-# ============================================================
-
-@router.post("/{document_id}/regenerate-report")
-async def regenerate_report(document_id: int, db: AsyncSession = Depends(get_db)):
-
-    doc_result = await db.execute(
-        select(Document).where(Document.id == document_id)
-    )
-
-    document = doc_result.scalars().first()
-
-    if not document:
-        raise HTTPException(status_code=404, detail="Document not found")
-
-    service = ReportService(db)
-    report = await service.generate_report(document_id, force=True)
-
-    metrics_result = await db.execute(
-        select(FinancialMetrics)
-        .where(FinancialMetrics.document_id == document_id)
-        .order_by(FinancialMetrics.extracted_at.desc())
-    )
-
-    metrics = metrics_result.scalars().first()
-
-    return {
-        "report_id": report.id,
-        "status": report.status,
-        "ai_commentary": report.ai_commentary,
-        "key_findings": report.key_findings,
-        "financial_metrics": metrics.__dict__ if metrics else {},
-    }

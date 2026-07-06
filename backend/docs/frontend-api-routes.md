@@ -41,15 +41,6 @@ Set the frontend environment variable:
 - DELETE /api/documents/{document_id}
   - Deletes a document.
 
-## Metrics
-
-- GET /metrics
-  - Lists metrics rows.
-- GET /metrics/{document_id}
-  - Gets metrics for a specific document.
-- POST /metrics
-  - Creates or updates metrics for a document.
-
 ## Example frontend usage
 
 ### Fetch dashboard metrics

@@ -1,16 +1,10 @@
 from io import BytesIO
 
 import pytest
-from fastapi import HTTPException, UploadFile
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from sqlalchemy.pool import StaticPool
+from fastapi import UploadFile
 
 from app.api.routes import documents as documents_routes
-from app.api.routes.metrics import create_metrics
-from app.core.database import Base
-from app.models.document import Document
 from app.models.financial_metrics import FinancialMetrics
-from app.schemas.financial import FinancialMetricsCreate
 
 
 class FakeResult:
@@ -88,41 +82,3 @@ async def test_upload_document_returns_financial_metrics(monkeypatch):
     assert response.financial_metrics.revenue == 1000000.0
     assert response.financial_metrics.customers == 120
     assert response.financial_metrics.cash == 250000.0
-
-
-@pytest.mark.anyio
-async def test_create_metrics_returns_404_for_missing_document():
-    engine = create_async_engine(
-        "sqlite+aiosqlite:///:memory:",
-        echo=False,
-        poolclass=StaticPool,
-    )
-
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-
-    async_session = async_sessionmaker(
-        engine,
-        class_=AsyncSession,
-        expire_on_commit=False,
-    )
-
-    async with async_session() as db:
-        with pytest.raises(HTTPException) as exc_info:
-            await create_metrics(
-                FinancialMetricsCreate(
-                    document_id=9999,
-                    revenue=1.0,
-                    customers=1,
-                    cash=1.0,
-                    ebitda=1.0,
-                    gross_margin=1.0,
-                    operating_margin=1.0,
-                ),
-                db,
-            )
-
-        assert exc_info.value.status_code == 404
-        assert exc_info.value.detail == "Document not found"
-
-    await engine.dispose()

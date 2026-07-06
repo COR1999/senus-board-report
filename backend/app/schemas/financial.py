@@ -3,7 +3,7 @@ Pydantic schemas for financial data.
 """
 
 from datetime import datetime
-from typing import Optional, List, Dict, Any
+from typing import Optional
 from pydantic import BaseModel, Field, ConfigDict
 
 
@@ -58,43 +58,3 @@ class DocumentWithText(DocumentResponse):
     extracted_at: Optional[datetime] = None
     financial_metrics: Optional[FinancialMetricsResponse] = None
     report_id: Optional[int] = Field(None, description="Associated report ID if available")
-
-
-# ==================== Report ====================
-class ReportBase(BaseModel):
-    """Base report schema."""
-    report_type: str = "financial_analysis"
-
-
-class ReportCreate(ReportBase):
-    """Schema for creating reports."""
-    document_id: int
-    include_metrics: bool = True
-    include_commentary: bool = True
-
-
-class ReportResponse(ReportBase):
-    """Report response schema."""
-    id: int
-    document_id: int
-    ai_commentary: Optional[str] = None
-    summary: Optional[Dict[str, Any]] = None
-    raw_metrics: Optional[Dict[str, Any]] = None
-    created_at: datetime
-    updated_at: datetime
-    
-    model_config = ConfigDict(from_attributes=True)
-
-
-class ReportWithDocument(ReportResponse):
-    """Report with associated document."""
-    document: DocumentResponse
-
-
-# ==================== Health Check ====================
-class HealthResponse(BaseModel):
-    """Health check response schema."""
-    status: str
-    database: str
-    gemini_api: str
-    version: str

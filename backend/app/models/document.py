@@ -25,8 +25,11 @@ class Document(Base):
 
     # One document can carry one metrics snapshot and multiple report versions.
     financial_metrics: Mapped[Optional["FinancialMetrics"]] = relationship(
-        back_populates="document", cascade="all, delete-orphan"
+        back_populates="document",
+        cascade="all, delete-orphan",
+        uselist=False
     )
     reports: Mapped[List["Report"]] = relationship(
-        back_populates="document", cascade="all, delete-orphan"
+        back_populates="document",
+        cascade="all, delete-orphan"
     )

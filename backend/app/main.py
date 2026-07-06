@@ -12,6 +12,7 @@ from typing import Dict, Any
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
+from fastapi.responses import JSONResponse
 
 from app.core.config import get_settings
 from app.core.database import init_db, close_db
@@ -159,7 +160,10 @@ app = create_app()
 async def global_exception_handler(request, exc):
     """Global exception handler."""
     logger.error(f"Unhandled exception: {exc}", exc_info=True)
-    return {
-        "detail": "An unexpected error occurred",
-        "error": str(exc) if settings.DEBUG else "Internal server error"
-    }
+    return JSONResponse(
+        status_code=500,
+        content={
+            "detail": "An unexpected error occurred",
+            "error": str(exc) if settings.DEBUG else "Internal server error",
+        },
+    )

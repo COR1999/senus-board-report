@@ -9,7 +9,11 @@ from pydantic import Field
 class Settings(BaseSettings):
     """Application settings from environment variables."""
 
-    model_config = SettingsConfigDict(env_file=".env", case_sensitive=False)
+    # `extra="ignore"` so undeclared vars in .env (e.g. platform-injected
+    # vars on Railway) don't crash startup with a validation error.
+    model_config = SettingsConfigDict(
+        env_file=".env", case_sensitive=False, extra="ignore"
+    )
 
     # Database
     DATABASE_URL: str = Field(
@@ -21,6 +25,18 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: Optional[str] = Field(
         default=None,
         description="Google Gemini API key"
+    )
+
+    # Gemini proactive rate limiting -- read directly via os.getenv in
+    # GeminiAnalysisService, declared here too so they're documented and
+    # so setting them (as .env.example instructs) never fails validation.
+    GEMINI_MAX_CALLS_PER_MINUTE: int = Field(
+        default=10,
+        description="Proactive per-minute cap on Gemini API calls"
+    )
+    GEMINI_MAX_CALLS_PER_DAY: int = Field(
+        default=1000,
+        description="Proactive rolling 24h cap on Gemini API calls"
     )
 
     # OpenAI API
