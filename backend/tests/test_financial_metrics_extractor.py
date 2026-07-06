@@ -1,0 +1,209 @@
+"""
+Tests for FinancialMetricsExtractor, particularly the new prior-period
+comparative extraction and computed EBITDA/margins added for
+backend/docs/metrics-expansion-plan.md.
+"""
+from pathlib import Path
+
+import pytest
+
+from app.services.financial_metrics_extractor import FinancialMetricsExtractor as FME
+from app.services.pdf_service import PDFExtractionService
+
+# Synthetic text mirroring the real filing's exact section layout (label,
+# then current value, then prior value, each on its own line -- this is
+# how this project's PDF extraction actually lays tables out, not
+# space-separated on one line).
+SYNTHETIC_FILING = """
+Some cover page narrative mentioning EBITDA positive by FY2028, ignore this.
+
+Consolidated Profit and Loss Account
+for the six months ended 31 December 2025
+Turnover
+354,813
+340,931
+Cost of sales
+64,861
+69,600
+Gross Profit
+289,952
+272,331
+Administrative expenses
+781,975
+677,908
+Group operating loss
+483,753
+405,577
+Interest payable and similar expenses
+1,391
+1,036
+Loss before taxation
+485,144
+406,613
+
+Consolidated Balance Sheet
+for the six months ended 31 December 2025
+Cash and cash equivalents
+735,189
+72,382
+Total Assets Less Current Liabilities
+637,554
+258,784
+Creditors: amounts falling due after more than one
+year
+-76,474
+-85,468
+
+Consolidated cash flow statement
+for the six months ended 31 December 2025
+Depreciation
+10,014
+10,016
+Movements in working capital
+64,839
+-53,584
+Net Cash used in operating activities
+-410,291
+-450,181
+
+Senus recorded revenue of €836,991, serving 138 customer accounts.
+"""
+
+
+class TestExtractComputesEbitdaFromStructuredLines:
+    """
+    There is no literal "EBITDA" line in this filing (a common situation
+    for real filings) -- EBITDA must be derived from operating result +
+    depreciation add-back, not searched for as a keyword.
+    """
+
+    def test_ebitda_is_operating_result_plus_depreciation(self):
+        result = FME.extract(SYNTHETIC_FILING)
+        # -483,753 (loss) + 10,014 (depreciation add-back) = -473,739
+        assert result["ebitda"] == -473_739.0
+        assert result["ebitda_prior"] == -395_561.0
+
+    def test_narrative_ebitda_fy2028_mention_is_not_picked_up(self):
+        result = FME.extract(SYNTHETIC_FILING)
+        # Regression guard for the exact bug class this extractor was
+        # rewritten to fix -- "EBITDA positive during FY2028" must never
+        # produce ebitda=2028 or similar narrative leakage.
+        assert result["ebitda"] != 2028
+
+
+class TestExtractPriorPeriodComparative:
+    def test_revenue_current_and_prior(self):
+        result = FME.extract(SYNTHETIC_FILING)
+        assert result["revenue"] == 354_813.0
+        assert result["revenue_prior"] == 340_931.0
+
+    def test_cash_current_and_prior(self):
+        result = FME.extract(SYNTHETIC_FILING)
+        assert result["cash"] == 735_189.0
+        assert result["cash_prior"] == 72_382.0
+
+    def test_gross_margin_computed_from_gross_profit_over_revenue(self):
+        result = FME.extract(SYNTHETIC_FILING)
+        # 289,952 / 354,813 * 100
+        assert round(result["gross_margin"], 1) == 81.7
+        assert round(result["gross_margin_prior"], 1) == 79.9
+
+    def test_operating_margin_computed_from_operating_result_over_revenue(self):
+        result = FME.extract(SYNTHETIC_FILING)
+        assert round(result["operating_margin"], 1) == -136.3
+
+    def test_customers_has_no_prior_key_value(self):
+        # No structured comparative source exists for customers -- the one
+        # narrative figure is a fixed FY reference, not a period pair.
+        result = FME.extract(SYNTHETIC_FILING)
+        assert result["customers"] == 138
+        assert "customers_prior" not in result
+
+    def test_missing_field_is_none_not_zero(self):
+        result = FME.extract("No financial statements here at all.")
+        assert result["revenue"] is None
+        assert result["ebitda"] is None
+        assert result["customers"] is None
+
+
+class TestExtractBalanceSheet:
+    def test_total_debt_extracted_from_wrapped_label_and_made_positive(self):
+        """
+        The real label ("Creditors: amounts falling due after more than
+        one year") wraps across two OCR'd lines -- this is a regression
+        test for that exact parsing gap, and for the sign flip (the
+        filing prints debt as a negative liability figure; total_debt
+        should be stored as a positive magnitude).
+        """
+        result = FME.extract_balance_sheet(SYNTHETIC_FILING)
+        assert result["total_debt"] == 76_474.0
+        assert result["total_debt_prior"] == 85_468.0
+
+    def test_net_cash_used_operating_made_positive(self):
+        result = FME.extract_balance_sheet(SYNTHETIC_FILING)
+        assert result["net_cash_used_operating"] == 410_291.0
+        assert result["net_cash_used_operating_prior"] == 450_181.0
+
+    def test_working_capital_change_stays_signed(self):
+        # Unlike debt/burn, this is legitimately positive or negative --
+        # must NOT be forced to a magnitude.
+        result = FME.extract_balance_sheet(SYNTHETIC_FILING)
+        assert result["working_capital_change"] == 64_839.0
+        assert result["working_capital_change_prior"] == -53_584.0
+
+    def test_capital_employed(self):
+        result = FME.extract_balance_sheet(SYNTHETIC_FILING)
+        assert result["capital_employed"] == 637_554.0
+        assert result["capital_employed_prior"] == 258_784.0
+
+    def test_cost_of_sales_and_administrative_expenses(self):
+        result = FME.extract_balance_sheet(SYNTHETIC_FILING)
+        assert result["cost_of_sales"] == 64_861.0
+        assert result["cost_of_sales_prior"] == 69_600.0
+        assert result["administrative_expenses"] == 781_975.0
+        assert result["administrative_expenses_prior"] == 677_908.0
+
+    def test_operating_result_is_negative_for_a_loss(self):
+        result = FME.extract_balance_sheet(SYNTHETIC_FILING)
+        assert result["operating_result"] == -483_753.0
+        assert result["operating_result_prior"] == -405_577.0
+
+    def test_missing_balance_sheet_fields_are_none(self):
+        result = FME.extract_balance_sheet("No financial statements here at all.")
+        assert result["total_debt"] is None
+        assert result["capital_employed"] is None
+
+
+class TestExtractAgainstRealFiling:
+    """
+    Locks in the real numbers from the actual uploaded filing as a
+    regression fixture -- if OCR/section-isolation logic ever changes,
+    this catches a real-world regression that synthetic text might miss.
+    """
+
+    @pytest.fixture(scope="class")
+    @classmethod
+    def real_text(cls):
+        pdf_path = (
+            Path(__file__).resolve().parent.parent
+            / "uploads"
+            / "Senus_HalfYearResultsDec2025_PR_V19032026 FINAL clean.pdf"
+        )
+        content = pdf_path.read_bytes()
+        _, text = PDFExtractionService.extract_text_from_upload(content, "test.pdf")
+        return text
+
+    def test_extract_matches_known_real_values(self, real_text):
+        result = FME.extract(real_text)
+        assert result["revenue"] == 354_813.0
+        assert result["revenue_prior"] == 340_931.0
+        assert result["cash"] == 735_189.0
+        assert result["ebitda"] == -473_739.0
+        assert result["customers"] == 138
+
+    def test_extract_balance_sheet_matches_known_real_values(self, real_text):
+        result = FME.extract_balance_sheet(real_text)
+        assert result["total_debt"] == 76_474.0
+        assert result["interest_expense"] == 1_391.0
+        assert result["capital_employed"] == 637_554.0
+        assert result["net_cash_used_operating"] == 410_291.0
