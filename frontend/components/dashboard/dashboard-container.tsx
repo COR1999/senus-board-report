@@ -1,61 +1,22 @@
 'use client'
 
-import { useState, useEffect } from 'react'
 import { DashboardShell } from './dashboard-shell'
 import { KpiCard } from './kpi-card'
 import { RevenueChart } from './revenue-chart'
 import { SegmentBreakdown } from './segment-breakdown'
 import { AiInsights } from './ai-insights'
 import { ReportsTable } from './reports-table'
-import {
-  getMetrics,
-  getChartData,
-  getSegmentBreakdown,
-  getReports,
-  type Metrics,
-  type ChartDataPoint,
-  type SegmentValue,
-  type Report,
-} from '@/lib/data-service'
+import { useMetrics, useChartData, useSegments, useReports } from '@/lib/hooks/use-dashboard-data'
 import { DollarSign, Users, Wallet, TrendingUp, Percent, Clock, ShieldCheck, Target, Briefcase } from 'lucide-react'
 
 export function DashboardContainer() {
-  const [metrics, setMetrics] = useState<Metrics | null>(null)
-  const [chartData, setChartData] = useState<ChartDataPoint[]>([])
-  const [segments, setSegments] = useState<SegmentValue[]>([])
-  const [reports, setReports] = useState<Report[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const { data: metrics, loading: metricsLoading, error: metricsError } = useMetrics()
+  const { data: chartData, loading: chartLoading, error: chartError } = useChartData()
+  const { data: segments, loading: segmentsLoading, error: segmentsError } = useSegments()
+  const { data: reports, loading: reportsLoading, error: reportsError, refetch: refetchReports } = useReports()
 
-  useEffect(() => {
-    const fetchAllData = async () => {
-      try {
-        setLoading(true)
-        const [metricsData, chartDataResponse, segmentsData, reportsData] = await Promise.all([
-          getMetrics(),
-          getChartData(),
-          getSegmentBreakdown(),
-          getReports(),
-        ])
-        setMetrics(metricsData)
-        setChartData(chartDataResponse)
-        setSegments(segmentsData)
-        setReports(reportsData)
-        setError(null)
-      } catch (err) {
-        setError('Failed to load dashboard data')
-        console.error(err)
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    fetchAllData()
-  }, [])
-
-  const refetchReports = () => {
-    getReports().then(setReports)
-  }
+  const loading = metricsLoading || chartLoading || segmentsLoading || reportsLoading
+  const error = metricsError || chartError || segmentsError || reportsError
 
   if (error) {
     return (
@@ -146,16 +107,16 @@ export function DashboardContainer() {
       {/* Charts & Insights Section */}
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2">
-          <RevenueChart data={chartData} />
+          <RevenueChart data={chartData ?? []} />
         </div>
         <div className="flex flex-col gap-6">
           <AiInsights metrics={metrics} />
-          <SegmentBreakdown data={segments} />
+          <SegmentBreakdown data={segments ?? []} />
         </div>
       </div>
 
       {/* Reports Table */}
-      <ReportsTable reports={reports} onRegenerated={refetchReports} />
+      <ReportsTable reports={reports ?? []} onRegenerated={refetchReports} />
     </DashboardShell>
   )
 }

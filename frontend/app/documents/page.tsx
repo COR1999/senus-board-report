@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useRef } from 'react'
+import { useRef } from 'react'
 import { DashboardShell } from '@/components/dashboard/dashboard-shell'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -14,39 +14,24 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Trash2, Upload } from 'lucide-react'
-import { getDocuments, uploadPDF, deleteDocument, type DocumentItem } from '@/lib/data-service'
+import { type DocumentItem } from '@/lib/data-service'
+import { useDocuments } from '@/lib/hooks/use-dashboard-data'
+import { useUploadDocument, useDeleteDocument } from '@/lib/hooks/use-mutations'
 
 export default function DocumentsPage() {
-  const [documents, setDocuments] = useState<DocumentItem[]>([])
-  const [loading, setLoading] = useState(true)
-  const [uploading, setUploading] = useState(false)
-  const [deletingId, setDeletingId] = useState<number | null>(null)
+  const { data: documents, loading, error: loadError, refetch } = useDocuments()
+  const { upload, uploading, error: uploadError } = useUploadDocument(refetch)
+  const { remove, deletingId, error: deleteError } = useDeleteDocument(refetch)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const refresh = () => {
-    setLoading(true)
-    getDocuments().then((data) => {
-      setDocuments(data)
-      setLoading(false)
-    })
-  }
-
-  useEffect(refresh, [])
+  const error = loadError || uploadError || deleteError
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
 
-    setUploading(true)
-    try {
-      await uploadPDF(file)
-      refresh()
-    } catch (error) {
-      console.error('Upload failed:', error)
-    } finally {
-      setUploading(false)
-      if (fileInputRef.current) fileInputRef.current.value = ''
-    }
+    await upload(file)
+    if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
   const handleDelete = async (doc: DocumentItem) => {
@@ -54,19 +39,16 @@ export default function DocumentsPage() {
       return
     }
 
-    setDeletingId(doc.id)
-    try {
-      await deleteDocument(doc.id)
-      refresh()
-    } catch (error) {
-      console.error('Delete failed:', error)
-    } finally {
-      setDeletingId(null)
-    }
+    await remove(doc.id)
   }
 
   return (
     <DashboardShell title="Documents" description="Uploaded financial reports and filings">
+      {error && (
+        <div className="mb-4 text-red-600 bg-red-50 dark:bg-red-950 p-4 rounded-lg">
+          Error: {error}
+        </div>
+      )}
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
@@ -106,8 +88,8 @@ export default function DocumentsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {documents.length > 0 ? (
-                  documents.map((doc) => (
+                {(documents ?? []).length > 0 ? (
+                  (documents ?? []).map((doc) => (
                     <TableRow key={doc.id} className="border-border/40">
                       <TableCell className="font-medium">{doc.filename}</TableCell>
                       <TableCell>

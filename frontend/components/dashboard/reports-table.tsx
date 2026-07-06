@@ -14,8 +14,9 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Download, RefreshCw } from 'lucide-react'
-import { regenerateReport, type Report } from '@/lib/data-service'
+import { type Report } from '@/lib/data-service'
 import { exportReportsToCsv } from '@/lib/export-csv'
+import { useRegenerateReport } from '@/lib/hooks/use-mutations'
 
 interface ReportsTableProps {
   reports?: Report[]
@@ -40,7 +41,7 @@ function reportDisplayName(report: Report): string {
 export function ReportsTable({ reports = [], onRegenerated }: ReportsTableProps) {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<Report['status'] | 'all'>('all')
-  const [regeneratingId, setRegeneratingId] = useState<number | null>(null)
+  const { regenerate, regeneratingId, error } = useRegenerateReport(onRegenerated)
 
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase()
@@ -52,18 +53,6 @@ export function ReportsTable({ reports = [], onRegenerated }: ReportsTableProps)
     })
   }, [reports, search, statusFilter])
 
-  const handleRegenerate = async (report: Report) => {
-    setRegeneratingId(report.id)
-    try {
-      await regenerateReport(report.id)
-      onRegenerated?.()
-    } catch (error) {
-      console.error('Regenerate failed:', error)
-    } finally {
-      setRegeneratingId(null)
-    }
-  }
-
   return (
     <Card className="col-span-full">
       <CardHeader>
@@ -71,6 +60,11 @@ export function ReportsTable({ reports = [], onRegenerated }: ReportsTableProps)
         <CardDescription>Latest financial and board reports</CardDescription>
       </CardHeader>
       <CardContent>
+        {error && (
+          <div className="mb-4 text-sm text-rose-600 dark:text-rose-400" role="alert">
+            {error}
+          </div>
+        )}
         <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex flex-1 flex-col gap-2 sm:max-w-sm sm:flex-row">
             <Input
@@ -133,7 +127,7 @@ export function ReportsTable({ reports = [], onRegenerated }: ReportsTableProps)
                         variant="ghost"
                         size="sm"
                         className="h-8 w-8 p-0 hover:bg-muted/50"
-                        onClick={() => handleRegenerate(report)}
+                        onClick={() => regenerate(report.id)}
                         disabled={regeneratingId === report.id}
                         title="Regenerate report"
                       >
