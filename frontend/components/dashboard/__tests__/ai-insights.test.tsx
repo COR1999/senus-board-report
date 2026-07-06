@@ -4,10 +4,10 @@ import * as dataService from '@/lib/data-service'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const mockMetrics = {
-  revenue: { value: '€836,000', change: 38, trend: 'up' as const },
-  customers: { value: '158', change: 2.5, trend: 'up' as const },
-  cash: { value: '€1.2M', change: 0, trend: 'up' as const },
-  ebitda: { value: '€150K', change: 22, trend: 'up' as const },
+  revenue: { value: '€836,000', change: 38, trend: 'up' as const, history: [] },
+  customers: { value: '158', change: 2.5, trend: 'up' as const, history: [] },
+  cash: { value: '€1.2M', change: 0, trend: 'neutral' as const, history: [] },
+  ebitda: { value: '€150K', change: 22, trend: 'up' as const, history: [] },
 }
 
 describe('AiInsights', () => {

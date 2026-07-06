@@ -1,5 +1,6 @@
 // lib/data-service.ts
 import { mockMetrics, mockChartData, mockReports, mockSegments } from '@/lib/mock-data'
+import { FALLBACK_INSIGHTS, type Insight } from '@/lib/insights'
 
 const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '')
 
@@ -85,6 +86,27 @@ export async function getChartData(): Promise<ChartDataPoint[]> {
  */
 export async function getSegmentBreakdown(): Promise<SegmentValue[]> {
   return mockSegments
+}
+
+/**
+ * AI-generated board commentary from the current KPIs, via our own
+ * /api/insights Next.js route (not the Python backend -- OpenAI is called
+ * server-side there, keeping OPENAI_API_KEY out of the client bundle).
+ */
+export async function getAiInsights(metrics: Metrics): Promise<Insight[]> {
+  try {
+    const res = await fetch('/api/insights', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ metrics }),
+    })
+    if (!res.ok) throw new Error(`Failed to fetch insights: ${res.statusText}`)
+    const data = await res.json()
+    return data.insights
+  } catch (error) {
+    console.warn('Failed to fetch AI insights, using fallback:', error)
+    return FALLBACK_INSIGHTS
+  }
 }
 
 export async function getReports(): Promise<Report[]> {

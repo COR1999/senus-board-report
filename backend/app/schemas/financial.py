@@ -56,6 +56,16 @@ class DashboardSummaryResponse(BaseModel):
     ebitda: KPIMetric
 
 
+# ==================== Revenue Trend ====================
+class RevenueTrendPoint(BaseModel):
+    """One point on the revenue trend chart."""
+    period: str = Field(..., description="Display label for the period, e.g. 'Dec 2025'")
+    revenue: Optional[float] = Field(
+        None,
+        description="Revenue for this period. Null means the document didn't report it -- never 0.",
+    )
+
+
 # ==================== Document ====================
 class DocumentBase(BaseModel):
     """Base document schema."""
