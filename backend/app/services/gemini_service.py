@@ -29,6 +29,16 @@ class GeminiAnalysisService:
     _cache = TTLCache(maxsize=1000, ttl=86400)
     _ai_disabled_until: float = 0
 
+    # A 429 can mean two very different things: a transient per-minute/per-day
+    # rate limit (will clear on its own -- short backoff is right), or the
+    # Google AI Studio project's prepayment credits being depleted (a billing
+    # problem that requires manual action and will NOT clear on its own --
+    # retrying every 60s just wastes calls hitting the same exhausted quota
+    # until someone tops up billing). Distinguished by message content since
+    # the SDK doesn't expose a distinct error type for this.
+    RATE_LIMIT_BACKOFF_SECONDS = 60
+    BILLING_EXHAUSTED_BACKOFF_SECONDS = 24 * 60 * 60
+
     # Proactive rate limiting -- these back off BEFORE a 429 happens,
     # rather than only reacting after Gemini has already rejected a call.
     # Defaults are conservative guesses for a free-tier-ish quota; tune
@@ -156,8 +166,18 @@ class GeminiAnalysisService:
         except Exception as e:
             logger.warning(f"Gemini error: {e}")
 
-            if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
-                self._disable_ai_temporarily(60)
+            error_str = str(e)
+            if "prepayment credits are depleted" in error_str or "billing" in error_str.lower():
+                logger.error(
+                    "Gemini API prepayment credits are depleted -- this needs manual "
+                    "billing action at https://ai.studio/projects, not a transient rate "
+                    f"limit. Backing off {self.BILLING_EXHAUSTED_BACKOFF_SECONDS}s "
+                    "instead of the usual 60s so we don't keep re-hitting a quota that "
+                    "won't recover on its own."
+                )
+                self._disable_ai_temporarily(self.BILLING_EXHAUSTED_BACKOFF_SECONDS)
+            elif "429" in error_str or "RESOURCE_EXHAUSTED" in error_str:
+                self._disable_ai_temporarily(self.RATE_LIMIT_BACKOFF_SECONDS)
 
             return self._empty_response()
 
