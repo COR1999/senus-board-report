@@ -36,5 +36,8 @@ backend/senus.db
 # Uploads
 backend/uploads/
 
-# Coverage
+# Coverages
 coverage/
+
+# Claude
+.claude/
