@@ -262,17 +262,34 @@ async def get_revenue_trend(db: AsyncSession = Depends(get_db)):
 
     ai_periods = await _ai_reporting_periods_by_document(db, [r.document_id for r in rows])
 
-    return [
-        RevenueTrendPoint(
-            # Prefer the deterministically-extracted reporting_period (e.g.
-            # "HY2026") over extracted_at -- extracted_at is when we
-            # *processed* the upload, not the period the filing actually
-            # covers, so it's misleading as an axis label whenever those
-            # dates differ (which they always will in practice). Falls back
-            # to the AI-extracted period, then to extracted_at, when no
-            # deterministic period was found for that document.
-            period=r.reporting_period or ai_periods.get(r.document_id) or r.extracted_at.strftime("%b %Y"),
-            revenue=(float(r.revenue) if r.revenue is not None else None),
-        )
+    def period_label(r: FinancialMetrics) -> str:
+        # Prefer the deterministically-extracted reporting_period (e.g.
+        # "HY2026") over extracted_at -- extracted_at is when we
+        # *processed* the upload, not the period the filing actually
+        # covers, so it's misleading as an axis label whenever those
+        # dates differ (which they always will in practice). Falls back
+        # to the AI-extracted period, then to extracted_at, when no
+        # deterministic period was found for that document.
+        return r.reporting_period or ai_periods.get(r.document_id) or r.extracted_at.strftime("%b %Y")
+
+    points = [
+        RevenueTrendPoint(period=period_label(r), revenue=(float(r.revenue) if r.revenue is not None else None))
         for r in reversed(rows)
     ]
+
+    # With only one uploaded document (the realistic case today), there's no
+    # second row to plot a real trend against -- but the filing embeds its
+    # own prior-period comparative (`revenue_prior`), the same value the KPI
+    # card's `history`/change% already uses (see get_dashboard_metrics
+    # above). Prepending it here keeps the *chart* honest with the *card*:
+    # without this, the card shows "+4.1% vs prior period" while the chart
+    # right below it renders a single flat point, which reads as the delta
+    # being fabricated when it isn't.
+    if len(rows) < 2 and rows:
+        latest = rows[0]
+        if latest.revenue_prior is not None:
+            prior_label = latest.reporting_period_prior or MetricsService.derive_prior_period(period_label(latest))
+            if prior_label:
+                points = [RevenueTrendPoint(period=prior_label, revenue=float(latest.revenue_prior))] + points
+
+    return points

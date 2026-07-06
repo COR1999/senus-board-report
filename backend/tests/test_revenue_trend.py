@@ -13,8 +13,10 @@ async def _add_metrics_row(
     session: AsyncSession,
     *,
     revenue=None,
+    revenue_prior=None,
     extracted_at=None,
     fm_reporting_period=None,
+    fm_reporting_period_prior=None,
     ai_reporting_period=None,
 ) -> FinancialMetrics:
     doc = Document(filename="test.pdf", status="completed", created_at=datetime.utcnow())
@@ -24,7 +26,9 @@ async def _add_metrics_row(
     metrics = FinancialMetrics(
         document_id=doc.id,
         revenue=revenue,
+        revenue_prior=revenue_prior,
         reporting_period=fm_reporting_period,
+        reporting_period_prior=fm_reporting_period_prior,
         extracted_at=extracted_at or datetime.utcnow(),
     )
     session.add(metrics)
@@ -134,3 +138,49 @@ async def test_revenue_trend_falls_back_to_extracted_at_without_a_report(async_c
 
     assert response.status_code == 200
     assert response.json() == [{"period": "Mar 2025", "revenue": 100_000.0}]
+
+
+@pytest.mark.anyio
+async def test_revenue_trend_prepends_embedded_prior_point_with_only_one_document(async_client, async_session):
+    """
+    Regression test: the KPI card's own sparkline/change% already uses the
+    filing's embedded revenue_prior (see get_dashboard_metrics), so a single
+    uploaded document showing "+4.1% vs prior period" on the card while this
+    chart renders one flat point read as if the delta were fabricated. With
+    only one document, the chart must plot the same two real points the
+    card's percentage is computed from.
+    """
+    await _add_metrics_row(
+        async_session,
+        revenue=354_813.0,
+        revenue_prior=340_931.0,
+        fm_reporting_period="HY2026",
+        fm_reporting_period_prior="HY25",
+    )
+
+    response = await async_client.get("/metrics/dashboard/revenue-trend")
+
+    assert response.status_code == 200
+    assert response.json() == [
+        {"period": "HY25", "revenue": 340_931.0},
+        {"period": "HY2026", "revenue": 354_813.0},
+    ]
+
+
+@pytest.mark.anyio
+async def test_revenue_trend_does_not_prepend_prior_point_with_two_real_documents(async_client, async_session):
+    # Once a second document is uploaded, that's a real second row -- the
+    # embedded prior comparative on the first document must not also be
+    # injected, which would double-count / fabricate a third point.
+    base = datetime(2025, 1, 1)
+    await _add_metrics_row(
+        async_session, revenue=100_000.0, revenue_prior=90_000.0, extracted_at=base
+    )
+    await _add_metrics_row(
+        async_session, revenue=200_000.0, extracted_at=base + timedelta(days=180)
+    )
+
+    response = await async_client.get("/metrics/dashboard/revenue-trend")
+
+    assert response.status_code == 200
+    assert len(response.json()) == 2
