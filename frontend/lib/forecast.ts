@@ -37,7 +37,12 @@ export function projectRevenue(
   return Array.from({ length: periodsAhead }, (_, i) => {
     const index = lastIndex + i + 1
     return {
-      period: `+${i + 1}`,
+      // "+1"/"+2"/"+3" read like leftover debug notation. Real periods can
+      // be irregular, AI-extracted strings ("HY2026", "Q3 2025", ...) with
+      // no reliable way to compute "the next one" -- "Projected N" is
+      // honest about these being a simple trendline projection (per this
+      // function's own docstring), not a real future calendar period.
+      period: `Projected ${i + 1}`,
       revenue: Math.max(0, Math.round(slope * index + intercept)),
     }
   })

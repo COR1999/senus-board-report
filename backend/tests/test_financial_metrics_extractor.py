@@ -129,13 +129,16 @@ class TestExtractReportingPeriod:
     Narrative-only, extracted directly from the filing's own labels (e.g.
     "(HY2026)" for the current period, the recurring "(HY25:" for the prior
     comparative), NOT derived from `extracted_at` (upload/processing time,
-    not the period covered) and NOT dependent on the AI/Gemini path.
+    not the period covered) and NOT dependent on the AI/Gemini path. The
+    2-digit prior year is normalized to 4 digits ("HY25" -> "HY2025") so the
+    UI doesn't show "HY25 vs HY2026" side by side -- confirmed inconsistent-
+    looking by the user testing the live dashboard.
     """
 
     def test_extracts_current_and_prior_period_labels(self):
         result = FME.extract(SYNTHETIC_FILING)
         assert result["reporting_period"] == "HY2026"
-        assert result["reporting_period_prior"] == "HY25"
+        assert result["reporting_period_prior"] == "HY2025"
 
     def test_missing_period_labels_are_none_not_guessed(self):
         result = FME.extract("No period labels in this document at all.")
@@ -256,7 +259,7 @@ class TestExtractAgainstRealFiling:
         assert result["bookings_customers"] == 21
         assert result["bookings_pipeline"] == 500_000.0
         assert result["reporting_period"] == "HY2026"
-        assert result["reporting_period_prior"] == "HY25"
+        assert result["reporting_period_prior"] == "HY2025"
 
     def test_extract_balance_sheet_matches_known_real_values(self, real_text):
         result = FME.extract_balance_sheet(real_text)

@@ -13,9 +13,11 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Download, RefreshCw } from 'lucide-react'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Download, RefreshCw, CalendarRange } from 'lucide-react'
 import { type Report } from '@/lib/data-service'
 import { exportReportsToCsv } from '@/lib/export-csv'
+import { capitalize } from '@/lib/utils'
 import { useRegenerateReport } from '@/lib/hooks/use-mutations'
 
 interface ReportsTableProps {
@@ -65,7 +67,7 @@ export function ReportsTable({ reports = [], onRegenerated }: ReportsTableProps)
             {error}
           </div>
         )}
-        <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex flex-1 flex-col gap-2 sm:max-w-sm sm:flex-row">
             <Input
               placeholder="Search reports..."
@@ -73,28 +75,40 @@ export function ReportsTable({ reports = [], onRegenerated }: ReportsTableProps)
               onChange={(e) => setSearch(e.target.value)}
               aria-label="Search reports"
             />
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as Report['status'] | 'all')}
-              aria-label="Filter by status"
-              className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm text-foreground outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
-            >
-              {STATUS_OPTIONS.map((option) => (
-                <option key={option} value={option}>
-                  {option === 'all' ? 'All statuses' : option}
-                </option>
-              ))}
-            </select>
+            <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value as Report['status'] | 'all')}>
+              <SelectTrigger aria-label="Filter by status">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {STATUS_OPTIONS.map((option) => (
+                  <SelectItem key={option} value={option}>
+                    {option === 'all' ? 'All statuses' : capitalize(option)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => exportReportsToCsv(filtered)}
-            disabled={filtered.length === 0}
-          >
-            <Download className="h-4 w-4" />
-            Export CSV
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled
+              title="Filter by year/month coming soon"
+            >
+              <CalendarRange className="h-4 w-4" />
+              <span className="sr-only">Filter by year/month (coming soon)</span>
+              Filter by period
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => exportReportsToCsv(filtered)}
+              disabled={filtered.length === 0}
+            >
+              <Download className="h-4 w-4" />
+              Export CSV
+            </Button>
+          </div>
         </div>
 
         <Table>
@@ -119,7 +133,7 @@ export function ReportsTable({ reports = [], onRegenerated }: ReportsTableProps)
                     })}
                   </TableCell>
                   <TableCell>
-                    <Badge className={STATUS_STYLES[report.status]}>{report.status}</Badge>
+                    <Badge className={STATUS_STYLES[report.status]}>{capitalize(report.status)}</Badge>
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end">

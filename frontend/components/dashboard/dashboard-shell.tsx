@@ -19,10 +19,14 @@ export function DashboardShell({ title, description, children }: DashboardShellP
       <Sidebar />
       <TopNav />
       <main className="flex-1 md:ml-64 md:pt-0 pt-14">
-        <div className="space-y-10 p-6 md:p-10">
-          <div className="flex flex-col gap-1.5">
+        {/* space-y-10/p-10 previously made the page too tall to fit without
+            zooming out to 50%, per direct user feedback -- dialed back to
+            space-y-6/p-8, still a bit more breathing room than the original
+            space-y-8/p-8 but nowhere near as much vertical cost per section. */}
+        <div className="space-y-6 p-6 md:p-8">
+          <div className="flex flex-col gap-1">
             <h1 className="text-3xl font-bold tracking-tight text-foreground">{title}</h1>
-            {description && <p className="text-base text-muted-foreground">{description}</p>}
+            {description && <p className="text-sm text-muted-foreground">{description}</p>}
           </div>
           {children}
         </div>

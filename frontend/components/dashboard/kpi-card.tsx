@@ -42,11 +42,11 @@ export interface KpiCardProps extends React.ComponentPropsWithoutRef<typeof Card
    */
   history?: (number | null)[]
   /**
-   * 'hero' renders the large, presentation-slide-style treatment used for
-   * the top-of-dashboard headline metrics: bigger type, no icon badge (the
-   * boardroom-redesign brief treats typography, not iconography, as the
-   * primary design element for these), more internal whitespace. 'default'
-   * keeps the existing compact card used for secondary metrics.
+   * 'hero' renders the top-of-dashboard headline metrics: bolder type (not
+   * drastically larger -- oversized hero text made the page too tall to
+   * view without zooming out, per direct user feedback) and a colored icon
+   * badge reflecting trend. 'default' keeps the existing compact card used
+   * for secondary metrics.
    * @default 'default'
    */
   variant?: 'hero' | 'default'
@@ -88,19 +88,27 @@ export function KpiCard({
         >
           {title}
         </CardTitle>
-        {Icon && !isHero && (
+        {Icon && (
           <CardAction>
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-muted/40 text-muted-foreground transition-colors group-hover/card:bg-muted">
+            {/* Badge color follows trend (emerald/rose/slate) so the icon
+                itself signals which metrics need attention, rather than
+                coloring the big value number -- keeps the number itself
+                high-contrast and easy to read at a glance. */}
+            <div className={cn("flex h-8 w-8 items-center justify-center rounded-full transition-colors", bgClass, textClass)}>
               <Icon className="h-4 w-4" />
             </div>
           </CardAction>
         )}
       </CardHeader>
-      <CardContent className={cn("flex flex-col gap-1.5", isHero && "gap-3 pt-1")}>
+      <CardContent className={cn("flex flex-col gap-1.5", isHero && "gap-2.5 pt-1")}>
+        {/* Value color follows trend (same emerald/rose/slate palette as the
+            icon badge and delta pill) -- keeps the signal visible even
+            before reading the small pill text. */}
         <div
           className={cn(
-            "font-bold tracking-tight text-foreground",
-            isHero ? "text-4xl sm:text-5xl" : "text-2xl sm:text-3xl"
+            "font-bold tracking-tight",
+            trend === "neutral" ? "text-foreground" : textClass,
+            isHero ? "text-3xl sm:text-4xl" : "text-2xl sm:text-3xl"
           )}
         >
           {value}

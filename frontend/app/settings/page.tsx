@@ -1,6 +1,7 @@
 import { DashboardShell } from '@/components/dashboard/dashboard-shell'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { ThemeToggle } from '@/components/theme-toggle'
 
 // Placeholder only -- no settings data model or persistence exists yet.
 // Profile fields below mirror the hardcoded user shown in Sidebar/TopNav.
@@ -23,6 +24,16 @@ export default function SettingsPage() {
               <span className="text-xs text-muted-foreground">CEO & Co-Founder</span>
             </div>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Appearance</CardTitle>
+          <CardDescription>Choose how the dashboard looks on this device</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ThemeToggle />
         </CardContent>
       </Card>
     </DashboardShell>

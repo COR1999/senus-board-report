@@ -2,7 +2,9 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
+import type { TooltipContentProps } from 'recharts'
+import type { ValueType, NameType } from 'recharts/types/component/DefaultTooltipContent'
 import { type ChartDataPoint } from '@/lib/data-service'
 import { projectRevenue } from '@/lib/forecast'
 import { Card, CardHeader, CardTitle, CardDescription, CardAction, CardContent } from '@/components/ui/card'
@@ -15,6 +17,8 @@ interface RevenueChartProps {
 }
 
 const FORECAST_PERIODS = 3
+const REVENUE_COLOR = '#10b981'
+const FORECAST_COLOR = '#2a78d6'
 
 // Round-number, currency-short axis labels (e.g. "€250K") -- easier to scan
 // at a glance than raw values like "250000".
@@ -26,14 +30,54 @@ function formatAxisValue(value: number): string {
   return `${sign}€${magnitude}`
 }
 
+/**
+ * Custom tooltip, for three reasons the default `<Tooltip>` props couldn't
+ * fix: (1) Recharts renders one row per *series*, even where that series
+ * has no real value at the hovered point -- hovering the oldest real point
+ * showed a "Forecast" row despite that point being pure historical Revenue.
+ * Filtering to entries with a non-null value fixes that. (2) At the single
+ * point where the real line hands off to the forecast line, both series
+ * legitimately share the exact same value (see chartData's `withHandoff`
+ * above) -- showing "Revenue: €355K" *and* "Forecast: €355K" together read
+ * as a confusing duplicate, so the redundant Forecast entry is dropped
+ * whenever it exactly matches a Revenue entry already shown for that same
+ * point. (3) The default styling (small text, thin border) read as too
+ * low-contrast/hard to see; this uses solid opaque colors, a visible
+ * border, a real shadow, and bold, larger value text.
+ */
+function RevenueTooltip({ active, payload, label }: TooltipContentProps<ValueType, NameType>) {
+  if (!active || !payload) return null
+  const withValue = payload.filter((entry) => entry.value !== null && entry.value !== undefined)
+  const revenueValue = withValue.find((entry) => entry.dataKey === 'revenue')?.value
+  const entries = withValue.filter(
+    (entry) => !(entry.dataKey === 'forecast' && entry.value === revenueValue)
+  )
+  if (entries.length === 0) return null
+
+  return (
+    <div className="rounded-lg border border-border bg-card px-3 py-2 shadow-lg">
+      <div className="mb-1 text-xs font-medium text-muted-foreground">{label}</div>
+      {entries.map((entry) => (
+        <div key={entry.name} className="flex items-center gap-2 text-sm">
+          <span className="h-2 w-2 rounded-full" style={{ backgroundColor: entry.color }} />
+          <span className="text-muted-foreground">{entry.name}:</span>
+          <span className="font-semibold text-foreground">
+            {typeof entry.value === 'number' ? formatAxisValue(entry.value) : entry.value}
+          </span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 export function RevenueChart({ data, periodLabel }: RevenueChartProps) {
   const [showForecast, setShowForecast] = useState(false)
 
   // Combined series: real points keep their `revenue` value and get `revenue`
-  // = null for forecast points (so the solid line stops there); forecast
-  // points carry `forecast` instead (so the dashed line only draws there).
+  // = null for forecast points (so the solid area stops there); forecast
+  // points carry `forecast` instead (so the dashed area only draws there).
   // Recharts leaves a gap rather than connecting across a null value by
-  // default, which is what lets the two lines visually hand off at the
+  // default, which is what lets the two series visually hand off at the
   // last real data point without one overwriting the other.
   const chartData = useMemo(() => {
     if (!showForecast) return data
@@ -41,10 +85,18 @@ export function RevenueChart({ data, periodLabel }: RevenueChartProps) {
     const forecast = projectRevenue(data, FORECAST_PERIODS)
     if (forecast.length === 0) return data
 
-    const lastReal = data[data.length - 1]
+    // Give the *last real point itself* a `forecast` value (rather than
+    // appending a second, separate point with the same `period` label) so
+    // the two series join at one shared x position -- appending a
+    // duplicate entry previously made the same period label (e.g.
+    // "HY2026") render twice in a row on the axis.
+    const withHandoff = data.map((point, index) =>
+      index === data.length - 1
+        ? { ...point, forecast: point.revenue as number | null }
+        : { ...point, forecast: null as number | null }
+    )
     return [
-      ...data.map((point) => ({ ...point, forecast: null as number | null })),
-      { ...lastReal, forecast: lastReal?.revenue ?? null }, // hand-off point joins the two lines
+      ...withHandoff,
       ...forecast.map((point) => ({ period: point.period, revenue: null, forecast: point.revenue })),
     ]
   }, [data, showForecast])
@@ -63,7 +115,20 @@ export function RevenueChart({ data, periodLabel }: RevenueChartProps) {
       </CardHeader>
       <CardContent>
         <ResponsiveContainer width="100%" height={300}>
-          <LineChart data={chartData}>
+          {/* accessibilityLayer={false}: Recharts makes the chart surface
+              keyboard-focusable by default, which drew an ugly focus-ring
+              box on click -- same issue and same fix as KpiSparkline. */}
+          <AreaChart data={chartData} accessibilityLayer={false} margin={{ left: 4, right: 12, top: 8 }}>
+            <defs>
+              <linearGradient id="revenueFill" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={REVENUE_COLOR} stopOpacity={0.25} />
+                <stop offset="100%" stopColor={REVENUE_COLOR} stopOpacity={0} />
+              </linearGradient>
+              <linearGradient id="forecastFill" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={FORECAST_COLOR} stopOpacity={0.15} />
+                <stop offset="100%" stopColor={FORECAST_COLOR} stopOpacity={0} />
+              </linearGradient>
+            </defs>
             {/* Horizontal-only, recessive gridlines -- "minimal gridlines, no
                 chart junk" per the boardroom redesign brief. Axis lines/ticks
                 dropped in favor of muted labels only. */}
@@ -74,6 +139,7 @@ export function RevenueChart({ data, periodLabel }: RevenueChartProps) {
               tickLine={false}
               tick={{ fill: 'currentColor', fontSize: 12 }}
               className="text-muted-foreground"
+              padding={{ left: 12, right: 12 }}
             />
             <YAxis
               axisLine={false}
@@ -81,35 +147,47 @@ export function RevenueChart({ data, periodLabel }: RevenueChartProps) {
               tick={{ fill: 'currentColor', fontSize: 12 }}
               className="text-muted-foreground"
               tickFormatter={formatAxisValue}
+              tickCount={5}
               width={56}
             />
-            <Tooltip />
+            {/* `offset={24}` pushes the box further from the cursor than
+                Recharts' 10px default -- at the default offset the box sat
+                right on top of the hovered point, hiding the very dot it
+                was meant to label. See RevenueTooltip above for why a
+                custom content renderer was needed at all. */}
+            <Tooltip offset={24} content={(props) => <RevenueTooltip {...props} />} />
             {/* A single series (no forecast) doesn't need a legend box -- the
                 card title already names it (dataviz skill: legend only once
                 there are 2+ series to distinguish). */}
             {showForecast && <Legend />}
-            <Line
+            <Area
               type="monotone"
               dataKey="revenue"
               name="Revenue"
-              stroke="#10b981"
+              stroke={REVENUE_COLOR}
               strokeWidth={2}
-              dot={{ fill: '#10b981', r: 4 }}
+              fill="url(#revenueFill)"
+              dot={{ fill: REVENUE_COLOR, r: 4, strokeWidth: 0 }}
+              activeDot={{ r: 5, strokeWidth: 0 }}
               connectNulls={false}
+              isAnimationActive={false}
             />
             {showForecast && (
-              <Line
+              <Area
                 type="monotone"
                 dataKey="forecast"
                 name="Forecast"
-                stroke="#2a78d6"
+                stroke={FORECAST_COLOR}
                 strokeWidth={2}
                 strokeDasharray="5 5"
-                dot={{ fill: '#2a78d6', r: 3 }}
+                fill="url(#forecastFill)"
+                dot={{ fill: FORECAST_COLOR, r: 3, strokeWidth: 0 }}
+                activeDot={{ r: 4, strokeWidth: 0 }}
                 connectNulls={false}
+                isAnimationActive={false}
               />
             )}
-          </LineChart>
+          </AreaChart>
         </ResponsiveContainer>
       </CardContent>
     </Card>

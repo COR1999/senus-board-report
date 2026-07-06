@@ -43,12 +43,25 @@ export function KpiStatStrip({ items, periodLabel }: KpiStatStripProps) {
           const { textClass, bgClass, Icon: TrendIcon } = getTrendStyle(trend)
           return (
             <div key={key} className="flex flex-col gap-1">
-              <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">
+              {/* Was text-[11px] font-medium text-muted-foreground/70 -- both
+                  the tiny size and the extra opacity reduction on top of an
+                  already-muted color made this caption hard to read. */}
+              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 {category}
               </span>
-              <span className="text-sm font-medium text-muted-foreground">{label}</span>
+              <span className="text-sm font-medium text-foreground/80">{label}</span>
               <div className="flex items-baseline gap-2">
-                <span className="text-xl font-semibold tracking-tight text-foreground">{value}</span>
+                {/* Same trend-follows-value-color treatment as KpiCard --
+                    a metric like EBITDA Margin at -133.5% shouldn't read in
+                    plain neutral text. */}
+                <span
+                  className={cn(
+                    'text-xl font-semibold tracking-tight',
+                    trend === 'neutral' ? 'text-foreground' : textClass
+                  )}
+                >
+                  {value}
+                </span>
                 <span
                   className={cn(
                     'inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[11px] font-semibold',
