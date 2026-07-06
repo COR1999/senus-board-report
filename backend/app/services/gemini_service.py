@@ -6,6 +6,7 @@ import time
 import json
 import hashlib
 import re
+from collections import deque
 from typing import Optional, Dict, Any
 
 from cachetools import TTLCache
@@ -27,6 +28,17 @@ class GeminiAnalysisService:
 
     _cache = TTLCache(maxsize=1000, ttl=86400)
     _ai_disabled_until: float = 0
+
+    # Proactive rate limiting -- these back off BEFORE a 429 happens,
+    # rather than only reacting after Gemini has already rejected a call.
+    # Defaults are conservative guesses for a free-tier-ish quota; tune
+    # via env vars to match your actual plan.
+    MAX_CALLS_PER_MINUTE = int(os.getenv("GEMINI_MAX_CALLS_PER_MINUTE", "10"))
+    MAX_CALLS_PER_DAY = int(os.getenv("GEMINI_MAX_CALLS_PER_DAY", "1000"))
+
+    _call_timestamps: "deque[float]" = deque()
+    _daily_call_count: int = 0
+    _daily_window_started: float = 0.0
 
     def __init__(self, api_key: Optional[str] = None):
         self.api_key = api_key or os.getenv("GEMINI_API_KEY")
@@ -53,8 +65,42 @@ class GeminiAnalysisService:
         )
 
     def _disable_ai_temporarily(self, seconds: int = 60):
-        self._ai_disabled_until = time.time() + seconds
+        GeminiAnalysisService._ai_disabled_until = time.time() + seconds
         logger.warning(f"Gemini disabled for {seconds}s (quota)")
+
+    # =========================================================
+    # PROACTIVE RATE LIMITING (per-minute + per-day)
+    # =========================================================
+    def _within_rate_limit(self) -> bool:
+        now = time.time()
+
+        if now - self._daily_window_started > 86400:
+            GeminiAnalysisService._daily_window_started = now
+            GeminiAnalysisService._daily_call_count = 0
+
+        if self._daily_call_count >= self.MAX_CALLS_PER_DAY:
+            logger.warning(
+                f"Gemini daily call cap reached ({self.MAX_CALLS_PER_DAY}); "
+                "falling back without calling the API"
+            )
+            return False
+
+        while self._call_timestamps and now - self._call_timestamps[0] > 60:
+            self._call_timestamps.popleft()
+
+        if len(self._call_timestamps) >= self.MAX_CALLS_PER_MINUTE:
+            logger.warning(
+                f"Gemini per-minute call cap reached ({self.MAX_CALLS_PER_MINUTE}); "
+                "falling back without calling the API"
+            )
+            return False
+
+        return True
+
+    def _record_call(self) -> None:
+        now = time.time()
+        GeminiAnalysisService._call_timestamps.append(now)
+        GeminiAnalysisService._daily_call_count += 1
 
     # =========================================================
     # CACHE
@@ -86,7 +132,13 @@ class GeminiAnalysisService:
         if isinstance(cached, dict):
             return cached
 
+        # Proactive guard: stay under the quota ourselves instead of
+        # waiting to get rejected with a 429.
+        if not self._within_rate_limit():
+            return self._empty_response()
+
         try:
+            self._record_call()
             response = client.models.generate_content(
                 model="gemini-2.0-flash",
                 contents=prompt,
