@@ -53,6 +53,10 @@ export function DashboardContainer() {
     fetchAllData()
   }, [])
 
+  const refetchReports = () => {
+    getReports().then(setReports)
+  }
+
   if (error) {
     return (
       <DashboardShell title="Executive Dashboard">
@@ -146,7 +150,7 @@ export function DashboardContainer() {
       </div>
 
       {/* Reports Table */}
-      <ReportsTable reports={reports} />
+      <ReportsTable reports={reports} onRegenerated={refetchReports} />
     </DashboardShell>
   )
 }

@@ -13,13 +13,14 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { Upload } from 'lucide-react'
-import { getDocuments, uploadPDF, type DocumentItem } from '@/lib/data-service'
+import { Trash2, Upload } from 'lucide-react'
+import { getDocuments, uploadPDF, deleteDocument, type DocumentItem } from '@/lib/data-service'
 
 export default function DocumentsPage() {
   const [documents, setDocuments] = useState<DocumentItem[]>([])
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
+  const [deletingId, setDeletingId] = useState<number | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const refresh = () => {
@@ -45,6 +46,22 @@ export default function DocumentsPage() {
     } finally {
       setUploading(false)
       if (fileInputRef.current) fileInputRef.current.value = ''
+    }
+  }
+
+  const handleDelete = async (doc: DocumentItem) => {
+    if (!window.confirm(`Delete "${doc.filename}"? This also removes its extracted metrics and report.`)) {
+      return
+    }
+
+    setDeletingId(doc.id)
+    try {
+      await deleteDocument(doc.id)
+      refresh()
+    } catch (error) {
+      console.error('Delete failed:', error)
+    } finally {
+      setDeletingId(null)
     }
   }
 
@@ -85,6 +102,7 @@ export default function DocumentsPage() {
                   <TableHead>Filename</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Uploaded</TableHead>
+                  <TableHead className="text-right">Action</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -102,11 +120,23 @@ export default function DocumentsPage() {
                           day: 'numeric',
                         })}
                       </TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 w-8 p-0 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                          onClick={() => handleDelete(doc)}
+                          disabled={deletingId === doc.id}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                          <span className="sr-only">Delete {doc.filename}</span>
+                        </Button>
+                      </TableCell>
                     </TableRow>
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={3} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
                       No documents uploaded yet
                     </TableCell>
                   </TableRow>

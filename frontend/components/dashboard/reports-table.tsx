@@ -13,12 +13,14 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Download } from 'lucide-react'
-import { type Report } from '@/lib/data-service'
+import { Download, RefreshCw } from 'lucide-react'
+import { regenerateReport, type Report } from '@/lib/data-service'
 import { exportReportsToCsv } from '@/lib/export-csv'
 
 interface ReportsTableProps {
   reports?: Report[]
+  /** Called after a report finishes regenerating, so the parent can re-fetch the list. */
+  onRegenerated?: () => void
 }
 
 const STATUS_STYLES: Record<Report['status'], string> = {
@@ -35,9 +37,10 @@ function reportDisplayName(report: Report): string {
   return name && name.trim().length > 0 ? name : `Document #${report.document_id}`
 }
 
-export function ReportsTable({ reports = [] }: ReportsTableProps) {
+export function ReportsTable({ reports = [], onRegenerated }: ReportsTableProps) {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<Report['status'] | 'all'>('all')
+  const [regeneratingId, setRegeneratingId] = useState<number | null>(null)
 
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase()
@@ -48,6 +51,18 @@ export function ReportsTable({ reports = [] }: ReportsTableProps) {
       return haystack.includes(query)
     })
   }, [reports, search, statusFilter])
+
+  const handleRegenerate = async (report: Report) => {
+    setRegeneratingId(report.id)
+    try {
+      await regenerateReport(report.id)
+      onRegenerated?.()
+    } catch (error) {
+      console.error('Regenerate failed:', error)
+    } finally {
+      setRegeneratingId(null)
+    }
+  }
 
   return (
     <Card className="col-span-full">
@@ -113,16 +128,29 @@ export function ReportsTable({ reports = [] }: ReportsTableProps) {
                     <Badge className={STATUS_STYLES[report.status]}>{report.status}</Badge>
                   </TableCell>
                   <TableCell className="text-right">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-8 w-8 p-0 hover:bg-muted/50"
-                      disabled
-                      title="PDF export coming later"
-                    >
-                      <Download className="h-4 w-4" />
-                      <span className="sr-only">Download report (PDF export coming later)</span>
-                    </Button>
+                    <div className="flex justify-end">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-8 p-0 hover:bg-muted/50"
+                        onClick={() => handleRegenerate(report)}
+                        disabled={regeneratingId === report.id}
+                        title="Regenerate report"
+                      >
+                        <RefreshCw className={`h-4 w-4 ${regeneratingId === report.id ? 'animate-spin' : ''}`} />
+                        <span className="sr-only">Regenerate report for {reportDisplayName(report)}</span>
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-8 p-0"
+                        disabled
+                        title="PDF export coming later"
+                      >
+                        <Download className="h-4 w-4" />
+                        <span className="sr-only">Download report (PDF export coming later)</span>
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))

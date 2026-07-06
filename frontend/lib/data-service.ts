@@ -166,6 +166,28 @@ export async function getDocuments(): Promise<DocumentItem[]> {
   }
 }
 
+/**
+ * Deletes a document (and, via backend cascade, its FinancialMetrics,
+ * BalanceSheetMetrics, and Report rows). Throws on failure -- unlike the
+ * GET helpers above, a delete failing silently would be misleading to the
+ * caller, so this is intentionally not caught-and-defaulted.
+ */
+export async function deleteDocument(documentId: number): Promise<void> {
+  const res = await fetch(`${API_URL}/api/documents/${documentId}`, {
+    method: 'DELETE',
+  })
+  if (!res.ok) throw new Error(`Failed to delete document: ${res.statusText}`)
+}
+
+/** Force-regenerates a report from its source document. Throws on failure (same reasoning as deleteDocument). */
+export async function regenerateReport(reportId: number): Promise<Report> {
+  const res = await fetch(`${API_URL}/api/reports/${reportId}/regenerate`, {
+    method: 'POST',
+  })
+  if (!res.ok) throw new Error(`Failed to regenerate report: ${res.statusText}`)
+  return res.json()
+}
+
 export async function uploadPDF(file: File): Promise<{ id: string; message: string }> {
   try {
     const formData = new FormData()
