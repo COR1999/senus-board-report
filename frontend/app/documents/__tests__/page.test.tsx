@@ -53,4 +53,31 @@ describe('DocumentsPage', () => {
 
     expect(deleteSpy).not.toHaveBeenCalled()
   })
+
+  it('capitalizes the status and shows a formatted file size', async () => {
+    render(<DocumentsPage />)
+    expect(await screen.findByText('Completed')).toBeInTheDocument()
+    expect(screen.getByText('1 KB')).toBeInTheDocument()
+  })
+
+  it('filters the list by filename search', async () => {
+    vi.spyOn(dataService, 'getDocuments').mockResolvedValue([
+      { id: 1, filename: 'senus-filing.pdf', file_size: 1024, status: 'completed', created_at: '2025-12-31T00:00:00Z' },
+      { id: 2, filename: 'other-report.pdf', file_size: 2048, status: 'completed', created_at: '2025-12-31T00:00:00Z' },
+    ])
+
+    render(<DocumentsPage />)
+    await screen.findByText('senus-filing.pdf')
+
+    fireEvent.change(screen.getByLabelText('Search documents'), { target: { value: 'senus' } })
+
+    expect(screen.getByText('senus-filing.pdf')).toBeInTheDocument()
+    expect(screen.queryByText('other-report.pdf')).not.toBeInTheDocument()
+  })
+
+  it('shows a disabled year/month filter button noting it is coming soon', async () => {
+    render(<DocumentsPage />)
+    await screen.findByText('ANY_DOCUMENT.pdf')
+    expect(screen.getByRole('button', { name: /filter by period/i })).toBeDisabled()
+  })
 })

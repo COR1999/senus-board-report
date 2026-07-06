@@ -17,6 +17,14 @@ export function formatPercent(value: number, opts?: { showSign?: boolean }): str
   return `${sign}${value}%`
 }
 
+/** Formats a byte count as a readable size (e.g. `formatFileSize(245_000)` -> "239 KB"). */
+export function formatFileSize(bytes: number | null): string {
+  if (bytes === null) return '—'
+  if (bytes >= 1_000_000) return `${(bytes / 1_048_576).toFixed(1)} MB`
+  if (bytes >= 1_000) return `${(bytes / 1024).toFixed(0)} KB`
+  return `${bytes} B`
+}
+
 interface TrendStyle {
   /** Tailwind text color class for the trend */
   textClass: string

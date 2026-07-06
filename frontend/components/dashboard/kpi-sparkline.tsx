@@ -2,6 +2,7 @@
 
 import { Line, LineChart, ResponsiveContainer } from 'recharts'
 import { getTrendColor, type Trend } from '@/lib/format'
+import { cn } from '@/lib/utils'
 
 export interface KpiSparklineProps {
   /** Raw historical values, oldest -> newest. `null` entries (unreported
@@ -33,9 +34,16 @@ export function KpiSparkline({ history, trend, className }: KpiSparklineProps) {
   const color = getTrendColor(trend)
 
   return (
-    <div className={className ?? 'h-10 w-24'}>
+    // Recharts makes the chart surface keyboard-focusable by default
+    // (its "accessibility layer"), which drew an ugly focus-ring box on
+    // click -- pointless here since this is a purely decorative sparkline
+    // with no independent meaning (the real value/delta are already text
+    // right next to it). `accessibilityLayer={false}` below turns off the
+    // tabIndex/keyboard-nav behavior that box came from; `outline-none` is
+    // a belt-and-suspenders CSS fallback.
+    <div className={cn(className ?? 'h-10 w-24', 'outline-none [&_svg]:outline-none')}>
       <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={data} margin={{ top: 2, right: 2, bottom: 2, left: 2 }}>
+        <LineChart data={data} margin={{ top: 2, right: 2, bottom: 2, left: 2 }} accessibilityLayer={false}>
           <Line
             type="monotone"
             dataKey="value"

@@ -2,9 +2,8 @@
 
 import * as React from 'react'
 import Link from 'next/link'
-import { Bell, Search } from 'lucide-react'
+import { Bell } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
   DropdownMenu,
@@ -17,18 +16,14 @@ import {
 
 export function TopNav() {
   return (
-    <header className="sticky top-0 z-20 hidden border-b border-border/40 bg-card/95 backdrop-blur md:flex md:h-16 md:items-center md:justify-between md:px-10">
-      {/* Left: Search */}
-      <div className="flex flex-1 items-center gap-4">
-        <div className="relative w-64">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Search reports..."
-            className="h-9 border-border/40 bg-muted/50 pl-10"
-          />
-        </div>
-      </div>
-
+    // `md:ml-64` matches <main>'s offset in dashboard-shell.tsx -- without
+    // it, this header rendered underneath the fixed-position Sidebar
+    // instead of starting to its right, which is what actually made the
+    // (also non-functional) search box look like a stray floating element
+    // clipped by the sidebar. Removed that search box outright rather than
+    // just repositioning it -- it was never wired to a handler, and both
+    // /reports and /documents now have their own real, working search.
+    <header className="sticky top-0 z-20 hidden border-b border-border/40 bg-card/95 backdrop-blur md:ml-64 md:flex md:h-16 md:items-center md:justify-end md:px-10">
       {/* Right: Notifications & User Menu */}
       <div className="flex items-center gap-4">
         {/* Notifications */}

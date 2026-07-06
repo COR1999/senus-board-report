@@ -13,4 +13,12 @@ describe('SettingsPage', () => {
     // Appears twice: once in the sidebar's footer profile, once in the settings card.
     expect(screen.getAllByText('Sarah Jenkins').length).toBeGreaterThan(0)
   })
+
+  it('renders a working Appearance section with the theme toggle', () => {
+    render(<SettingsPage />)
+    expect(screen.getByText('Appearance')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /light/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /dark/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /system/i })).toBeInTheDocument()
+  })
 })

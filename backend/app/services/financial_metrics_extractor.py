@@ -507,17 +507,27 @@ class FinancialMetricsExtractor:
         # --- Reporting period (narrative only, same reliability class as
         # customers/bookings above). This filing states its own period as
         # "(HY2026)" once near the top, and prints every comparative figure
-        # as "(HY25: <value>)" throughout -- these labels are kept verbatim
-        # ("HY2026"/"HY25") rather than reformatted, since real filings use
-        # inconsistent conventions that a generic year-math derivation would
-        # get wrong. Not using `_find_first` here since it discards
-        # everything but the captured group, and "HY" is part of the label
-        # itself, not just a marker around it. ---
+        # as "(HY25: <value>)" throughout. The year is normalized to 4
+        # digits (25 -> 2025) since showing "HY25 vs HY2026" side by side in
+        # the UI reads as inconsistent -- but the label's structure ("HY" +
+        # year) is otherwise kept as the filing states it, not reformatted
+        # into some other convention. Not using `_find_first` here since it
+        # discards everything but the captured group, and "HY" is part of
+        # the label itself, not just a marker around it. ---
+        def _four_digit_year(digits: str) -> str:
+            # A 2-digit year always means 20xx for a company that didn't
+            # exist last century -- safe, unambiguous expansion, not a guess.
+            return f"20{digits}" if len(digits) == 2 else digits
+
         reporting_period_match = re.search(r"\(HY(\d{2,4})\)", text)
-        reporting_period = f"HY{reporting_period_match.group(1)}" if reporting_period_match else None
+        reporting_period = (
+            f"HY{_four_digit_year(reporting_period_match.group(1))}" if reporting_period_match else None
+        )
 
         reporting_period_prior_match = re.search(r"\(HY(\d{2,4}):", text)
-        reporting_period_prior = f"HY{reporting_period_prior_match.group(1)}" if reporting_period_prior_match else None
+        reporting_period_prior = (
+            f"HY{_four_digit_year(reporting_period_prior_match.group(1))}" if reporting_period_prior_match else None
+        )
 
         # -----------------------------------------------------
         # NORMALISE

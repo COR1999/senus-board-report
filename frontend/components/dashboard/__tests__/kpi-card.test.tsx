@@ -98,7 +98,7 @@ describe('KpiCard', () => {
     expect(container.querySelector('.h-10.w-24')).not.toBeNull()
   })
 
-  it('renders the hero size with larger value text and no icon badge', () => {
+  it('renders the hero size with larger, bolder value text and a colored icon badge', () => {
     const { container } = render(
       <KpiCard
         title="Total Revenue"
@@ -109,10 +109,8 @@ describe('KpiCard', () => {
         variant="hero"
       />
     )
-    expect(container.querySelector('.text-4xl')).not.toBeNull()
-    // The icon-in-box badge is dropped for hero cards -- typography, not
-    // iconography, is the primary design element there.
-    expect(container.querySelector('svg.lucide-trending-up')).toBeNull()
+    expect(container.querySelector('.text-3xl')).not.toBeNull()
+    expect(container.querySelector('svg.lucide-trending-up')).not.toBeNull()
   })
 
   it('renders the default size with the icon badge and standard value text', () => {
@@ -121,6 +119,23 @@ describe('KpiCard', () => {
     )
     expect(container.querySelector('.text-2xl')).not.toBeNull()
     expect(container.querySelector('svg.lucide-trending-up')).not.toBeNull()
+  })
+
+  it('colors both the value text and the icon badge by trend', () => {
+    const { container: up } = render(
+      <KpiCard title="Revenue" value="€500,000" changePercentage={8.3} trend="up" icon={TrendingUp} />
+    )
+    expect(up.querySelectorAll('.text-emerald-600').length).toBeGreaterThanOrEqual(2) // value + icon badge
+
+    const { container: down } = render(
+      <KpiCard title="EBITDA" value="-€474,000" changePercentage={-19.8} trend="down" icon={TrendingUp} />
+    )
+    expect(down.querySelectorAll('.text-rose-600').length).toBeGreaterThanOrEqual(2)
+
+    const { container: neutral } = render(
+      <KpiCard title="Customers" value="138" changePercentage={0} trend="neutral" icon={TrendingUp} />
+    )
+    expect(neutral.querySelector('.text-foreground')).not.toBeNull()
   })
 
   it('renders no sparkline when history is omitted, empty, or single-point', () => {

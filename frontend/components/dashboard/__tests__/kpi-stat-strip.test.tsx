@@ -28,4 +28,10 @@ describe('KpiStatStrip', () => {
     // Recharts chart wrapper specifically, not "no svg at all".
     expect(container.querySelector('.recharts-responsive-container')).toBeNull()
   })
+
+  it('colors the value text by trend, not just the small delta pill', () => {
+    const { container } = render(<KpiStatStrip items={items} />)
+    // EBITDA Margin is trend "up" -- its value should carry the trend color.
+    expect(container.querySelector('.text-emerald-600')).not.toBeNull()
+  })
 })

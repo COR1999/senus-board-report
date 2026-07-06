@@ -49,11 +49,13 @@ describe('ReportsTable', () => {
     expect(screen.queryByText('Senus PLC')).not.toBeInTheDocument()
   })
 
-  it('filters by status', () => {
+  it('filters by status', async () => {
     render(<ReportsTable reports={reports} />)
-    fireEvent.change(screen.getByLabelText('Filter by status'), { target: { value: 'failed' } })
 
-    expect(screen.getByText('Document #103')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('combobox', { name: 'Filter by status' }))
+    fireEvent.click(await screen.findByRole('option', { name: 'Failed' }))
+
+    expect(await screen.findByText('Document #103')).toBeInTheDocument()
     expect(screen.queryByText('Senus PLC')).not.toBeInTheDocument()
   })
 
@@ -69,6 +71,18 @@ describe('ReportsTable', () => {
   it('disables the CSV export button when there is nothing to export', () => {
     render(<ReportsTable reports={[]} />)
     expect(screen.getByRole('button', { name: /export csv/i })).toBeDisabled()
+  })
+
+  it('capitalizes the status badge text', () => {
+    render(<ReportsTable reports={reports} />)
+    expect(screen.getByText('Completed')).toBeInTheDocument()
+    expect(screen.getByText('Generating')).toBeInTheDocument()
+    expect(screen.getByText('Failed')).toBeInTheDocument()
+  })
+
+  it('shows a disabled year/month filter button noting it is coming soon', () => {
+    render(<ReportsTable reports={reports} />)
+    expect(screen.getByRole('button', { name: /filter by period/i })).toBeDisabled()
   })
 
   it('calls regenerateReport and onRegenerated when the regenerate button is clicked', async () => {
