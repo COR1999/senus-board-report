@@ -67,6 +67,15 @@ class DashboardSummaryResponse(BaseModel):
     # exists for this field (same as `customers`), so change/trend are
     # always 0/neutral rather than a real computed delta.
     bookings: KPIMetric
+    # AI-extracted free-text reporting period for the latest document (e.g.
+    # "H1 2025"), and a best-effort prior-period label derived from it (e.g.
+    # "H1 2024") -- lets the frontend show real date context on KPI cards
+    # instead of a generic, sometimes-inaccurate "vs last quarter"/"vs last
+    # month". Both None when no report/summary exists yet for the latest
+    # document (e.g. still generating) or its period couldn't be parsed --
+    # never a guessed/fabricated label.
+    current_period: Optional[str] = None
+    prior_period: Optional[str] = None
 
 
 # ==================== Revenue Trend ====================

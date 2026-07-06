@@ -8,6 +8,7 @@ from sqlalchemy import select
 from app.core.database import get_db
 from app.models.financial_metrics import FinancialMetrics
 from app.models.balance_sheet_metrics import BalanceSheetMetrics
+from app.models.report import Report
 from app.services.metrics_service import MetricsService
 from app.schemas import DashboardSummaryResponse, KPIMetric, RevenueTrendPoint
 
@@ -29,6 +30,34 @@ HISTORY_WINDOW = 8
 REVENUE_TREND_WINDOW = 24
 
 _EMPTY_RATIO = KPIMetric(value="N/A", change=0, trend="neutral", history=[])
+
+
+async def _ai_reporting_periods_by_document(
+    db: AsyncSession, document_ids: List[int]
+) -> dict[int, str]:
+    """
+    Maps document_id -> AI-extracted reporting_period (e.g. "H1 2025") from
+    Report.summary, for whichever of the given documents have it set. Used
+    only as a fallback when FinancialMetrics.reporting_period (extracted
+    deterministically -- see FinancialMetricsExtractor) wasn't found, since
+    the AI/Gemini narrative path that populates Report.summary is skipped
+    whenever the deterministic baseline extraction is already complete (see
+    report_service._baseline_is_complete) and so is usually empty in
+    practice. A single batched query rather than one per row --
+    REVENUE_TREND_WINDOW rows would otherwise mean up to 24 round-trips.
+    """
+    if not document_ids:
+        return {}
+    stmt = select(Report.document_id, Report.summary).where(
+        Report.document_id.in_(document_ids)
+    )
+    result = await db.execute(stmt)
+    periods: dict[int, str] = {}
+    for document_id, summary in result.all():
+        period = (summary or {}).get("reporting_period")
+        if period:
+            periods[document_id] = period
+    return periods
 
 
 @router.get("/dashboard/summary", response_model=DashboardSummaryResponse)
@@ -56,10 +85,20 @@ async def get_dashboard_metrics(db: AsyncSession = Depends(get_db)):
             revenue=empty, customers=empty_count, cash=empty, ebitda=empty,
             ebitda_margin=_EMPTY_RATIO, cash_runway=_EMPTY_RATIO,
             interest_cover=_EMPTY_RATIO, roce=_EMPTY_RATIO, bookings=_EMPTY_RATIO,
+            current_period=None, prior_period=None,
         )
 
     latest = rows[0]
     previous = rows[1] if len(rows) > 1 else None
+
+    # Prefer the deterministic extractor's own reporting_period/_prior
+    # (e.g. "HY2026"/"HY25", extracted directly from the filing's text) --
+    # falls back to the AI-extracted Report.summary field (usually empty in
+    # practice, see the helper's docstring), then to a best-effort derived
+    # prior label when only a current period is known.
+    ai_periods = await _ai_reporting_periods_by_document(db, [latest.document_id])
+    current_period = latest.reporting_period or ai_periods.get(latest.document_id)
+    prior_period = latest.reporting_period_prior or MetricsService.derive_prior_period(current_period)
 
     def prior_fallback(field: str) -> Optional[float]:
         # When there's no second DB row to diff against (today: only one
@@ -200,6 +239,8 @@ async def get_dashboard_metrics(db: AsyncSession = Depends(get_db)):
         interest_cover=ratio_kpi(interest_cover_current, interest_cover_prior_val, lambda v: f"{v:.1f}x"),
         roce=ratio_kpi(roce_current, roce_prior_val, lambda v: f"{v:.1f}%"),
         bookings=bookings_kpi(),
+        current_period=current_period,
+        prior_period=prior_period,
     )
 
 
@@ -219,9 +260,18 @@ async def get_revenue_trend(db: AsyncSession = Depends(get_db)):
     result = await db.execute(stmt)
     rows = result.scalars().all()
 
+    ai_periods = await _ai_reporting_periods_by_document(db, [r.document_id for r in rows])
+
     return [
         RevenueTrendPoint(
-            period=r.extracted_at.strftime("%b %Y"),
+            # Prefer the deterministically-extracted reporting_period (e.g.
+            # "HY2026") over extracted_at -- extracted_at is when we
+            # *processed* the upload, not the period the filing actually
+            # covers, so it's misleading as an axis label whenever those
+            # dates differ (which they always will in practice). Falls back
+            # to the AI-extracted period, then to extracted_at, when no
+            # deterministic period was found for that document.
+            period=r.reporting_period or ai_periods.get(r.document_id) or r.extracted_at.strftime("%b %Y"),
             revenue=(float(r.revenue) if r.revenue is not None else None),
         )
         for r in reversed(rows)

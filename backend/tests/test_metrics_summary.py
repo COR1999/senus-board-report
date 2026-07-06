@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.document import Document
 from app.models.financial_metrics import FinancialMetrics
 from app.models.balance_sheet_metrics import BalanceSheetMetrics
+from app.models.report import Report
 
 
 async def _add_metrics_row(
@@ -21,6 +22,9 @@ async def _add_metrics_row(
     ebitda_prior=None,
     bookings_value=None,
     extracted_at=None,
+    fm_reporting_period=None,
+    fm_reporting_period_prior=None,
+    ai_reporting_period=None,
 ) -> FinancialMetrics:
     doc = Document(
         filename="test.pdf",
@@ -40,9 +44,15 @@ async def _add_metrics_row(
         cash_prior=cash_prior,
         ebitda_prior=ebitda_prior,
         bookings_value=bookings_value,
+        reporting_period=fm_reporting_period,
+        reporting_period_prior=fm_reporting_period_prior,
         extracted_at=extracted_at or datetime.utcnow(),
     )
     session.add(metrics)
+
+    if ai_reporting_period is not None:
+        session.add(Report(document_id=doc.id, summary={"reporting_period": ai_reporting_period}, status="completed"))
+
     await session.flush()  # flush (not commit) -- async_client shares this session, and
     # conftest.py's async_session fixture rolls back at teardown for test isolation.
     return metrics
@@ -65,6 +75,8 @@ async def test_dashboard_summary_zero_rows(async_client, async_session):
         assert body[key]["history"] == []
         assert body[key]["trend"] == "neutral"
         assert body[key]["change"] == 0
+    assert body["current_period"] is None
+    assert body["prior_period"] is None
 
 
 @pytest.mark.anyio
@@ -245,3 +257,52 @@ async def test_dashboard_summary_bookings_shows_formatted_value(async_client, as
     # never a fabricated delta.
     assert body["trend"] == "neutral"
     assert body["change"] == 0
+
+
+@pytest.mark.anyio
+async def test_dashboard_summary_falls_back_to_ai_reporting_period_and_derives_prior(async_client, async_session):
+    # No deterministic FinancialMetrics.reporting_period set -- falls back
+    # to the AI-extracted Report.summary field, then derives a best-effort
+    # prior label since no explicit prior label exists in this fallback.
+    await _add_metrics_row(async_session, revenue=100_000.0, ai_reporting_period="H1 2025")
+
+    response = await async_client.get("/metrics/dashboard/summary")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["current_period"] == "H1 2025"
+    assert body["prior_period"] == "H1 2024"
+
+
+@pytest.mark.anyio
+async def test_dashboard_summary_prefers_deterministic_period_over_ai_fallback(async_client, async_session):
+    # FinancialMetrics.reporting_period/_prior (deterministic, e.g.
+    # "HY2026"/"HY25") must win over the AI-extracted Report.summary value
+    # even when both exist -- the deterministic extractor is the reliable
+    # source; the AI path is a fallback for when it can't find anything.
+    await _add_metrics_row(
+        async_session,
+        revenue=100_000.0,
+        fm_reporting_period="HY2026",
+        fm_reporting_period_prior="HY25",
+        ai_reporting_period="H1 2025",
+    )
+
+    response = await async_client.get("/metrics/dashboard/summary")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["current_period"] == "HY2026"
+    assert body["prior_period"] == "HY25"
+
+
+@pytest.mark.anyio
+async def test_dashboard_summary_period_is_none_without_a_report(async_client, async_session):
+    await _add_metrics_row(async_session, revenue=100_000.0)
+
+    response = await async_client.get("/metrics/dashboard/summary")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["current_period"] is None
+    assert body["prior_period"] is None

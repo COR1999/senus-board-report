@@ -41,6 +41,15 @@ export interface KpiCardProps extends React.ComponentPropsWithoutRef<typeof Card
    * Omitted, empty, or single-point history renders no sparkline.
    */
   history?: (number | null)[]
+  /**
+   * 'hero' renders the large, presentation-slide-style treatment used for
+   * the top-of-dashboard headline metrics: bigger type, no icon badge (the
+   * boardroom-redesign brief treats typography, not iconography, as the
+   * primary design element for these), more internal whitespace. 'default'
+   * keeps the existing compact card used for secondary metrics.
+   * @default 'default'
+   */
+  variant?: 'hero' | 'default'
 }
 
 /**
@@ -55,10 +64,12 @@ export function KpiCard({
   icon: Icon,
   timeframe = "vs last month",
   history,
+  variant = "default",
   className,
   ...props
 }: KpiCardProps) {
   const { textClass, bgClass, Icon: TrendIcon } = getTrendStyle(trend)
+  const isHero = variant === "hero"
 
   return (
     <Card
@@ -68,11 +79,16 @@ export function KpiCard({
       )}
       {...props}
     >
-      <CardHeader>
-        <CardTitle className="text-sm font-medium text-muted-foreground tracking-tight">
+      <CardHeader className={cn(isHero && "pb-0")}>
+        <CardTitle
+          className={cn(
+            "text-sm font-medium text-muted-foreground tracking-tight",
+            isHero && "text-xs font-semibold uppercase tracking-wider"
+          )}
+        >
           {title}
         </CardTitle>
-        {Icon && (
+        {Icon && !isHero && (
           <CardAction>
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-muted/40 text-muted-foreground transition-colors group-hover/card:bg-muted">
               <Icon className="h-4 w-4" />
@@ -80,8 +96,13 @@ export function KpiCard({
           </CardAction>
         )}
       </CardHeader>
-      <CardContent className="flex flex-col gap-1.5">
-        <div className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+      <CardContent className={cn("flex flex-col gap-1.5", isHero && "gap-3 pt-1")}>
+        <div
+          className={cn(
+            "font-bold tracking-tight text-foreground",
+            isHero ? "text-4xl sm:text-5xl" : "text-2xl sm:text-3xl"
+          )}
+        >
           {value}
         </div>
         <div className="flex items-center justify-between gap-2">
@@ -98,7 +119,9 @@ export function KpiCard({
             </span>
             <span className="text-muted-foreground font-normal">{timeframe}</span>
           </div>
-          {history && <KpiSparkline history={history} trend={trend} />}
+          {history && (
+            <KpiSparkline history={history} trend={trend} className={isHero ? "h-12 w-28" : undefined} />
+          )}
         </div>
       </CardContent>
     </Card>

@@ -5,16 +5,28 @@ import { useMemo, useState } from 'react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
 import { type ChartDataPoint } from '@/lib/data-service'
 import { projectRevenue } from '@/lib/forecast'
-import { Card, CardHeader, CardTitle, CardAction, CardContent } from '@/components/ui/card'
+import { Card, CardHeader, CardTitle, CardDescription, CardAction, CardContent } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
 
 interface RevenueChartProps {
   data: ChartDataPoint[]
+  /** Real reporting period for context under the title, e.g. "H1 2025". */
+  periodLabel?: string | null
 }
 
 const FORECAST_PERIODS = 3
 
-export function RevenueChart({ data }: RevenueChartProps) {
+// Round-number, currency-short axis labels (e.g. "€250K") -- easier to scan
+// at a glance than raw values like "250000".
+function formatAxisValue(value: number): string {
+  const magnitude = Math.abs(value)
+  const sign = value < 0 ? '-' : ''
+  if (magnitude >= 1_000_000) return `${sign}€${(magnitude / 1_000_000).toFixed(1)}M`
+  if (magnitude >= 1_000) return `${sign}€${Math.round(magnitude / 1_000)}K`
+  return `${sign}€${magnitude}`
+}
+
+export function RevenueChart({ data, periodLabel }: RevenueChartProps) {
   const [showForecast, setShowForecast] = useState(false)
 
   // Combined series: real points keep their `revenue` value and get `revenue`
@@ -41,6 +53,7 @@ export function RevenueChart({ data }: RevenueChartProps) {
     <Card>
       <CardHeader>
         <CardTitle>Revenue Trend</CardTitle>
+        {periodLabel && <CardDescription>{periodLabel}</CardDescription>}
         <CardAction>
           <label className="flex items-center gap-2 text-sm text-muted-foreground">
             Show forecast
@@ -51,11 +64,30 @@ export function RevenueChart({ data }: RevenueChartProps) {
       <CardContent>
         <ResponsiveContainer width="100%" height={300}>
           <LineChart data={chartData}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="period" />
-            <YAxis />
+            {/* Horizontal-only, recessive gridlines -- "minimal gridlines, no
+                chart junk" per the boardroom redesign brief. Axis lines/ticks
+                dropped in favor of muted labels only. */}
+            <CartesianGrid vertical={false} stroke="currentColor" className="text-foreground/10" />
+            <XAxis
+              dataKey="period"
+              axisLine={false}
+              tickLine={false}
+              tick={{ fill: 'currentColor', fontSize: 12 }}
+              className="text-muted-foreground"
+            />
+            <YAxis
+              axisLine={false}
+              tickLine={false}
+              tick={{ fill: 'currentColor', fontSize: 12 }}
+              className="text-muted-foreground"
+              tickFormatter={formatAxisValue}
+              width={56}
+            />
             <Tooltip />
-            <Legend />
+            {/* A single series (no forecast) doesn't need a legend box -- the
+                card title already names it (dataviz skill: legend only once
+                there are 2+ series to distinguish). */}
+            {showForecast && <Legend />}
             <Line
               type="monotone"
               dataKey="revenue"

@@ -51,7 +51,7 @@ export function AiInsights({ metrics }: AiInsightsProps) {
   }, [metrics])
 
   return (
-    <Card className="col-span-full">
+    <Card className="border-foreground/10">
       <CardHeader>
         <div className="flex items-center gap-2">
           <Sparkles className="h-5 w-5 text-blue-600" />
@@ -63,13 +63,13 @@ export function AiInsights({ metrics }: AiInsightsProps) {
       </CardHeader>
       <CardContent>
         {loading ? (
-          <div className="animate-pulse space-y-3">
+          <div className="animate-pulse space-y-4">
             {[...Array(3)].map((_, i) => (
               <div key={i} className="h-4 bg-muted rounded w-full" />
             ))}
           </div>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-4">
             {insights.map((insight, index) => {
               const { badgeClass, Icon, label } = INSIGHT_STYLE[insight.type]
               return (
@@ -78,7 +78,7 @@ export function AiInsights({ metrics }: AiInsightsProps) {
                     <Icon className="h-3 w-3" />
                     {label}
                   </Badge>
-                  <p className="text-sm text-foreground leading-relaxed">{insight.text}</p>
+                  <p className="text-sm leading-relaxed text-foreground/90">{insight.text}</p>
                 </div>
               )
             })}

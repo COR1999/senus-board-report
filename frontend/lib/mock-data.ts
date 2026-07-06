@@ -54,6 +54,8 @@ export const mockMetrics = {
     trend: 'neutral' as const,
     history: [700000],
   },
+  current_period: 'H1 2025',
+  prior_period: 'H1 2024',
 }
 
 export const mockChartData = [
@@ -69,14 +71,6 @@ export const mockChartData = [
   { period: 'Oct', revenue: 280000 },
   { period: 'Nov', revenue: 520000 },
   { period: 'Dec', revenue: 836991 },
-]
-
-// Placeholder only -- no backend extraction for customer segments yet.
-// See getSegmentBreakdown() in data-service.ts for why.
-export const mockSegments = [
-  { segment: 'Corporate', value: 502195, percentage: 60 },
-  { segment: 'Government', value: 251097, percentage: 30 },
-  { segment: 'Agriculture', value: 83699, percentage: 10 },
 ]
 
 export const mockReports = [

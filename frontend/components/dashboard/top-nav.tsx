@@ -17,7 +17,7 @@ import {
 
 export function TopNav() {
   return (
-    <header className="sticky top-0 z-20 hidden border-b border-border/60 bg-card/95 backdrop-blur md:flex md:h-16 md:items-center md:justify-between md:px-8">
+    <header className="sticky top-0 z-20 hidden border-b border-border/40 bg-card/95 backdrop-blur md:flex md:h-16 md:items-center md:justify-between md:px-10">
       {/* Left: Search */}
       <div className="flex flex-1 items-center gap-4">
         <div className="relative w-64">
