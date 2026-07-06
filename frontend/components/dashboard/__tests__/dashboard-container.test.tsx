@@ -23,7 +23,13 @@ describe('DashboardContainer', () => {
     ])
 
     vi.spyOn(dataService, 'getReports').mockResolvedValue([
-      { id: 1, name: 'ANY_REPORT', date: 'x', status: 'completed' },
+      {
+        id: 1,
+        document_id: 1,
+        summary: { company_name: 'ANY_REPORT', reporting_period: 'H1 2025' },
+        status: 'completed',
+        created_at: '2025-12-31T00:00:00Z',
+      },
     ])
   })
 

@@ -35,11 +35,18 @@ export interface SegmentValue {
   percentage: number
 }
 
+export interface ReportSummary {
+  company_name: string | null
+  reporting_period: string | null
+}
+
 export interface Report {
   id: number
-  name: string
-  date: string
-  status: 'completed' | 'pending' | 'processing'
+  document_id: number
+  /** Null until the report finishes generating (pending/generating/failed reports may have no summary yet). */
+  summary: ReportSummary | null
+  status: 'pending' | 'generating' | 'completed' | 'failed'
+  created_at: string
 }
 
 export type ExtractedPdfData = Record<string, unknown>
