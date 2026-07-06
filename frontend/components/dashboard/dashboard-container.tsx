@@ -5,14 +5,17 @@ import { Sidebar } from './sidebar'
 import { TopNav } from './top-nav'
 import { KpiCard } from './kpi-card'
 import { RevenueChart } from './revenue-chart'
+import { SegmentBreakdown } from './segment-breakdown'
 import { AiInsights } from './ai-insights'
 import { ReportsTable } from './reports-table'
-import { 
-  getMetrics, 
-  getChartData, 
+import {
+  getMetrics,
+  getChartData,
+  getSegmentBreakdown,
   getReports,
-  type Metrics, 
+  type Metrics,
   type ChartDataPoint,
+  type SegmentValue,
   type Report,
 } from '@/lib/data-service'
 import { DollarSign, Users, Wallet, TrendingUp } from 'lucide-react'
@@ -20,6 +23,7 @@ import { DollarSign, Users, Wallet, TrendingUp } from 'lucide-react'
 export function DashboardContainer() {
   const [metrics, setMetrics] = useState<Metrics | null>(null)
   const [chartData, setChartData] = useState<ChartDataPoint[]>([])
+  const [segments, setSegments] = useState<SegmentValue[]>([])
   const [reports, setReports] = useState<Report[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -28,13 +32,15 @@ export function DashboardContainer() {
     const fetchAllData = async () => {
       try {
         setLoading(true)
-        const [metricsData, chartDataResponse, reportsData] = await Promise.all([
+        const [metricsData, chartDataResponse, segmentsData, reportsData] = await Promise.all([
           getMetrics(),
           getChartData(),
+          getSegmentBreakdown(),
           getReports(),
         ])
         setMetrics(metricsData)
         setChartData(chartDataResponse)
+        setSegments(segmentsData)
         setReports(reportsData)
         setError(null)
       } catch (err) {
@@ -131,8 +137,9 @@ export function DashboardContainer() {
             <div className="lg:col-span-2">
               <RevenueChart data={chartData} />
             </div>
-            <div>
+            <div className="flex flex-col gap-6">
               <AiInsights />
+              <SegmentBreakdown data={segments} />
             </div>
           </div>
 

@@ -27,18 +27,26 @@ export const mockMetrics = {
 }
 
 export const mockChartData = [
-  { month: 'Jan', revenue: 60000 },
-  { month: 'Feb', revenue: 75000 },
-  { month: 'Mar', revenue: 95000 },
-  { month: 'Apr', revenue: 110000 },
-  { month: 'May', revenue: 132000 },
-  { month: 'Jun', revenue: 158000 },
-  { month: 'Jul', revenue: 185000 },
-  { month: 'Aug', revenue: 215000 },
-  { month: 'Sep', revenue: 245000 },
-  { month: 'Oct', revenue: 280000 },
-  { month: 'Nov', revenue: 520000 },
-  { month: 'Dec', revenue: 836991 },
+  { period: 'Jan', revenue: 60000 },
+  { period: 'Feb', revenue: 75000 },
+  { period: 'Mar', revenue: 95000 },
+  { period: 'Apr', revenue: 110000 },
+  { period: 'May', revenue: 132000 },
+  { period: 'Jun', revenue: 158000 },
+  { period: 'Jul', revenue: 185000 },
+  { period: 'Aug', revenue: 215000 },
+  { period: 'Sep', revenue: 245000 },
+  { period: 'Oct', revenue: 280000 },
+  { period: 'Nov', revenue: 520000 },
+  { period: 'Dec', revenue: 836991 },
+]
+
+// Placeholder only -- no backend extraction for customer segments yet.
+// See getSegmentBreakdown() in data-service.ts for why.
+export const mockSegments = [
+  { segment: 'Corporate', value: 502195, percentage: 60 },
+  { segment: 'Government', value: 251097, percentage: 30 },
+  { segment: 'Agriculture', value: 83699, percentage: 10 },
 ]
 
 export const mockReports = [
