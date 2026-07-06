@@ -1,0 +1,93 @@
+"""
+Tests for GeminiAnalysisService's error-handling paths, particularly
+distinguishing a transient rate-limit 429 from a permanent billing-
+exhaustion 429 (found via direct testing against the real API -- see
+frontend/docs/ai-usage/gemini-integration-fix.md).
+"""
+import time
+
+import pytest
+
+from app.services.gemini_service import GeminiAnalysisService
+
+
+def _reset_class_state():
+    """
+    _ai_disabled_until, _call_timestamps, etc. are class attributes shared
+    across every instance -- reset them before each test so one test's
+    backoff doesn't leak into the next.
+    """
+    GeminiAnalysisService._ai_disabled_until = 0
+    GeminiAnalysisService._call_timestamps.clear()
+    GeminiAnalysisService._daily_call_count = 0
+    GeminiAnalysisService._daily_window_started = 0.0
+    GeminiAnalysisService._cache.clear()
+
+
+@pytest.fixture(autouse=True)
+def reset_state():
+    _reset_class_state()
+    yield
+    _reset_class_state()
+
+
+class _FakeModels:
+    def __init__(self, error: Exception):
+        self._error = error
+
+    def generate_content(self, **kwargs):
+        raise self._error
+
+
+class _FakeClient:
+    def __init__(self, error: Exception):
+        self.models = _FakeModels(error)
+
+
+def _service_with_client_raising(error: Exception) -> GeminiAnalysisService:
+    svc = GeminiAnalysisService(api_key="fake-key-for-test")
+    svc.client = _FakeClient(error)
+    return svc
+
+
+class TestBillingExhaustedBackoff:
+    def test_billing_exhausted_error_backs_off_much_longer_than_rate_limit(self):
+        error = Exception(
+            "429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': "
+            "'Your prepayment credits are depleted. Please go to AI Studio...'}}"
+        )
+        svc = _service_with_client_raising(error)
+
+        result = svc.generate_report("some prompt")
+
+        assert result["model_version"] == "gemini-unavailable"
+        assert not svc.is_available()
+        # Backed off close to the full billing-exhausted duration (not the
+        # short 60s rate-limit one) -- allow a little slack for test runtime.
+        remaining = GeminiAnalysisService._ai_disabled_until - time.time()
+        assert remaining > GeminiAnalysisService.RATE_LIMIT_BACKOFF_SECONDS
+
+    def test_plain_rate_limit_429_uses_the_short_backoff(self):
+        error = Exception("429 RESOURCE_EXHAUSTED. Quota exceeded for quota metric.")
+        svc = _service_with_client_raising(error)
+
+        svc.generate_report("some prompt")
+
+        remaining = GeminiAnalysisService._ai_disabled_until - time.time()
+        assert 0 < remaining <= GeminiAnalysisService.RATE_LIMIT_BACKOFF_SECONDS
+
+    def test_non_429_error_does_not_trigger_any_backoff(self):
+        error = Exception("500 Internal Server Error")
+        svc = _service_with_client_raising(error)
+
+        svc.generate_report("some prompt")
+
+        assert GeminiAnalysisService._ai_disabled_until == 0
+        assert svc.is_available()
+
+    def test_returns_safe_fallback_shape_on_any_error(self):
+        svc = _service_with_client_raising(Exception("boom"))
+        result = svc.generate_report("some prompt")
+
+        assert result["ai_commentary"] == "AI unavailable or failed (safe fallback)."
+        assert result["financial_metrics"]["revenue"] == 0
