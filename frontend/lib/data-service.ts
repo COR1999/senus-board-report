@@ -4,6 +4,23 @@ import { FALLBACK_INSIGHTS, type Insight } from '@/lib/insights'
 
 const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '')
 
+/**
+ * Shared JSON fetch + error-shape helper for the backend API. Throws a
+ * consistent `Error` on a non-2xx response instead of each call site
+ * re-deriving its own message from `res.statusText`. Callers that want the
+ * "fall back to mock data on failure" behavior (the GET helpers below) still
+ * do their own try/catch around this -- this helper only removes the
+ * duplicated fetch/headers/ok-check boilerplate, not the fallback policy.
+ */
+async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const res = await fetch(`${API_URL}${path}`, {
+    ...options,
+    headers: { 'Content-Type': 'application/json', ...(options.headers ?? {}) },
+  })
+  if (!res.ok) throw new Error(`Request to ${path} failed: ${res.status} ${res.statusText}`)
+  return res.json()
+}
+
 export interface MetricValue {
   value: string
   change: number
@@ -68,14 +85,7 @@ export type ExtractedPdfData = Record<string, unknown>
 
 export async function getMetrics(): Promise<Metrics> {
   try {
-    const res = await fetch(`${API_URL}/metrics/dashboard/summary`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    })
-    if (!res.ok) throw new Error(`Failed to fetch metrics: ${res.statusText}`)
-    return res.json()
+    return await apiFetch<Metrics>('/metrics/dashboard/summary')
   } catch (error) {
     console.warn('Failed to fetch from backend, using mock metrics:', error)
     return mockMetrics
@@ -84,14 +94,7 @@ export async function getMetrics(): Promise<Metrics> {
 
 export async function getChartData(): Promise<ChartDataPoint[]> {
   try {
-    const res = await fetch(`${API_URL}/metrics/dashboard/revenue-trend`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    })
-    if (!res.ok) throw new Error(`Failed to fetch chart data: ${res.statusText}`)
-    return res.json()
+    return await apiFetch<ChartDataPoint[]>('/metrics/dashboard/revenue-trend')
   } catch (error) {
     console.warn('Failed to fetch from backend, using mock chart data:', error)
     return mockChartData
@@ -132,14 +135,7 @@ export async function getAiInsights(metrics: Metrics): Promise<Insight[]> {
 
 export async function getReports(): Promise<Report[]> {
   try {
-    const res = await fetch(`${API_URL}/api/reports`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    })
-    if (!res.ok) throw new Error(`Failed to fetch reports: ${res.statusText}`)
-    return res.json()
+    return await apiFetch<Report[]>('/api/reports')
   } catch (error) {
     console.warn('Failed to fetch from backend, using mock reports:', error)
     return mockReports
@@ -156,12 +152,7 @@ export interface DocumentItem {
 
 export async function getDocuments(): Promise<DocumentItem[]> {
   try {
-    const res = await fetch(`${API_URL}/api/documents`, {
-      method: 'GET',
-      headers: { 'Content-Type': 'application/json' },
-    })
-    if (!res.ok) throw new Error(`Failed to fetch documents: ${res.statusText}`)
-    return res.json()
+    return await apiFetch<DocumentItem[]>('/api/documents')
   } catch (error) {
     console.warn('Failed to fetch documents:', error)
     return []
@@ -183,11 +174,7 @@ export async function deleteDocument(documentId: number): Promise<void> {
 
 /** Force-regenerates a report from its source document. Throws on failure (same reasoning as deleteDocument). */
 export async function regenerateReport(reportId: number): Promise<Report> {
-  const res = await fetch(`${API_URL}/api/reports/${reportId}/regenerate`, {
-    method: 'POST',
-  })
-  if (!res.ok) throw new Error(`Failed to regenerate report: ${res.statusText}`)
-  return res.json()
+  return apiFetch<Report>(`/api/reports/${reportId}/regenerate`, { method: 'POST' })
 }
 
 export async function uploadPDF(file: File): Promise<{ id: string; message: string }> {
@@ -209,14 +196,7 @@ export async function uploadPDF(file: File): Promise<{ id: string; message: stri
 
 export async function extractFromPDF(documentId: string): Promise<ExtractedPdfData> {
   try {
-    const res = await fetch(`${API_URL}/api/documents/${documentId}`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    })
-    if (!res.ok) throw new Error(`Failed to extract from PDF: ${res.statusText}`)
-    return res.json()
+    return await apiFetch<ExtractedPdfData>(`/api/documents/${documentId}`)
   } catch (error) {
     console.error('PDF extraction failed:', error)
     throw error
