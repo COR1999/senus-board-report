@@ -1,7 +1,8 @@
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { ReportsTable } from '@/components/dashboard/reports-table'
+import * as dataService from '@/lib/data-service'
 import type { Report } from '@/lib/data-service'
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 
 const reports: Report[] = [
   {
@@ -68,5 +69,28 @@ describe('ReportsTable', () => {
   it('disables the CSV export button when there is nothing to export', () => {
     render(<ReportsTable reports={[]} />)
     expect(screen.getByRole('button', { name: /export csv/i })).toBeDisabled()
+  })
+
+  it('calls regenerateReport and onRegenerated when the regenerate button is clicked', async () => {
+    const regenerateSpy = vi.spyOn(dataService, 'regenerateReport').mockResolvedValue(reports[0])
+    const onRegenerated = vi.fn()
+
+    render(<ReportsTable reports={reports} onRegenerated={onRegenerated} />)
+    fireEvent.click(screen.getAllByTitle('Regenerate report')[0])
+
+    await waitFor(() => expect(regenerateSpy).toHaveBeenCalledWith(1))
+    await waitFor(() => expect(onRegenerated).toHaveBeenCalled())
+  })
+
+  it('does not call onRegenerated when regeneration fails', async () => {
+    vi.spyOn(dataService, 'regenerateReport').mockRejectedValue(new Error('boom'))
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const onRegenerated = vi.fn()
+
+    render(<ReportsTable reports={reports} onRegenerated={onRegenerated} />)
+    fireEvent.click(screen.getAllByTitle('Regenerate report')[0])
+
+    await waitFor(() => expect(dataService.regenerateReport).toHaveBeenCalled())
+    expect(onRegenerated).not.toHaveBeenCalled()
   })
 })

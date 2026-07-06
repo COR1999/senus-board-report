@@ -9,19 +9,21 @@ export default function ReportsPage() {
   const [reports, setReports] = useState<Report[]>([])
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
+  const refresh = () => {
     getReports().then((data) => {
       setReports(data)
       setLoading(false)
     })
-  }, [])
+  }
+
+  useEffect(refresh, [])
 
   return (
     <DashboardShell title="Reports" description="All generated board reports">
       {loading ? (
         <div className="animate-pulse h-64 bg-muted rounded" />
       ) : (
-        <ReportsTable reports={reports} />
+        <ReportsTable reports={reports} onRegenerated={refresh} />
       )}
     </DashboardShell>
   )
