@@ -2,10 +2,10 @@ import { describe, it, expect } from 'vitest'
 import { buildInsightsPrompt, parseInsightsResponse, FALLBACK_INSIGHTS } from '@/lib/insights'
 
 const mockMetrics = {
-  revenue: { value: '€836,000', change: 38, trend: 'up' as const },
-  customers: { value: '158', change: 2.5, trend: 'up' as const },
-  cash: { value: '€1.2M', change: -5, trend: 'down' as const },
-  ebitda: { value: '€150K', change: 22, trend: 'up' as const },
+  revenue: { value: '€836,000', change: 38, trend: 'up' as const, history: [] },
+  customers: { value: '158', change: 2.5, trend: 'up' as const, history: [] },
+  cash: { value: '€1.2M', change: -5, trend: 'down' as const, history: [] },
+  ebitda: { value: '€150K', change: 22, trend: 'up' as const, history: [] },
 }
 
 describe('buildInsightsPrompt', () => {

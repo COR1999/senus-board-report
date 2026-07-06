@@ -138,7 +138,7 @@ export function DashboardContainer() {
               <RevenueChart data={chartData} />
             </div>
             <div className="flex flex-col gap-6">
-              <AiInsights />
+              <AiInsights metrics={metrics} />
               <SegmentBreakdown data={segments} />
             </div>
           </div>
