@@ -3,7 +3,7 @@ Pydantic schemas for financial data.
 """
 
 from datetime import datetime
-from typing import Optional
+from typing import List, Optional
 from pydantic import BaseModel, Field, ConfigDict
 
 
@@ -30,6 +30,16 @@ class FinancialMetricsResponse(FinancialMetricsBase):
     extracted_at: Optional[datetime] = None
     
     model_config = ConfigDict(from_attributes=True)
+
+
+# ==================== Revenue Trend ====================
+class RevenueTrendPoint(BaseModel):
+    """One point on the revenue trend chart."""
+    period: str = Field(..., description="Display label for the period, e.g. 'Dec 2025'")
+    revenue: Optional[float] = Field(
+        None,
+        description="Revenue for this period. Null means the document didn't report it -- never 0.",
+    )
 
 
 # ==================== Document ====================

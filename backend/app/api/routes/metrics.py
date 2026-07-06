@@ -1,4 +1,6 @@
 """Financial metrics endpoints."""
+from typing import List
+
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -6,12 +8,19 @@ from sqlalchemy import select
 from app.core.database import get_db
 from app.models.financial_metrics import FinancialMetrics
 from app.services.metrics_service import MetricsService
+from app.schemas import RevenueTrendPoint
 
 router = APIRouter(prefix="/metrics", tags=["metrics"])
 
 # Metrics are always written internally by report generation
 # (see ReportService._save_metrics) -- this router only reads them back
 # for the dashboard. There is no client-facing metrics CRUD.
+
+# Number of most-recent FinancialMetrics rows (one per uploaded document) to
+# expose on the revenue trend chart. Not calendar-aware -- filings may not be
+# monthly (e.g. half-year results), so "period" is just a display label
+# derived from extracted_at, not a guaranteed-regular time axis.
+REVENUE_TREND_WINDOW = 24
 
 
 @router.get("/dashboard/summary")
@@ -89,3 +98,28 @@ async def get_dashboard_metrics(db: AsyncSession = Depends(get_db)):
             )),
         },
     }
+
+
+@router.get("/dashboard/revenue-trend", response_model=List[RevenueTrendPoint])
+async def get_revenue_trend(db: AsyncSession = Depends(get_db)):
+    """
+    Revenue by period (oldest -> newest) for the revenue trend chart, from the
+    last REVENUE_TREND_WINDOW FinancialMetrics rows. `revenue` is null (not 0)
+    for a document that didn't report it -- same missing-vs-zero convention as
+    the sparkline history on /dashboard/summary.
+    """
+    stmt = (
+        select(FinancialMetrics)
+        .order_by(FinancialMetrics.extracted_at.desc())
+        .limit(REVENUE_TREND_WINDOW)
+    )
+    result = await db.execute(stmt)
+    rows = result.scalars().all()
+
+    return [
+        RevenueTrendPoint(
+            period=r.extracted_at.strftime("%b %Y"),
+            revenue=(float(r.revenue) if r.revenue is not None else None),
+        )
+        for r in reversed(rows)
+    ]
