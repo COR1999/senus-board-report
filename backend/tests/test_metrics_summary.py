@@ -19,6 +19,7 @@ async def _add_metrics_row(
     revenue_prior=None,
     cash_prior=None,
     ebitda_prior=None,
+    bookings_value=None,
     extracted_at=None,
 ) -> FinancialMetrics:
     doc = Document(
@@ -38,6 +39,7 @@ async def _add_metrics_row(
         revenue_prior=revenue_prior,
         cash_prior=cash_prior,
         ebitda_prior=ebitda_prior,
+        bookings_value=bookings_value,
         extracted_at=extracted_at or datetime.utcnow(),
     )
     session.add(metrics)
@@ -215,3 +217,31 @@ async def test_dashboard_summary_cash_runway_shows_cash_flow_positive_not_na(asy
 
     assert response.status_code == 200
     assert response.json()["cash_runway"]["value"] == "Cash flow +"
+
+
+@pytest.mark.anyio
+async def test_dashboard_summary_bookings_is_na_when_not_extracted(async_client, async_session):
+    await _add_metrics_row(async_session, revenue=100_000.0)
+
+    response = await async_client.get("/metrics/dashboard/summary")
+
+    assert response.status_code == 200
+    body = response.json()["bookings"]
+    assert body["value"] == "N/A"
+    assert body["trend"] == "neutral"
+    assert body["change"] == 0
+
+
+@pytest.mark.anyio
+async def test_dashboard_summary_bookings_shows_formatted_value(async_client, async_session):
+    await _add_metrics_row(async_session, revenue=100_000.0, bookings_value=700_000.0)
+
+    response = await async_client.get("/metrics/dashboard/summary")
+
+    assert response.status_code == 200
+    body = response.json()["bookings"]
+    assert body["value"] == "€700K"
+    # No prior-period comparative exists for bookings -- always neutral,
+    # never a fabricated delta.
+    assert body["trend"] == "neutral"
+    assert body["change"] == 0

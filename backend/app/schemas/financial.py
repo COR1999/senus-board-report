@@ -63,6 +63,10 @@ class DashboardSummaryResponse(BaseModel):
     cash_runway: KPIMetric
     interest_cover: KPIMetric
     roce: KPIMetric
+    # Growth & Revenue -- narrative-extracted, no prior-period comparative
+    # exists for this field (same as `customers`), so change/trend are
+    # always 0/neutral rather than a real computed delta.
+    bookings: KPIMetric
 
 
 # ==================== Revenue Trend ====================

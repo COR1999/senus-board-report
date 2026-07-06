@@ -48,6 +48,12 @@ export const mockMetrics = {
     trend: 'up' as const,
     history: [18.9, 19.8, 20.9, 21.7, 22.5, 23.2, 24.1],
   },
+  bookings: {
+    value: '€700K',
+    change: 0,
+    trend: 'neutral' as const,
+    history: [700000],
+  },
 }
 
 export const mockChartData = [

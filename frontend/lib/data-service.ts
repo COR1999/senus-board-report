@@ -30,6 +30,9 @@ export interface Metrics {
   cash_runway: MetricValue
   interest_cover: MetricValue
   roce: MetricValue
+  /** Narrative-extracted (same reliability class as `customers`) -- no
+   * prior-period comparative exists, so change/trend are always 0/neutral. */
+  bookings: MetricValue
 }
 
 export interface ChartDataPoint {
@@ -97,11 +100,10 @@ export async function getChartData(): Promise<ChartDataPoint[]> {
 
 /**
  * Revenue split by customer segment (Government / Corporate / Agriculture).
- * NOTE: there is no backend extraction for this yet -- segment data isn't
- * captured anywhere in FinancialMetrics (see backend/docs/metrics-expansion-plan.md,
- * which flags similar narrative-derived breakdowns like Channels/Bookings as
- * needing separate LLM-based extraction work). This returns mock data only,
- * by design, until that backend work exists.
+ * NOTE: checked the real filing directly -- there is no structured segment
+ * revenue split anywhere in it, only generic customer-type descriptions in
+ * narrative text. Unlike Bookings (see `Metrics.bookings`), there's nothing
+ * real to extract here. This stays mock data permanently, by design.
  */
 export async function getSegmentBreakdown(): Promise<SegmentValue[]> {
   return mockSegments

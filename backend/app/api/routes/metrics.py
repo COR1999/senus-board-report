@@ -55,7 +55,7 @@ async def get_dashboard_metrics(db: AsyncSession = Depends(get_db)):
         return DashboardSummaryResponse(
             revenue=empty, customers=empty_count, cash=empty, ebitda=empty,
             ebitda_margin=_EMPTY_RATIO, cash_runway=_EMPTY_RATIO,
-            interest_cover=_EMPTY_RATIO, roce=_EMPTY_RATIO,
+            interest_cover=_EMPTY_RATIO, roce=_EMPTY_RATIO, bookings=_EMPTY_RATIO,
         )
 
     latest = rows[0]
@@ -173,6 +173,23 @@ async def get_dashboard_metrics(db: AsyncSession = Depends(get_db)):
     roce_current = MetricsService.roce(operating_result, capital_employed)
     roce_prior_val = MetricsService.roce(operating_result_prior, capital_employed_prior)
 
+    def bookings_kpi() -> KPIMetric:
+        # Narrative-extracted, no prior-period comparative exists for this
+        # field (same as `customers`) -- change/trend are always 0/neutral,
+        # never a fabricated delta. `build()` isn't reused here because its
+        # formatter would render a missing value as "€0" (format_currency's
+        # None-default), which would misrepresent "not extracted" as a real
+        # zero-value bookings figure.
+        value = latest.bookings_value
+        if value is None:
+            return KPIMetric(value="N/A", change=0, trend="neutral", history=[])
+        return KPIMetric(
+            value=MetricsService.format_currency(value),
+            change=0,
+            trend="neutral",
+            history=[value],
+        )
+
     return DashboardSummaryResponse(
         revenue=build("revenue", MetricsService.format_currency),
         customers=build("customers", lambda v: f"{int(v or 0):,}"),
@@ -182,6 +199,7 @@ async def get_dashboard_metrics(db: AsyncSession = Depends(get_db)):
         cash_runway=cash_runway_kpi(),
         interest_cover=ratio_kpi(interest_cover_current, interest_cover_prior_val, lambda v: f"{v:.1f}x"),
         roce=ratio_kpi(roce_current, roce_prior_val, lambda v: f"{v:.1f}%"),
+        bookings=bookings_kpi(),
     )
 
 

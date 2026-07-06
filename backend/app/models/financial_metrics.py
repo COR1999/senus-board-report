@@ -44,6 +44,15 @@ class FinancialMetrics(Base):
     gross_margin_prior: Mapped[Optional[float]] = mapped_column(default=None)
     operating_margin_prior: Mapped[Optional[float]] = mapped_column(default=None)
 
+    # Bookings -- narrative-regex extracted (same reliability class as
+    # `customers`, not a structured table value), e.g. "pipeline deals of
+    # approx. €700k across 21 enterprise customers closed in the period
+    # (further approx. €500k of open pipeline)". No `_prior`: this filing
+    # doesn't state a prior-period bookings comparative.
+    bookings_value: Mapped[Optional[float]] = mapped_column(default=None)
+    bookings_customers: Mapped[Optional[int]] = mapped_column(default=None)
+    bookings_pipeline: Mapped[Optional[float]] = mapped_column(default=None)
+
     extracted_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
 
     # Relationship back to the source document.
