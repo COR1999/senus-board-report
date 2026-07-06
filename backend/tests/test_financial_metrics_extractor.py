@@ -71,6 +71,9 @@ Senus recorded revenue of €836,991, serving 138 customer accounts.
 Continued momentum with agri corporates and financial institutions with pipeline deals of
 approx. €700k across 21 enterprise customers closed in the period (further approx. €500k
 of open pipeline).
+
+Half Year Results for the 6 months ended 31 December 2025 (HY2026).
+Group Revenue up 4.1% to €354.8k (HY25: €340.9k).
 """
 
 
@@ -119,6 +122,25 @@ class TestExtractBookings:
         assert result["bookings_value"] is None
         assert result["bookings_customers"] is None
         assert result["bookings_pipeline"] is None
+
+
+class TestExtractReportingPeriod:
+    """
+    Narrative-only, extracted directly from the filing's own labels (e.g.
+    "(HY2026)" for the current period, the recurring "(HY25:" for the prior
+    comparative), NOT derived from `extracted_at` (upload/processing time,
+    not the period covered) and NOT dependent on the AI/Gemini path.
+    """
+
+    def test_extracts_current_and_prior_period_labels(self):
+        result = FME.extract(SYNTHETIC_FILING)
+        assert result["reporting_period"] == "HY2026"
+        assert result["reporting_period_prior"] == "HY25"
+
+    def test_missing_period_labels_are_none_not_guessed(self):
+        result = FME.extract("No period labels in this document at all.")
+        assert result["reporting_period"] is None
+        assert result["reporting_period_prior"] is None
 
 
 class TestExtractPriorPeriodComparative:
@@ -233,6 +255,8 @@ class TestExtractAgainstRealFiling:
         assert result["bookings_value"] == 700_000.0
         assert result["bookings_customers"] == 21
         assert result["bookings_pipeline"] == 500_000.0
+        assert result["reporting_period"] == "HY2026"
+        assert result["reporting_period_prior"] == "HY25"
 
     def test_extract_balance_sheet_matches_known_real_values(self, real_text):
         result = FME.extract_balance_sheet(real_text)

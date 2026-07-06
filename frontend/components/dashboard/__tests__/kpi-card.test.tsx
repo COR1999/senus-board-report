@@ -98,6 +98,31 @@ describe('KpiCard', () => {
     expect(container.querySelector('.h-10.w-24')).not.toBeNull()
   })
 
+  it('renders the hero size with larger value text and no icon badge', () => {
+    const { container } = render(
+      <KpiCard
+        title="Total Revenue"
+        value="€836,000"
+        changePercentage={12.5}
+        trend="up"
+        icon={TrendingUp}
+        variant="hero"
+      />
+    )
+    expect(container.querySelector('.text-4xl')).not.toBeNull()
+    // The icon-in-box badge is dropped for hero cards -- typography, not
+    // iconography, is the primary design element there.
+    expect(container.querySelector('svg.lucide-trending-up')).toBeNull()
+  })
+
+  it('renders the default size with the icon badge and standard value text', () => {
+    const { container } = render(
+      <KpiCard title="Total Revenue" value="€836,000" changePercentage={12.5} trend="up" icon={TrendingUp} />
+    )
+    expect(container.querySelector('.text-2xl')).not.toBeNull()
+    expect(container.querySelector('svg.lucide-trending-up')).not.toBeNull()
+  })
+
   it('renders no sparkline when history is omitted, empty, or single-point', () => {
     const { container: noHistory } = render(
       <KpiCard title="Revenue" value="€836,000" changePercentage={12.5} trend="up" icon={TrendingUp} />

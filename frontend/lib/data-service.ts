@@ -1,5 +1,5 @@
 // lib/data-service.ts
-import { mockMetrics, mockChartData, mockReports, mockSegments } from '@/lib/mock-data'
+import { mockMetrics, mockChartData, mockReports } from '@/lib/mock-data'
 import { FALLBACK_INSIGHTS, type Insight } from '@/lib/insights'
 
 const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '')
@@ -50,6 +50,12 @@ export interface Metrics {
   /** Narrative-extracted (same reliability class as `customers`) -- no
    * prior-period comparative exists, so change/trend are always 0/neutral. */
   bookings: MetricValue
+  /** AI-extracted free-text reporting period for the latest document (e.g.
+   * "H1 2025"), and a best-effort derived prior-period label (e.g.
+   * "H1 2024"). Both null when no report/summary exists yet, or the period
+   * couldn't be parsed -- use a generic fallback rather than fabricating one. */
+  current_period: string | null
+  prior_period: string | null
 }
 
 export interface ChartDataPoint {
@@ -58,13 +64,6 @@ export interface ChartDataPoint {
   period: string
   /** Revenue for this period. `null` means the document didn't report it (missing, not zero). */
   revenue: number | null
-}
-
-export interface SegmentValue {
-  segment: string
-  value: number
-  /** 0-100, share of total revenue this segment represents */
-  percentage: number
 }
 
 export interface ReportSummary {
@@ -99,17 +98,6 @@ export async function getChartData(): Promise<ChartDataPoint[]> {
     console.warn('Failed to fetch from backend, using mock chart data:', error)
     return mockChartData
   }
-}
-
-/**
- * Revenue split by customer segment (Government / Corporate / Agriculture).
- * NOTE: checked the real filing directly -- there is no structured segment
- * revenue split anywhere in it, only generic customer-type descriptions in
- * narrative text. Unlike Bookings (see `Metrics.bookings`), there's nothing
- * real to extract here. This stays mock data permanently, by design.
- */
-export async function getSegmentBreakdown(): Promise<SegmentValue[]> {
-  return mockSegments
 }
 
 /**

@@ -81,7 +81,7 @@ function NavLinks({ onClose }: NavLinksProps) {
             href={item.href}
             onClick={() => onClose?.()}
             className={cn(
-              'flex items-center gap-3.5 rounded-lg px-3.5 py-2.5 text-sm font-medium transition-all duration-200',
+              'flex items-center gap-3.5 rounded-lg px-3.5 py-2.5 text-sm font-medium tracking-tight transition-all duration-200',
               isActive
                 ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400'
                 : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'

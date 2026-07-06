@@ -102,3 +102,23 @@ class TestCashRunwayMonths:
         # divide-by-zero or a nonsensical negative "runway".
         assert MetricsService.cash_runway_months(735_189, 0) is None
         assert MetricsService.cash_runway_months(735_189, -50_000) is None
+
+
+class TestDerivePriorPeriod:
+    def test_half_year_period(self):
+        assert MetricsService.derive_prior_period("H1 2025") == "H1 2024"
+
+    def test_quarter_period(self):
+        assert MetricsService.derive_prior_period("Q3 2025") == "Q3 2024"
+
+    def test_fiscal_year_no_space(self):
+        assert MetricsService.derive_prior_period("FY2025") == "FY2024"
+
+    def test_bare_year(self):
+        assert MetricsService.derive_prior_period("2025") == "2024"
+
+    def test_none_input_returns_none(self):
+        assert MetricsService.derive_prior_period(None) is None
+
+    def test_no_year_present_returns_none_not_a_guess(self):
+        assert MetricsService.derive_prior_period("First Half") is None

@@ -504,6 +504,21 @@ class FinancialMetricsExtractor:
             r"further\s+approx\.?\s*[€$£]?([\d,.]+\s*[kKmMbB]?)\s+of\s+open\s+pipeline",
         ], text)
 
+        # --- Reporting period (narrative only, same reliability class as
+        # customers/bookings above). This filing states its own period as
+        # "(HY2026)" once near the top, and prints every comparative figure
+        # as "(HY25: <value>)" throughout -- these labels are kept verbatim
+        # ("HY2026"/"HY25") rather than reformatted, since real filings use
+        # inconsistent conventions that a generic year-math derivation would
+        # get wrong. Not using `_find_first` here since it discards
+        # everything but the captured group, and "HY" is part of the label
+        # itself, not just a marker around it. ---
+        reporting_period_match = re.search(r"\(HY(\d{2,4})\)", text)
+        reporting_period = f"HY{reporting_period_match.group(1)}" if reporting_period_match else None
+
+        reporting_period_prior_match = re.search(r"\(HY(\d{2,4}):", text)
+        reporting_period_prior = f"HY{reporting_period_prior_match.group(1)}" if reporting_period_prior_match else None
+
         # -----------------------------------------------------
         # NORMALISE
         # -----------------------------------------------------
@@ -604,6 +619,8 @@ class FinancialMetricsExtractor:
             "bookings_value": bookings_value,
             "bookings_customers": bookings_customers,
             "bookings_pipeline": bookings_pipeline,
+            "reporting_period": reporting_period,
+            "reporting_period_prior": reporting_period_prior,
             "gross_margin": gross_margin,
             "gross_margin_prior": gross_margin_prior,
             "operating_margin": operating_margin,
@@ -641,6 +658,7 @@ class FinancialMetricsExtractor:
                 "ebitda", "ebitda_prior",
                 "customers",
                 "bookings_value", "bookings_customers", "bookings_pipeline",
+                "reporting_period", "reporting_period_prior",
                 "gross_margin", "gross_margin_prior",
                 "operating_margin", "operating_margin_prior",
             )

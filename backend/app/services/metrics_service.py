@@ -1,5 +1,31 @@
+import re
+
+
 class MetricsService:
     """Business logic helpers for financial metrics."""
+
+    # Matches a trailing 4-digit year anywhere in a free-text reporting
+    # period string, e.g. "H1 2025", "Q3 2025", "FY2025", "2025".
+    _YEAR_RE = re.compile(r"(\d{4})")
+
+    @staticmethod
+    def derive_prior_period(period: str | None) -> str | None:
+        """
+        Best-effort prior-period label from a free-text reporting period
+        (e.g. "H1 2025" -> "H1 2024"). This is an AI-extracted string, not a
+        structured date, so this only decrements the first 4-digit year it
+        finds and leaves everything else untouched -- it doesn't attempt to
+        parse the period type. Returns None (never a guessed label) when no
+        4-digit year is present, so callers fall back to a generic
+        "vs prior period" instead of showing a fabricated year.
+        """
+        if not period:
+            return None
+        match = MetricsService._YEAR_RE.search(period)
+        if not match:
+            return None
+        year = int(match.group(1))
+        return period[: match.start()] + str(year - 1) + period[match.end():]
 
     @staticmethod
     def format_currency(amount: float | None, currency: str = "EUR") -> str:

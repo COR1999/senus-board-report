@@ -19,13 +19,11 @@ describe('DashboardContainer', () => {
       interest_cover: { value: 'ANY_INTEREST_COVER', change: 1, trend: 'up', history: [] },
       roce: { value: 'ANY_ROCE', change: 1, trend: 'up', history: [] },
       bookings: { value: 'ANY_BOOKINGS', change: 0, trend: 'neutral', history: [] },
+      current_period: 'H1 2025',
+      prior_period: 'H1 2024',
     })
 
     vi.spyOn(dataService, 'getChartData').mockResolvedValue([])
-
-    vi.spyOn(dataService, 'getSegmentBreakdown').mockResolvedValue([
-      { segment: 'Corporate', value: 100, percentage: 100 },
-    ])
 
     vi.spyOn(dataService, 'getReports').mockResolvedValue([
       {
@@ -52,20 +50,41 @@ describe('DashboardContainer', () => {
     expect(await screen.findByText('Executive Dashboard')).toBeInTheDocument()
   })
 
-  it('renders the Cash, Solvency & Returns KPI section', async () => {
+  it('renders Revenue, EBITDA, Cash, and Customers as large hero cards', async () => {
     render(<DashboardContainer />)
 
-    expect(await screen.findByText('Cash, Solvency & Returns')).toBeInTheDocument()
+    expect(await screen.findByText('ANY_REVENUE')).toBeInTheDocument()
+    expect(await screen.findByText('ANY_EBITDA')).toBeInTheDocument()
+    expect(await screen.findByText('ANY_CASH')).toBeInTheDocument()
+    expect(await screen.findByText('ANY_CUSTOMERS')).toBeInTheDocument()
+  })
+
+  it('renders Bookings and the ratio metrics in the secondary stat strip', async () => {
+    render(<DashboardContainer />)
+
+    expect(await screen.findByText('ANY_BOOKINGS')).toBeInTheDocument()
+    expect(await screen.findByText('Bookings (new business closed)')).toBeInTheDocument()
     expect(await screen.findByText('ANY_EBITDA_MARGIN')).toBeInTheDocument()
     expect(await screen.findByText('ANY_CASH_RUNWAY')).toBeInTheDocument()
     expect(await screen.findByText('ANY_INTEREST_COVER')).toBeInTheDocument()
     expect(await screen.findByText('ANY_ROCE')).toBeInTheDocument()
   })
 
-  it('renders the Bookings KPI card with an explanatory subtitle', async () => {
+  it('does not render the removed mock segment-breakdown chart', async () => {
     render(<DashboardContainer />)
 
-    expect(await screen.findByText('ANY_BOOKINGS')).toBeInTheDocument()
-    expect(await screen.findByText('new business closed this period')).toBeInTheDocument()
+    await screen.findByText('ANY_REVENUE')
+    expect(screen.queryByText('Revenue by Segment')).not.toBeInTheDocument()
+  })
+
+  it('shows the real reporting period instead of a fabricated cadence claim', async () => {
+    render(<DashboardContainer />)
+
+    await screen.findByText('ANY_REVENUE')
+    // Revenue/EBITDA/Cash have a real prior-period comparative -- both
+    // periods shown, not a guessed "vs last quarter"/"vs last month".
+    expect(screen.getAllByText('H1 2024 vs H1 2025').length).toBeGreaterThan(0)
+    // Customers has no real prior comparative -- context only, no comparison claim.
+    expect(screen.getByText('as of H1 2025')).toBeInTheDocument()
   })
 })

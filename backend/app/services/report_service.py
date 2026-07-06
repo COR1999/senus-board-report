@@ -131,6 +131,11 @@ class ReportService:
         metrics.bookings_customers = self._plain_metric_value(metrics_data.get("bookings_customers"))
         metrics.bookings_pipeline = self._plain_metric_value(metrics_data.get("bookings_pipeline"))
 
+        # Reporting period -- narrative-only (e.g. "HY2026"/"HY25"), same
+        # missing-means-None handling as bookings above.
+        metrics.reporting_period = self._plain_metric_value(metrics_data.get("reporting_period"))
+        metrics.reporting_period_prior = self._plain_metric_value(metrics_data.get("reporting_period_prior"))
+
         metrics.extracted_at = datetime.utcnow()
 
         await self.db.commit()

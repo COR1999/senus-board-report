@@ -53,6 +53,19 @@ class FinancialMetrics(Base):
     bookings_customers: Mapped[Optional[int]] = mapped_column(default=None)
     bookings_pipeline: Mapped[Optional[float]] = mapped_column(default=None)
 
+    # Reporting period -- narrative-regex extracted directly from the
+    # filing's own text (e.g. "(HY2026)" for the current period, "(HY25:"
+    # for the recurring prior-year comparison label), NOT derived from
+    # `extracted_at` (which is when we processed the upload, not the period
+    # the filing covers) and NOT dependent on the AI/Gemini narrative path
+    # (which is skipped whenever the deterministic baseline extraction is
+    # already complete -- see report_service._baseline_is_complete). Labels
+    # are stored verbatim as the filing states them, since real filings use
+    # inconsistent formats (e.g. "HY2026" vs "HY25", not "H1 2026"/"H1 2025")
+    # that a generic year-math derivation would get wrong.
+    reporting_period: Mapped[Optional[str]] = mapped_column(default=None)
+    reporting_period_prior: Mapped[Optional[str]] = mapped_column(default=None)
+
     extracted_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
 
     # Relationship back to the source document.
