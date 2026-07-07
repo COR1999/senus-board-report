@@ -19,6 +19,12 @@ class Document(Base):
     filename: Mapped[str] = mapped_column(String(255))
     file_path: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     file_size: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    # SHA256 hex digest of the uploaded file's raw bytes -- identifies an
+    # exact duplicate re-upload regardless of filename (a renamed copy of the
+    # same PDF still matches; two different PDFs that happen to share a
+    # filename don't). Nullable + unique: existing rows keep NULL until
+    # re-processed, which Postgres allows without breaking the constraint.
+    content_hash: Mapped[Optional[str]] = mapped_column(String(64), unique=True, nullable=True, index=True)
     extracted_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(50), default="processing")
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
