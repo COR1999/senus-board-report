@@ -89,7 +89,7 @@ export function AiInsights({ metrics }: AiInsightsProps) {
     <Card className="border-foreground/10">
       <CardHeader>
         <div className="flex items-center gap-2">
-          <Sparkles className="h-5 w-5 text-blue-600" />
+          <Sparkles className="h-6 w-6 text-blue-600" />
           <div>
             <CardTitle>AI Board Insights</CardTitle>
             <CardDescription>AI-generated executive commentary</CardDescription>
@@ -107,7 +107,7 @@ export function AiInsights({ metrics }: AiInsightsProps) {
                 : 'Regenerate insights from the current data'
             }
           >
-            <RefreshCw className={cn('h-4 w-4', loading && 'animate-spin')} />
+            <RefreshCw className={cn('h-5 w-5', loading && 'animate-spin')} />
             <span className="sr-only">Refresh AI insights</span>
           </Button>
         </CardAction>
@@ -125,11 +125,16 @@ export function AiInsights({ metrics }: AiInsightsProps) {
               const { badgeClass, Icon, label } = INSIGHT_STYLE[insight.type]
               return (
                 <div key={index} className="flex gap-3">
-                  <Badge className={`mt-1 h-fit flex-shrink-0 gap-1 ${badgeClass}`}>
-                    <Icon className="h-3 w-3" />
+                  {/* Fixed width (not the Badge default w-fit) so every row's
+                      badge is the same width regardless of label length
+                      ("Positive" vs "Opportunity") -- otherwise the text
+                      column below starts at a different x on every row,
+                      which reads as broken left-alignment. */}
+                  <Badge className={`mt-1 h-fit w-28 flex-shrink-0 gap-1 ${badgeClass}`}>
+                    <Icon className="h-3.5 w-3.5" />
                     {label}
                   </Badge>
-                  <div className="space-y-1">
+                  <div className="min-w-0 flex-1 space-y-1">
                     {/* Same caption treatment as KpiStatStrip's category
                         label, so an insight visually anchors to the same
                         section of the dashboard it's commenting on. */}
@@ -141,7 +146,7 @@ export function AiInsights({ metrics }: AiInsightsProps) {
                     <p className="text-sm leading-relaxed text-foreground/90">{insight.text}</p>
                     {insight.action && (
                       <p className="flex items-start gap-1 text-xs text-muted-foreground">
-                        <ArrowRight className="mt-0.5 h-3 w-3 flex-shrink-0" />
+                        <ArrowRight className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
                         {insight.action}
                       </p>
                     )}

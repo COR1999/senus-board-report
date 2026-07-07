@@ -95,7 +95,7 @@ export function ReportsTable({ reports = [], onRegenerated }: ReportsTableProps)
               disabled
               title="Filter by year/month coming soon"
             >
-              <CalendarRange className="h-4 w-4" />
+              <CalendarRange className="h-5 w-5" />
               <span className="sr-only">Filter by year/month (coming soon)</span>
               Filter by period
             </Button>
@@ -105,7 +105,7 @@ export function ReportsTable({ reports = [], onRegenerated }: ReportsTableProps)
               onClick={() => exportReportsToCsv(filtered)}
               disabled={filtered.length === 0}
             >
-              <Download className="h-4 w-4" />
+              <Download className="h-5 w-5" />
               Export CSV
             </Button>
           </div>
@@ -145,7 +145,7 @@ export function ReportsTable({ reports = [], onRegenerated }: ReportsTableProps)
                         disabled={regeneratingId === report.id}
                         title="Regenerate report"
                       >
-                        <RefreshCw className={`h-4 w-4 ${regeneratingId === report.id ? 'animate-spin' : ''}`} />
+                        <RefreshCw className={`h-5 w-5 ${regeneratingId === report.id ? 'animate-spin' : ''}`} />
                         <span className="sr-only">Regenerate report for {reportDisplayName(report)}</span>
                       </Button>
                       <Button
@@ -155,7 +155,7 @@ export function ReportsTable({ reports = [], onRegenerated }: ReportsTableProps)
                         disabled
                         title="PDF export coming later"
                       >
-                        <Download className="h-4 w-4" />
+                        <Download className="h-5 w-5" />
                         <span className="sr-only">Download report (PDF export coming later)</span>
                       </Button>
                     </div>

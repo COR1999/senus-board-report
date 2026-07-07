@@ -33,7 +33,7 @@ export function TopNav() {
           size="icon"
           className="relative h-9 w-9 text-muted-foreground hover:bg-muted/50 hover:text-foreground"
         >
-          <Bell className="h-4 w-4" />
+          <Bell className="h-5 w-5" />
           <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-emerald-600" />
         </Button>
 
