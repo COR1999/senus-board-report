@@ -74,6 +74,12 @@ class FinancialMetrics(Base):
     reporting_period_end: Mapped[Optional[str]] = mapped_column(default=None)
     reporting_period_end_prior: Mapped[Optional[str]] = mapped_column(default=None)
 
+    # Calendar-month start of the same range, e.g. "Jul 2025"/"Jul 2024" --
+    # derived from `reporting_period_end` (5 months earlier), giving a real
+    # "Jul 2025 - Dec 2025" range instead of the bare "HY2026" label.
+    reporting_period_start: Mapped[Optional[str]] = mapped_column(default=None)
+    reporting_period_start_prior: Mapped[Optional[str]] = mapped_column(default=None)
+
     extracted_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
 
     # Relationship back to the source document.

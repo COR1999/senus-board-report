@@ -5,17 +5,15 @@ import { useMemo, useState } from 'react'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
 import type { TooltipContentProps } from 'recharts'
 import type { ValueType, NameType } from 'recharts/types/component/DefaultTooltipContent'
-import { Info } from 'lucide-react'
 import { type ChartDataPoint } from '@/lib/data-service'
 import { projectSeries } from '@/lib/forecast'
 import { Card, CardHeader, CardTitle, CardDescription, CardAction, CardContent } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
-import { Tooltip as InfoTooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 
 interface RevenueChartProps {
   data: ChartDataPoint[]
-  /** Real reporting period for context under the title, e.g. "H1 2025". */
+  /** Real reporting period for context under the title, e.g. "Jul 2025 - Dec 2025". */
   periodLabel?: string | null
 }
 
@@ -134,26 +132,6 @@ export function RevenueChart({ data, periodLabel }: RevenueChartProps) {
         {periodLabel && (
           <CardDescription className="flex items-center gap-1">
             {periodLabel}
-            {/* "HY" (half-year) is Senus's own filing convention, but doesn't
-                say which calendar months it covers -- Senus's fiscal year
-                runs Jul-Jun, so e.g. "HY2026" actually ends in December, not
-                June, which a reader could easily assume. The chart axis
-                below already shows the real month; this explains the label
-                shown here for anyone who only reads this line. */}
-            <InfoTooltip>
-              <TooltipTrigger asChild>
-                <Info
-                  className="size-3.5 cursor-help text-muted-foreground/70"
-                  aria-label="What does HY mean?"
-                />
-              </TooltipTrigger>
-              <TooltipContent>
-                &ldquo;HY&rdquo; = half-year. Senus&apos;s fiscal year runs
-                July-June, so e.g. HY2026 covers Jul-Dec 2025 and ends 31
-                December 2025 -- not June. The chart axis shows the real
-                month for each period.
-              </TooltipContent>
-            </InfoTooltip>
           </CardDescription>
         )}
         <CardAction className="flex items-center gap-4">

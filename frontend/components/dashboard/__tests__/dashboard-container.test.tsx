@@ -19,8 +19,8 @@ describe('DashboardContainer', () => {
       interest_cover: { value: 'ANY_INTEREST_COVER', change: 1, trend: 'up', history: [] },
       roce: { value: 'ANY_ROCE', change: 1, trend: 'up', history: [] },
       bookings: { value: 'ANY_BOOKINGS', change: 0, trend: 'neutral', history: [] },
-      current_period: 'H1 2025',
-      prior_period: 'H1 2024',
+      current_period: 'Jul 2025 – Dec 2025',
+      prior_period: 'Jul 2024 – Dec 2024',
     })
 
     vi.spyOn(dataService, 'getChartData').mockResolvedValue([])
@@ -81,10 +81,10 @@ describe('DashboardContainer', () => {
     render(<DashboardContainer />)
 
     await screen.findByText('ANY_REVENUE')
-    // Revenue/EBITDA/Cash have a real prior-period comparative -- both
-    // periods shown, not a guessed "vs last quarter"/"vs last month".
-    expect(screen.getAllByText('H1 2024 vs H1 2025').length).toBeGreaterThan(0)
+    // Revenue/EBITDA/Cash have a real prior-period comparative -- the % change
+    // badge conveys the comparison, so only the current period is shown here.
+    expect(screen.getAllByText('Jul 2025 – Dec 2025').length).toBeGreaterThan(0)
     // Customers has no real prior comparative -- context only, no comparison claim.
-    expect(screen.getByText('as of H1 2025')).toBeInTheDocument()
+    expect(screen.getByText('as of Jul 2025 – Dec 2025')).toBeInTheDocument()
   })
 })

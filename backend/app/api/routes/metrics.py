@@ -97,8 +97,19 @@ async def get_dashboard_metrics(db: AsyncSession = Depends(get_db)):
     # practice, see the helper's docstring), then to a best-effort derived
     # prior label when only a current period is known.
     ai_periods = await _ai_reporting_periods_by_document(db, [latest.document_id])
-    current_period = latest.reporting_period or ai_periods.get(latest.document_id)
-    prior_period = latest.reporting_period_prior or MetricsService.derive_prior_period(current_period)
+    current_bare = latest.reporting_period or ai_periods.get(latest.document_id)
+    prior_bare = latest.reporting_period_prior or MetricsService.derive_prior_period(current_bare)
+
+    # Prefer a real calendar-month range (e.g. "Jul 2025 - Dec 2025") over
+    # the bare "HY2026" label wherever both start and end months were
+    # extracted -- "HY" alone doesn't say which calendar months a half-year
+    # covers (Senus's fiscal year runs Jul-Jun), so the range is strictly
+    # more informative when it's available.
+    def _range_or_bare(start: Optional[str], end: Optional[str], bare: Optional[str]) -> Optional[str]:
+        return f"{start} – {end}" if start and end else bare
+
+    current_period = _range_or_bare(latest.reporting_period_start, latest.reporting_period_end, current_bare)
+    prior_period = _range_or_bare(latest.reporting_period_start_prior, latest.reporting_period_end_prior, prior_bare)
 
     def prior_fallback(field: str) -> Optional[float]:
         # When there's no second DB row to diff against (today: only one

@@ -54,8 +54,8 @@ export const mockMetrics = {
     trend: 'neutral' as const,
     history: [700000],
   },
-  current_period: 'H1 2025',
-  prior_period: 'H1 2024',
+  current_period: 'Jul 2025 – Dec 2025',
+  prior_period: 'Jul 2024 – Dec 2024',
 }
 
 export const mockChartData = [

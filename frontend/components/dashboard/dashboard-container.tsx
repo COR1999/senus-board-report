@@ -8,7 +8,7 @@ import { AiInsights } from './ai-insights'
 import { ReportsTable } from './reports-table'
 import { ErrorBanner } from '@/components/error-banner'
 import { useMetrics, useChartData, useReports } from '@/lib/hooks/use-dashboard-data'
-import { periodComparisonLabel, periodContextLabel } from '@/lib/period'
+import { periodContextLabel } from '@/lib/period'
 import { KPI_CATEGORIES } from '@/lib/kpi-categories'
 import { DollarSign, Users, Wallet, TrendingUp } from 'lucide-react'
 
@@ -58,10 +58,12 @@ export function DashboardContainer() {
 
   // Real date context, not a fabricated cadence claim -- every metric below
   // that has an actual prior-period comparative (revenue, ebitda, cash, and
-  // the stat-strip ratios) shares the same current/prior period, since they
-  // all come from the same single filing's own comparison column.
-  const comparisonTimeframe = (fallback: string) =>
-    periodComparisonLabel(metrics.current_period, metrics.prior_period, fallback)
+  // the stat-strip ratios) shares the same current period, since they all
+  // come from the same single filing. The % change badge shown right next
+  // to this text already conveys the comparison, so this is just the
+  // current period's own label (e.g. "Jul 2025 - Dec 2025"), not a
+  // "prior vs current" comparison string.
+  const currentPeriodLabel = (fallback: string) => metrics.current_period || fallback
 
   // Hero tier -- the 4 metrics a CEO/CFO looks at first, given the large,
   // presentation-slide treatment (see KpiCard's `variant="hero"`). Every other
@@ -69,9 +71,9 @@ export function DashboardContainer() {
   // ROCE) stays fully visible below in the compact KpiStatStrip -- nothing
   // required by the assignment brief is cut, only visually de-prioritized.
   const heroMetricConfig = [
-    { key: 'revenue' as const, title: 'Total Revenue', icon: DollarSign, timeframe: comparisonTimeframe('vs prior period') },
-    { key: 'ebitda' as const, title: 'EBITDA', icon: TrendingUp, timeframe: comparisonTimeframe('vs prior period') },
-    { key: 'cash' as const, title: 'Cash Position', icon: Wallet, timeframe: comparisonTimeframe('vs prior period') },
+    { key: 'revenue' as const, title: 'Total Revenue', icon: DollarSign, timeframe: currentPeriodLabel('vs prior period') },
+    { key: 'ebitda' as const, title: 'EBITDA', icon: TrendingUp, timeframe: currentPeriodLabel('vs prior period') },
+    { key: 'cash' as const, title: 'Cash Position', icon: Wallet, timeframe: currentPeriodLabel('vs prior period') },
     // No real prior-period comparative exists for customers (same
     // reliability class as Bookings) -- state the period as context rather
     // than implying a quarter-over-quarter comparison that isn't real.
@@ -136,7 +138,7 @@ export function DashboardContainer() {
       <AiInsights metrics={metrics} />
 
       {/* Secondary metrics: Bookings, Profitability, Cash & Liquidity, Solvency & Leverage, Returns */}
-      <KpiStatStrip items={statStripConfig} periodLabel={comparisonTimeframe('') || undefined} />
+      <KpiStatStrip items={statStripConfig} periodLabel={metrics.current_period ?? undefined} />
 
       {/* Revenue Trend chart */}
       <RevenueChart data={chartData ?? []} periodLabel={metrics.current_period} />

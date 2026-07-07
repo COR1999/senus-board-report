@@ -89,6 +89,9 @@ original contract.
 import re
 from typing import Dict, Any, List, Optional, Tuple
 
+_MONTH_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+               "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
 
 class FinancialMetricsExtractor:
     """
@@ -548,11 +551,23 @@ class FinancialMetricsExtractor:
         )
         reporting_period_end = None
         reporting_period_end_prior = None
+        reporting_period_start = None
+        reporting_period_start_prior = None
         if period_end_match:
             month_name = period_end_match.group(2).capitalize()
             year = int(period_end_match.group(3))
             reporting_period_end = f"{month_name[:3]} {year}"
             reporting_period_end_prior = f"{month_name[:3]} {year - 1}"
+
+            # Period start, e.g. "Jul 2025" -- 5 months before the end month
+            # (a 6-month range inclusive of both ends: Jul..Dec = 6 months),
+            # with year rollover handled manually since there's no
+            # python-dateutil dependency in this project.
+            end_index = _MONTH_ABBR.index(month_name[:3])
+            start_index = (end_index - 5) % 12
+            start_year = year - 1 if end_index - 5 < 0 else year
+            reporting_period_start = f"{_MONTH_ABBR[start_index]} {start_year}"
+            reporting_period_start_prior = f"{_MONTH_ABBR[start_index]} {start_year - 1}"
 
         # -----------------------------------------------------
         # NORMALISE
@@ -658,6 +673,8 @@ class FinancialMetricsExtractor:
             "reporting_period_prior": reporting_period_prior,
             "reporting_period_end": reporting_period_end,
             "reporting_period_end_prior": reporting_period_end_prior,
+            "reporting_period_start": reporting_period_start,
+            "reporting_period_start_prior": reporting_period_start_prior,
             "gross_margin": gross_margin,
             "gross_margin_prior": gross_margin_prior,
             "operating_margin": operating_margin,
@@ -697,6 +714,7 @@ class FinancialMetricsExtractor:
                 "bookings_value", "bookings_customers", "bookings_pipeline",
                 "reporting_period", "reporting_period_prior",
                 "reporting_period_end", "reporting_period_end_prior",
+                "reporting_period_start", "reporting_period_start_prior",
                 "gross_margin", "gross_margin_prior",
                 "operating_margin", "operating_margin_prior",
             )

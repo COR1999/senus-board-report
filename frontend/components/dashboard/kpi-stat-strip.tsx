@@ -21,9 +21,9 @@ export interface StatStripItem {
 
 interface KpiStatStripProps {
   items: StatStripItem[]
-  /** Shared real-date context (e.g. "H1 2024 vs H1 2025"), shown once for
+  /** Shared real-date context (e.g. "Jul 2025 - Dec 2025"), shown once for
    * the whole strip since every item with a real prior comparative shares
-   * the same current/prior period -- avoids repeating it 5 times. */
+   * the same current period -- avoids repeating it 5 times. */
   periodLabel?: string
 }
 
