@@ -45,4 +45,9 @@ describe('KpiStatStrip', () => {
     // EBITDA Margin is trend "up" -- its value should carry the trend color.
     expect(container.querySelector('.text-emerald-600')).not.toBeNull()
   })
+
+  it('renders each stat as its own separate card, not one shared card', () => {
+    const { container } = render(<KpiStatStrip items={items} />)
+    expect(container.querySelectorAll('[data-slot="card"]')).toHaveLength(items.length)
+  })
 })

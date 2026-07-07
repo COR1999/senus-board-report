@@ -95,7 +95,7 @@ export function KpiCard({
                 coloring the big value number -- keeps the number itself
                 high-contrast and easy to read at a glance. */}
             <div className={cn("flex h-8 w-8 items-center justify-center rounded-full transition-colors", bgClass, textClass)}>
-              <Icon className="h-4 w-4" />
+              <Icon className="h-5 w-5" />
             </div>
           </CardAction>
         )}
@@ -122,7 +122,7 @@ export function KpiCard({
                 textClass
               )}
             >
-              <TrendIcon className="h-3 w-3" strokeWidth={2.5} />
+              <TrendIcon className="h-3.5 w-3.5" strokeWidth={2.5} />
               {changePercentage}%
             </span>
             <span className="text-muted-foreground font-normal">{timeframe}</span>
