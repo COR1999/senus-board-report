@@ -1,6 +1,6 @@
 'use client'
 
-import { useAsyncData, type AsyncDataState } from './use-async-data'
+import { useAsyncData, type AsyncDataState, type UseAsyncDataOptions } from './use-async-data'
 import {
   getMetrics,
   getChartData,
@@ -12,18 +12,18 @@ import {
   type DocumentItem,
 } from '@/lib/data-service'
 
-export function useMetrics(): AsyncDataState<Metrics> {
-  return useAsyncData(getMetrics)
+export function useMetrics(options?: UseAsyncDataOptions): AsyncDataState<Metrics> {
+  return useAsyncData(getMetrics, options)
 }
 
-export function useChartData(): AsyncDataState<ChartDataPoint[]> {
-  return useAsyncData(getChartData)
+export function useChartData(options?: UseAsyncDataOptions): AsyncDataState<ChartDataPoint[]> {
+  return useAsyncData(getChartData, options)
 }
 
-export function useReports(): AsyncDataState<Report[]> {
-  return useAsyncData(getReports)
+export function useReports(options?: UseAsyncDataOptions): AsyncDataState<Report[]> {
+  return useAsyncData(getReports, options)
 }
 
-export function useDocuments(): AsyncDataState<DocumentItem[]> {
-  return useAsyncData(getDocuments)
+export function useDocuments(options?: UseAsyncDataOptions): AsyncDataState<DocumentItem[]> {
+  return useAsyncData(getDocuments, options)
 }

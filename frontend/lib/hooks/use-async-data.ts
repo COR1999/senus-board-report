@@ -9,6 +9,21 @@ export interface AsyncDataState<T> {
   refetch: () => void
 }
 
+export interface UseAsyncDataOptions {
+  deps?: unknown[]
+  /**
+   * When set, re-fetches in the background on this interval -- so the UI
+   * picks up a change (e.g. a newly generated report) without the user
+   * needing to reload the page or navigate away and back. Background polls
+   * never flip `loading` back to true (no repeating skeleton flash), and
+   * only replace `data` if the fetched value actually differs by content
+   * (not just a new object reference) -- both to avoid the flash and to
+   * avoid re-triggering downstream effects keyed on this value (e.g.
+   * AiInsights' Gemini call) on every no-op poll.
+   */
+  pollIntervalMs?: number
+}
+
 /**
  * Generic data-fetching hook: loading/error/data/refetch, so individual
  * components stop hand-rolling the same useState+useEffect boilerplate.
@@ -23,7 +38,8 @@ export interface AsyncDataState<T> {
  * endpoint without a fallback) so those get a real, user-facing error state
  * instead of being silently swallowed.
  */
-export function useAsyncData<T>(fetcher: () => Promise<T>, deps: unknown[] = []): AsyncDataState<T> {
+export function useAsyncData<T>(fetcher: () => Promise<T>, options: UseAsyncDataOptions = {}): AsyncDataState<T> {
+  const { deps = [], pollIntervalMs } = options
   const [data, setData] = useState<T | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -42,22 +58,35 @@ export function useAsyncData<T>(fetcher: () => Promise<T>, deps: unknown[] = [])
   useEffect(() => {
     let cancelled = false
 
-    fetcher()
-      .then((result) => {
-        if (!cancelled) setData(result)
-      })
-      .catch((err) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load data')
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
-      })
+    const load = () => {
+      fetcher()
+        .then((result) => {
+          if (cancelled) return
+          // Compare by content, not reference -- a background poll that
+          // returns identical data must not hand the caller a new object
+          // (that would look like a "change" to anything keyed on this
+          // value, e.g. AiInsights' `useEffect([metrics])`).
+          setData((prev) => (prev !== null && JSON.stringify(prev) === JSON.stringify(result) ? prev : result))
+          setError(null)
+        })
+        .catch((err) => {
+          if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load data')
+        })
+        .finally(() => {
+          if (!cancelled) setLoading(false)
+        })
+    }
+
+    load()
+
+    const timer = pollIntervalMs ? setInterval(load, pollIntervalMs) : undefined
 
     return () => {
       cancelled = true
+      if (timer) clearInterval(timer)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nonce, ...deps])
+  }, [nonce, pollIntervalMs, ...deps])
 
   return { data, loading, error, refetch }
 }

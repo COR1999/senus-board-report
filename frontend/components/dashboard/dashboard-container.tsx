@@ -11,10 +11,23 @@ import { useMetrics, useChartData, useReports } from '@/lib/hooks/use-dashboard-
 import { periodComparisonLabel, periodContextLabel } from '@/lib/period'
 import { DollarSign, Users, Wallet, TrendingUp } from 'lucide-react'
 
+// Background poll interval for the main dashboard's data -- lets the page
+// pick up a newly generated report (new KPIs, chart point, AI commentary)
+// without the user needing to reload or navigate away and back. Chosen to
+// be frequent enough to feel "live" without hammering the backend/Gemini
+// for a personal dashboard that isn't updated more than a few times a year.
+const DASHBOARD_POLL_INTERVAL_MS = 60_000
+
 export function DashboardContainer() {
-  const { data: metrics, loading: metricsLoading, error: metricsError } = useMetrics()
-  const { data: chartData, loading: chartLoading, error: chartError } = useChartData()
-  const { data: reports, loading: reportsLoading, error: reportsError, refetch: refetchReports } = useReports()
+  const { data: metrics, loading: metricsLoading, error: metricsError } = useMetrics({
+    pollIntervalMs: DASHBOARD_POLL_INTERVAL_MS,
+  })
+  const { data: chartData, loading: chartLoading, error: chartError } = useChartData({
+    pollIntervalMs: DASHBOARD_POLL_INTERVAL_MS,
+  })
+  const { data: reports, loading: reportsLoading, error: reportsError, refetch: refetchReports } = useReports({
+    pollIntervalMs: DASHBOARD_POLL_INTERVAL_MS,
+  })
 
   const loading = metricsLoading || chartLoading || reportsLoading
   const error = metricsError || chartError || reportsError
