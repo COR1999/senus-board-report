@@ -20,15 +20,20 @@ conversation into four related pieces:
    line were updated to match -- previously said "OpenAI API for AI-generated
    insights (frontend)"; both frontend and backend now use Gemini, via
    independent keys.
-2. **Manual refresh button, with a spam-prevention cooldown**: a refresh
-   icon button on the `AiInsights` card header (visible via `CardAction`,
-   which the existing `Card` component auto-lays-out into a 2-column grid
-   once a `CardAction` sibling is present) re-sends the *current* metrics to
-   Gemini for a fresh analysis -- the same `getAiInsights(metrics)` call the
-   automatic path uses, not a cached replay. A 30-second cooldown disables
-   the button after each click: every click is a real, quota-consuming
-   Gemini call, not a free UI action, so unrestricted spam-clicking would
-   burn through the free-tier quota fast.
+2. **Manual refresh button, gated on genuinely new data (not a timer)**: a
+   refresh icon button on the `AiInsights` card header (visible via
+   `CardAction`, which the existing `Card` component auto-lays-out into a
+   2-column grid once a `CardAction` sibling is present) re-sends the
+   *current* metrics to Gemini for a fresh analysis -- the same
+   `getAiInsights(metrics)` call the automatic path uses, not a cached
+   replay. Originally gated by a 30-second time-based cooldown; the user
+   pointed out that a timer alone still lets someone re-spend quota
+   re-analyzing data that hasn't actually changed. Replaced with a
+   data-driven gate: a `useRef` tracks which `metrics` object insights were
+   last generated for (whether that generation was automatic or manual), and
+   the button stays disabled until a genuinely new `metrics` object arrives
+   (i.e. a new report was uploaded and extracted) -- no amount of waiting
+   re-enables it on unchanged data.
 3. **Configurable model, both sides**: while verifying the swap against the
    real API, found that `gemini-2.0-flash` (hardcoded) has lost free-tier
    eligibility for new API keys (`limit: 0` in the quota error) -- confirmed
@@ -71,10 +76,13 @@ cutoff), so empirical verification against the live API stood in for it.
   can silently lose free-tier eligibility" risk applies there too, so the
   same fix was applied preemptively rather than waiting for it to break the
   same way.
-- **30-second cooldown, not a stricter or looser one**: long enough to
-  meaningfully block rapid spam-clicking (the actual risk being guarded
-  against), short enough that a genuine "check again" a minute later doesn't
-  feel broken.
+- **Data-driven gate over a longer timer**: the first cut used a 30-second
+  cooldown; the user correctly flagged that a timer only bounds *how often*
+  someone can re-spend quota, not *whether* there's anything new to analyze.
+  Tracking "has the underlying data changed since the last generation" is a
+  strictly better guard -- it blocks spam on unchanged data indefinitely (not
+  just for 30s) while never blocking a genuine new-report refresh, timer or
+  no timer.
 - **Left `responseMimeType: 'application/json'` in the Gemini config**:
   Gemini's plain-text mode tends to wrap JSON in a markdown code fence,
   which would break `parseInsightsResponse`'s `JSON.parse` -- this native
@@ -82,13 +90,14 @@ cutoff), so empirical verification against the live API stood in for it.
 
 ## Verification performed
 
-- `cd frontend && npx vitest run` -- 109 passed, including 4 new
-  `AiInsights` tests: manual refresh re-fetches with the current metrics,
-  the cooldown disables/re-enables the button on schedule, rapid re-clicks
-  during cooldown don't trigger extra calls, and -- directly answering "does
-  a new upload actually produce new insights" -- a genuinely new `metrics`
-  object produces genuinely different rendered insight text, replacing the
-  old content rather than appending to or ignoring it.
+- `cd frontend && npx vitest run` -- 107 passed, including `AiInsights`
+  tests covering: the refresh button is disabled once insights exist for the
+  current data and clicking it while disabled does not re-fire the Gemini
+  call (regardless of elapsed time); and -- directly answering "does a new
+  upload actually produce new insights" -- a genuinely new `metrics` object
+  produces genuinely different rendered insight text (replacing the old
+  content, not appending to or ignoring it), after which the button locks
+  again until the *next* new report.
 - `cd frontend && npx tsc --noEmit` -- no errors.
 - `cd frontend && npx next build` -- succeeds.
 - `cd backend && ./.venv/Scripts/python.exe -m pytest tests/ -q` -- 103

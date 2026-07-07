@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Sparkles, TrendingUp, TriangleAlert, Lightbulb, RefreshCw } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardAction } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -33,17 +33,16 @@ const INSIGHT_STYLE: Record<InsightType, { badgeClass: string; Icon: typeof Tren
   },
 }
 
-// Manual refresh re-sends the *current* metrics to Gemini for a fresh
-// analysis (same call as the automatic path -- see getAiInsights) rather
-// than replaying anything cached. The cooldown exists purely to stop
-// spam-clicking from burning through Gemini's free-tier quota: each click
-// is a real, billed-against-quota API call, not a free UI action.
-const REFRESH_COOLDOWN_MS = 30_000
-
 export function AiInsights({ metrics }: AiInsightsProps) {
   const [insights, setInsights] = useState<Insight[]>(FALLBACK_INSIGHTS)
   const [loading, setLoading] = useState(true)
-  const [cooldownActive, setCooldownActive] = useState(false)
+  // Tracks which `metrics` object insights were last generated for (auto or
+  // manual). A time-based cooldown alone still lets a user burn quota
+  // re-analyzing data that hasn't changed -- what actually matters is
+  // whether a *new report* has landed since the last call, not how long ago
+  // the button was clicked. Ref (not state) because updating it must not
+  // itself trigger a re-render/effect run.
+  const lastGeneratedForRef = useRef<Metrics | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -53,6 +52,7 @@ export function AiInsights({ metrics }: AiInsightsProps) {
       if (!cancelled) {
         setInsights(result)
         setLoading(false)
+        lastGeneratedForRef.current = metrics
       }
     })
 
@@ -61,20 +61,20 @@ export function AiInsights({ metrics }: AiInsightsProps) {
     }
   }, [metrics])
 
+  const hasNewData = lastGeneratedForRef.current !== metrics
+
   const handleRefresh = () => {
-    if (loading || cooldownActive) return
+    if (loading || !hasNewData) return
 
     setLoading(true)
     getAiInsights(metrics).then((result) => {
       setInsights(result)
       setLoading(false)
+      lastGeneratedForRef.current = metrics
     })
-
-    setCooldownActive(true)
-    setTimeout(() => setCooldownActive(false), REFRESH_COOLDOWN_MS)
   }
 
-  const refreshDisabled = loading || cooldownActive
+  const refreshDisabled = loading || !hasNewData
 
   return (
     <Card className="border-foreground/10">
@@ -93,8 +93,8 @@ export function AiInsights({ metrics }: AiInsightsProps) {
             onClick={handleRefresh}
             disabled={refreshDisabled}
             title={
-              cooldownActive && !loading
-                ? 'Refreshed recently -- try again shortly'
+              !loading && !hasNewData
+                ? 'Already up to date -- upload a new report to regenerate'
                 : 'Regenerate insights from the current data'
             }
           >

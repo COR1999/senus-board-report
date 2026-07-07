@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, act } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import { AiInsights } from '@/components/dashboard/ai-insights'
 import * as dataService from '@/lib/data-service'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
@@ -35,7 +35,6 @@ describe('AiInsights', () => {
   // across tests in this file -- several tests below assert exact counts.
   afterEach(() => {
     vi.restoreAllMocks()
-    vi.useRealTimers()
   })
 
   it('renders without crashing', () => {
@@ -49,64 +48,23 @@ describe('AiInsights', () => {
     expect(await screen.findByText('Positive')).toBeInTheDocument()
   })
 
-  it('re-fetches insights (a real call, same data path as the initial load) when the refresh button is clicked', async () => {
+  it('disables the refresh button once insights exist for the current data, and blocks a click from re-firing', async () => {
+    // A time-based cooldown alone still lets a user re-spend quota
+    // re-analyzing data that hasn't changed. The real guard is "has a new
+    // report actually landed since the last generation" -- if not, the
+    // button stays disabled regardless of how much time has passed.
     render(<AiInsights metrics={mockMetrics} />)
     await screen.findByText('ANY_INSIGHT_TEXT')
     expect(dataService.getAiInsights).toHaveBeenCalledTimes(1)
-    expect(dataService.getAiInsights).toHaveBeenCalledWith(mockMetrics)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Refresh AI insights' }))
-
-    await vi.waitFor(() => expect(dataService.getAiInsights).toHaveBeenCalledTimes(2))
-    expect(dataService.getAiInsights).toHaveBeenLastCalledWith(mockMetrics)
-  })
-
-  it('disables the refresh button during the cooldown, then re-enables it', async () => {
-    // Let the initial mount load finish under real timers first -- the
-    // button starts disabled while that's in flight, and enabling fake
-    // timers before it resolves stalls the mocked promise's microtask
-    // flush along with it, leaving the click below silently ignored.
-    render(<AiInsights metrics={mockMetrics} />)
-    await screen.findByText('ANY_INSIGHT_TEXT')
-
-    vi.useFakeTimers({ shouldAdvanceTime: true })
     const button = screen.getByRole('button', { name: 'Refresh AI insights' })
-
-    await act(async () => {
-      fireEvent.click(button)
-      await Promise.resolve()
-      await Promise.resolve()
-    })
-
-    expect(dataService.getAiInsights).toHaveBeenCalledTimes(2)
     expect(button).toBeDisabled()
+    expect(button).toHaveAttribute('title', 'Already up to date -- upload a new report to regenerate')
 
-    await act(async () => {
-      vi.advanceTimersByTime(30_000)
-    })
-
-    expect(button).not.toBeDisabled()
-  })
-
-  it('does not spam-trigger extra calls while the cooldown is active', async () => {
-    render(<AiInsights metrics={mockMetrics} />)
-    await screen.findByText('ANY_INSIGHT_TEXT')
-
-    vi.useFakeTimers({ shouldAdvanceTime: true })
-    const button = screen.getByRole('button', { name: 'Refresh AI insights' })
-
-    await act(async () => {
-      fireEvent.click(button)
-      await Promise.resolve()
-      await Promise.resolve()
-    })
-    expect(dataService.getAiInsights).toHaveBeenCalledTimes(2)
-
-    // Rapid re-clicks while disabled/on cooldown must not fire more calls --
-    // each real call spends Gemini's free-tier quota, not a free UI action.
     fireEvent.click(button)
     fireEvent.click(button)
-    expect(dataService.getAiInsights).toHaveBeenCalledTimes(2)
+
+    expect(dataService.getAiInsights).toHaveBeenCalledTimes(1)
   })
 
   it('generates fresh insights reflecting a new document/report, not the old ones', async () => {
@@ -130,6 +88,13 @@ describe('AiInsights', () => {
     expect(await screen.findByText('NEW_INSIGHT_TEXT')).toBeInTheDocument()
     expect(screen.queryByText('OLD_INSIGHT_TEXT')).not.toBeInTheDocument()
     expect(dataService.getAiInsights).toHaveBeenLastCalledWith(mockMetricsAfterNewUpload)
+    expect(dataService.getAiInsights).toHaveBeenCalledTimes(2)
+
+    // And once the new data has been analyzed, the button locks again --
+    // there's nothing newer to regenerate from until another report arrives.
+    const button = screen.getByRole('button', { name: 'Refresh AI insights' })
+    expect(button).toBeDisabled()
+    fireEvent.click(button)
     expect(dataService.getAiInsights).toHaveBeenCalledTimes(2)
   })
 })
