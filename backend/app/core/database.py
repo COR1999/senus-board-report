@@ -53,14 +53,42 @@ _COLUMNS_ADDED_AFTER_INITIAL_RELEASE = {
         ("reporting_period_end", "VARCHAR"),
         ("reporting_period_end_prior", "VARCHAR"),
     ],
+    # SHA256 of the uploaded file's bytes, for exact-duplicate-upload
+    # detection (see documents.py's upload route). Existing rows get NULL
+    # until re-processed -- both SQLite and Postgres allow multiple NULLs
+    # through a unique index, so backfilling old documents isn't required
+    # for the constraint to work correctly going forward. Uniqueness is
+    # enforced by a separate index (below), not an inline column modifier --
+    # SQLite's `ALTER TABLE ADD COLUMN` rejects `UNIQUE` outright, so the
+    # column and the constraint have to be added in two separate statements
+    # to stay portable across both engines.
+    "documents": [
+        ("content_hash", "VARCHAR(64)"),
+    ],
 }
+
+# (table, column, index_name) for unique indexes backing the columns above.
+# `CREATE UNIQUE INDEX IF NOT EXISTS` is supported by both SQLite and
+# Postgres and is naturally idempotent, unlike the column-add loop above
+# which has to check first.
+_UNIQUE_INDEXES_ADDED_AFTER_INITIAL_RELEASE = [
+    ("documents", "content_hash", "ix_documents_content_hash_unique"),
+]
 
 
 async def _add_missing_columns(conn: AsyncConnection) -> None:
+    def table_exists(sync_conn, table_name: str) -> bool:
+        return inspect(sync_conn).has_table(table_name)
+
     def get_existing_columns(sync_conn, table_name: str) -> set[str]:
         return {col["name"] for col in inspect(sync_conn).get_columns(table_name)}
 
     for table_name, columns in _COLUMNS_ADDED_AFTER_INITIAL_RELEASE.items():
+        # A table that doesn't exist yet will be created fresh (with every
+        # current column) by `Base.metadata.create_all`, which always runs
+        # before this -- nothing to backfill here.
+        if not await conn.run_sync(table_exists, table_name):
+            continue
         existing = await conn.run_sync(get_existing_columns, table_name)
         for column_name, sql_type in columns:
             if column_name not in existing:
@@ -68,6 +96,13 @@ async def _add_missing_columns(conn: AsyncConnection) -> None:
                 await conn.execute(
                     text(f'ALTER TABLE {table_name} ADD COLUMN {column_name} {sql_type}')
                 )
+
+    for table_name, column_name, index_name in _UNIQUE_INDEXES_ADDED_AFTER_INITIAL_RELEASE:
+        if not await conn.run_sync(table_exists, table_name):
+            continue
+        await conn.execute(
+            text(f'CREATE UNIQUE INDEX IF NOT EXISTS {index_name} ON {table_name} ({column_name})')
+        )
 
 
 async def init_db():

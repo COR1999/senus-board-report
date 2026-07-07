@@ -178,7 +178,17 @@ export async function uploadPDF(file: File): Promise<{ id: string; message: stri
       method: 'POST',
       body: formData,
     })
-    if (!res.ok) throw new Error(`Failed to upload PDF: ${res.statusText}`)
+    if (!res.ok) {
+      // FastAPI's HTTPException body is `{"detail": "..."}` -- e.g. the
+      // duplicate-upload 409's specific message ("already uploaded as
+      // document #3 on 2026-07-06"). Falling back to statusText ("Conflict")
+      // for non-JSON error bodies would silently drop that detail.
+      const detail = await res
+        .json()
+        .then((body) => (typeof body?.detail === 'string' ? body.detail : null))
+        .catch(() => null)
+      throw new Error(detail ?? `Failed to upload PDF: ${res.statusText}`)
+    }
     return res.json()
   } catch (error) {
     console.error('PDF upload failed:', error)

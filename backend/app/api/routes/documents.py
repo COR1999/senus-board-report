@@ -3,12 +3,14 @@ Document upload and management endpoints.
 Integrates PDF extraction with Report generation and FinancialMetrics system.
 """
 
+import hashlib
 import logging
 from typing import List, Optional
 from datetime import datetime
 
 from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
-from sqlalchemy import select, delete
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -85,6 +87,23 @@ async def upload_document(
         if not content:
             raise HTTPException(status_code=400, detail="File is empty")
 
+        # Exact-duplicate detection: hash the raw bytes (not the filename --
+        # a renamed copy of the same PDF should still match, and two
+        # different PDFs that happen to share a filename shouldn't).
+        content_hash = hashlib.sha256(content).hexdigest()
+        existing = await db.execute(
+            select(Document).where(Document.content_hash == content_hash)
+        )
+        duplicate = existing.scalars().first()
+        if duplicate:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"This exact file was already uploaded as document "
+                    f"#{duplicate.id} on {duplicate.created_at:%Y-%m-%d}."
+                ),
+            )
+
         file_path, extracted_text = pdf_service.extract_text_from_upload(
             content, file.filename
         )
@@ -93,6 +112,7 @@ async def upload_document(
             filename=file.filename,
             file_path=file_path,
             file_size=len(content),
+            content_hash=content_hash,
             extracted_text=extracted_text,
             status="completed",
             created_at=datetime.utcnow(),
@@ -100,7 +120,18 @@ async def upload_document(
         )
 
         db.add(document)
-        await db.flush()
+        try:
+            await db.flush()
+        except IntegrityError:
+            # Race: two uploads of the same file committed between the
+            # pre-check above and this flush. The unique constraint on
+            # content_hash is the real guarantee; the pre-check is just the
+            # common-case fast path with a clearer error message.
+            await db.rollback()
+            raise HTTPException(
+                status_code=409,
+                detail="This exact file was already uploaded (uploaded concurrently).",
+            )
 
         report = None
 
@@ -121,6 +152,8 @@ async def upload_document(
 
         return build_document_response(document, report, metrics)
 
+    except HTTPException:
+        raise
     except Exception as e:
         await db.rollback()
         logger.error(f"Upload failed: {e}", exc_info=True)
@@ -203,15 +236,19 @@ async def list_documents(
 
 @router.delete("/{document_id}")
 async def delete_document(document_id: int, db: AsyncSession = Depends(get_db)):
-
-    result = await db.execute(
-        delete(Document).where(Document.id == document_id)
-    )
-
-    deleted_rows = getattr(result, "rowcount", 0)
-    if deleted_rows == 0:
+    # A bulk `delete(Document).where(...)` statement issues a direct SQL
+    # DELETE that bypasses the ORM-level `cascade="all, delete-orphan"` on
+    # Document's relationships -- there's no DB-level ON DELETE CASCADE
+    # foreign key, so that used to fail with a ForeignKeyViolationError on
+    # any document that actually had FinancialMetrics/BalanceSheetMetrics/
+    # Report rows attached (i.e. any successfully processed document, the
+    # common case). Loading the instance and deleting it through the
+    # session lets the ORM cascade fire correctly.
+    document = await db.get(Document, document_id)
+    if document is None:
         raise HTTPException(status_code=404, detail="Document not found")
 
+    await db.delete(document)
     await db.commit()
 
     return {"message": "Deleted successfully"}
