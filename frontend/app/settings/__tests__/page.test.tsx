@@ -7,7 +7,7 @@ vi.mock('next/navigation', () => ({
 }))
 
 describe('SettingsPage', () => {
-  it('renders the placeholder profile section', () => {
+  it('renders the presenter identity section', () => {
     render(<SettingsPage />)
     expect(screen.getByRole('heading', { name: 'Settings' })).toBeInTheDocument()
     // Appears twice: once in the sidebar's footer profile, once in the settings card.

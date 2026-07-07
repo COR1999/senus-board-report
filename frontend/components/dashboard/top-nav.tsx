@@ -1,19 +1,8 @@
 'use client'
 
-import * as React from 'react'
 import Link from 'next/link'
-import { Bell } from 'lucide-react'
 import { CURRENT_USER } from '@/lib/current-user'
-import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
 
 export function TopNav() {
   return (
@@ -28,50 +17,28 @@ export function TopNav() {
     // handler, and both /reports and /documents now have their own real,
     // working search.
     <header className="sticky top-0 z-20 hidden border-b border-border/40 bg-card/95 backdrop-blur md:ml-20 md:flex md:h-16 md:items-center md:justify-end md:px-10">
-      {/* Right: Notifications & User Menu */}
-      <div className="flex items-center gap-4">
-        {/* Notifications */}
-        <Button
-          variant="ghost"
-          size="icon"
-          className="relative h-9 w-9 text-muted-foreground hover:bg-muted/50 hover:text-foreground"
-        >
-          <Bell className="h-5 w-5" />
-          <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-emerald-600" />
-        </Button>
-
-        {/* User Menu */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-9 w-9 rounded-full p-0"
-            >
-              <Avatar className="h-9 w-9">
-                <AvatarImage src={CURRENT_USER.avatarUrl} alt={CURRENT_USER.name} />
-                <AvatarFallback>{CURRENT_USER.initials}</AvatarFallback>
-              </Avatar>
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-56">
-            <DropdownMenuLabel className="flex flex-col space-y-1">
-              <p className="text-sm font-medium text-foreground">{CURRENT_USER.name}</p>
-              <p className="text-xs text-muted-foreground">{CURRENT_USER.title}</p>
-            </DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem asChild>
-              <Link href="/settings">Profile</Link>
-            </DropdownMenuItem>
-            <DropdownMenuItem asChild>
-              <Link href="/settings">Settings</Link>
-            </DropdownMenuItem>
-            <DropdownMenuItem>Help & Support</DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem>Sign out</DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
+      {/* Single, always-visible presenter identity -- this dashboard is a
+          single-user boardroom presentation tool, not a multi-tenant
+          product, so the notifications bell (nothing real ever backed it --
+          no data source, a permanently-on fake "unread" dot) and the
+          dropdown menu (half its items were dead no-ops: "Help & Support"
+          and "Sign out" with no auth to sign out of, "Profile" duplicated
+          "Settings") were removed rather than tidied piecemeal. A plain
+          link to the one real destination is more honest than a menu with
+          only one working item. */}
+      <Link
+        href="/settings"
+        className="flex items-center gap-3 rounded-lg px-2 py-1.5 text-sm transition-colors hover:bg-muted/50"
+      >
+        <Avatar className="h-9 w-9">
+          <AvatarImage src={CURRENT_USER.avatarUrl} alt={CURRENT_USER.name} />
+          <AvatarFallback>{CURRENT_USER.initials}</AvatarFallback>
+        </Avatar>
+        <span className="flex flex-col text-left leading-tight">
+          <span className="font-medium text-foreground">{CURRENT_USER.name}</span>
+          <span className="text-xs text-muted-foreground">{CURRENT_USER.title}</span>
+        </span>
+      </Link>
     </header>
   )
 }

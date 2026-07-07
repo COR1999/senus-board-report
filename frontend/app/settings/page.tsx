@@ -4,15 +4,17 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { CURRENT_USER } from '@/lib/current-user'
 
-// Placeholder only -- no settings data model or persistence exists yet.
-// Profile fields below share CURRENT_USER with Sidebar/TopNav.
+// Single-user boardroom presentation tool, not a multi-tenant product --
+// this page intentionally has no account/profile editing, login, or
+// per-user preferences. CURRENT_USER is a fixed presenter identity shared
+// with Sidebar/TopNav, not an editable account.
 export default function SettingsPage() {
   return (
-    <DashboardShell title="Settings" description="Account and workspace preferences">
+    <DashboardShell title="Settings" description="Presenter identity and display preferences">
       <Card>
         <CardHeader>
-          <CardTitle>Profile</CardTitle>
-          <CardDescription>This section is a placeholder -- no settings are editable yet</CardDescription>
+          <CardTitle>Presenter</CardTitle>
+          <CardDescription>Shown throughout the dashboard and in the top-nav</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex items-center gap-4">
