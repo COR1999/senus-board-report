@@ -3,6 +3,7 @@
 import * as React from 'react'
 import Link from 'next/link'
 import { Bell } from 'lucide-react'
+import { CURRENT_USER } from '@/lib/current-user'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
@@ -45,15 +46,15 @@ export function TopNav() {
               className="h-9 w-9 rounded-full p-0"
             >
               <Avatar className="h-9 w-9">
-                <AvatarImage src="https://avatar.vercel.sh/sarah" alt="Sarah" />
-                <AvatarFallback>SJ</AvatarFallback>
+                <AvatarImage src={CURRENT_USER.avatarUrl} alt={CURRENT_USER.name} />
+                <AvatarFallback>{CURRENT_USER.initials}</AvatarFallback>
               </Avatar>
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-56">
             <DropdownMenuLabel className="flex flex-col space-y-1">
-              <p className="text-sm font-medium text-foreground">Sarah Jenkins</p>
-              <p className="text-xs text-muted-foreground">CEO & Co-Founder</p>
+              <p className="text-sm font-medium text-foreground">{CURRENT_USER.name}</p>
+              <p className="text-xs text-muted-foreground">{CURRENT_USER.title}</p>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuItem asChild>

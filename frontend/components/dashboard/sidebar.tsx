@@ -11,6 +11,7 @@ import {
   Menu,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { CURRENT_USER } from '@/lib/current-user'
 import { Button } from '@/components/ui/button'
 import {
   Sheet,
@@ -102,14 +103,14 @@ function FooterProfile() {
     <div className="mt-auto border-t border-neutral-800 bg-neutral-900/40 p-4">
       <div className="flex items-center gap-3">
         <div className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-900/40 text-emerald-400 font-semibold text-xs">
-          SJ
+          {CURRENT_USER.initials}
         </div>
         <div className="flex flex-col min-w-0 flex-1">
           <span className="truncate text-xs font-semibold text-neutral-50">
-            Sarah Jenkins
+            {CURRENT_USER.name}
           </span>
           <span className="truncate text-[10px] font-medium text-neutral-400">
-            CEO & Co-Founder
+            {CURRENT_USER.title}
           </span>
         </div>
       </div>
