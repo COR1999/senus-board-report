@@ -27,6 +27,20 @@ class Settings(BaseSettings):
         description="Google Gemini API key"
     )
 
+    # Which Gemini model to call -- not hardcoded, since a pinned version
+    # (e.g. "gemini-2.0-flash") can lose free-tier quota eligibility on
+    # Google's side without any code change on ours (confirmed directly
+    # against the real API while debugging the frontend's own Gemini
+    # integration -- see frontend's GEMINI_INSIGHTS_MODEL for the same
+    # reasoning). Swapping models is then just an env var change, not a
+    # redeploy. Read directly via os.getenv in GeminiAnalysisService,
+    # declared here too so it's documented and so setting it never fails
+    # validation, matching the pattern below.
+    GEMINI_MODEL: str = Field(
+        default="gemini-2.0-flash",
+        description="Gemini model used for financial document analysis"
+    )
+
     # Gemini proactive rate limiting -- read directly via os.getenv in
     # GeminiAnalysisService, declared here too so they're documented and
     # so setting them (as .env.example instructs) never fails validation.

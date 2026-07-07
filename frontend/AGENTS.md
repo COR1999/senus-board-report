@@ -14,9 +14,10 @@ meets climate analytics platform**.
 - Next.js (App Router), React 19, TypeScript
 - Tailwind CSS, shadcn/ui + Radix UI primitives
 - Recharts for charts
-- OpenAI API for AI-generated insights (frontend); backend also uses Gemini
-  separately for financial data extraction/analysis -- these are independent
-  integrations, don't conflate them
+- Gemini API for AI-generated insights (frontend, `app/api/insights/route.ts`);
+  backend also uses Gemini separately for financial data extraction/analysis
+  (`backend/app/services/gemini_service.py`) -- same provider, but independent
+  integrations with independent API keys/quota, don't conflate them
 - Backend: FastAPI + SQLAlchemy (see `backend/docs/frontend-api-routes.md`
   for the REST contract this frontend consumes)
 

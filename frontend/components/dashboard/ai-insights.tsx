@@ -1,11 +1,13 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Sparkles, TrendingUp, TriangleAlert, Lightbulb } from 'lucide-react'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Sparkles, TrendingUp, TriangleAlert, Lightbulb, RefreshCw } from 'lucide-react'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardAction } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { getAiInsights, type Metrics } from '@/lib/data-service'
 import { FALLBACK_INSIGHTS, type Insight, type InsightType } from '@/lib/insights'
+import { cn } from '@/lib/utils'
 
 interface AiInsightsProps {
   metrics: Metrics
@@ -31,13 +33,22 @@ const INSIGHT_STYLE: Record<InsightType, { badgeClass: string; Icon: typeof Tren
   },
 }
 
+// Manual refresh re-sends the *current* metrics to Gemini for a fresh
+// analysis (same call as the automatic path -- see getAiInsights) rather
+// than replaying anything cached. The cooldown exists purely to stop
+// spam-clicking from burning through Gemini's free-tier quota: each click
+// is a real, billed-against-quota API call, not a free UI action.
+const REFRESH_COOLDOWN_MS = 30_000
+
 export function AiInsights({ metrics }: AiInsightsProps) {
   const [insights, setInsights] = useState<Insight[]>(FALLBACK_INSIGHTS)
   const [loading, setLoading] = useState(true)
+  const [cooldownActive, setCooldownActive] = useState(false)
 
   useEffect(() => {
     let cancelled = false
 
+    setLoading(true)
     getAiInsights(metrics).then((result) => {
       if (!cancelled) {
         setInsights(result)
@@ -50,6 +61,21 @@ export function AiInsights({ metrics }: AiInsightsProps) {
     }
   }, [metrics])
 
+  const handleRefresh = () => {
+    if (loading || cooldownActive) return
+
+    setLoading(true)
+    getAiInsights(metrics).then((result) => {
+      setInsights(result)
+      setLoading(false)
+    })
+
+    setCooldownActive(true)
+    setTimeout(() => setCooldownActive(false), REFRESH_COOLDOWN_MS)
+  }
+
+  const refreshDisabled = loading || cooldownActive
+
   return (
     <Card className="border-foreground/10">
       <CardHeader>
@@ -60,6 +86,22 @@ export function AiInsights({ metrics }: AiInsightsProps) {
             <CardDescription>AI-generated executive commentary</CardDescription>
           </div>
         </div>
+        <CardAction>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleRefresh}
+            disabled={refreshDisabled}
+            title={
+              cooldownActive && !loading
+                ? 'Refreshed recently -- try again shortly'
+                : 'Regenerate insights from the current data'
+            }
+          >
+            <RefreshCw className={cn('h-4 w-4', loading && 'animate-spin')} />
+            <span className="sr-only">Refresh AI insights</span>
+          </Button>
+        </CardAction>
       </CardHeader>
       <CardContent>
         {loading ? (
