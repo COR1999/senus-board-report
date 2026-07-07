@@ -81,12 +81,57 @@ exploratory in a prior session.
   is safe for this filing's cadence (confirmed against the real PDF, not
   just the synthetic test fixture).
 
+## Round 2 — a second stakeholder's feedback ("David")
+
+A different real reviewer gave four more notes on the same dashboard:
+
+1. **"Visuals fall a bit flat... for one year of data, percentage comparison
+   or bar chart is easier on the eyes than a line graph."** Investigated via a
+   standalone comparison mockup (published as a Claude Artifact, not committed
+   to the repo) showing the real 2-point data as both a line/area chart and a
+   bar chart, plus a clearly-labeled *illustrative-only* mockup with fabricated
+   placeholder periods through "Dec 2028" to show what a longer real time
+   series would look like. User's decision after reviewing: **keep line/area**
+   for the Revenue Trend chart — no code change from this specific note.
+   Follow-up: asked whether any *other* chart in the app should be a bar
+   instead. The only other chart is `KpiSparkline` (the tiny inline trend line
+   on hero KPI cards) — recommended keeping it as a line too, since it's
+   purely decorative context beside an already-explicit numeric delta+arrow,
+   not a standalone comparison surface the way the main chart is.
+2. **"For Bookings, remove the percentage thingy."** Real issue: Bookings has
+   no prior-period comparative at all (its `history` is a single point), so
+   its `changePercentage` was always a hardcoded `0`, and the stat strip
+   showed a "0%" pill that read as a real (if flat) delta rather than "no
+   comparison exists." Fixed generally, not by special-casing "bookings": the
+   delta pill now only renders when `history.length >= 2`, i.e. a real prior
+   value actually exists. This also protects any future stat-strip metric with
+   the same no-prior-comparative shape.
+3. **"Maybe put the AI executive insights up the top."** Before making this
+   change, verified there's no staleness risk: `AiInsights`'s `useEffect` is
+   keyed on the `metrics` prop, and `/api/insights` has no caching layer of
+   its own -- it re-derives the OpenAI prompt from whatever `metrics` currently
+   holds on every call. So a new report -> new `/metrics/dashboard/summary`
+   response -> new `metrics` object -> a genuinely fresh AI commentary call,
+   not a stale/cached one. (Aside, not a blocker: if OpenAI errors, the panel
+   falls back to a hardcoded `FALLBACK_INSIGHTS` array with made-up numbers
+   like "38% YoY" that don't match Senus's real figures -- worth knowing.)
+   Moved `<AiInsights>` from beside the chart (bottom of page) to directly
+   under the hero KPI row, full-width, ahead of the secondary stat strip and
+   the chart.
+4. **"Do you have net revenue retention figures -- are customers spending more
+   than last year?"** Checked directly against the real filing text: the only
+   customer count anywhere ("138 customer accounts") is a restated FY2025
+   admission-document figure, not an HY2026-specific count, and there is no
+   per-customer or cohort revenue breakdown, no "existing vs. new customer"
+   split, anywhere in the text. NRR is not derivable from what this filing
+   actually contains -- reported this as a hard data gap, not built.
+
 ## Verification performed
 
 - `cd backend && ./.venv/Scripts/python.exe -m pytest tests/ -q` — 94 passed.
-- `cd frontend && npx vitest run` — 100 passed (re-ran after axis/tooltip polish, still 100).
-- `cd frontend && npx tsc --noEmit` — no errors (re-ran after axis/tooltip polish, still clean).
-- `cd frontend && npx next build` — succeeds (re-ran after axis/tooltip polish, still succeeds).
+- `cd frontend && npx vitest run` — 102 passed (re-ran after each round of polish: axis/tooltip, then bookings-badge/layout).
+- `cd frontend && npx tsc --noEmit` — no errors (re-ran after each round, still clean).
+- `cd frontend && npx next build` — succeeds (re-ran after each round, still succeeds).
 - Extraction re-verified directly against the real filing PDF (not just the
   synthetic test fixture): `reporting_period_end == "Dec 2025"`,
   `reporting_period_end_prior == "Dec 2024"`.
