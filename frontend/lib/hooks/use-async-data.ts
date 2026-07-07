@@ -19,7 +19,7 @@ export interface UseAsyncDataOptions {
    * only replace `data` if the fetched value actually differs by content
    * (not just a new object reference) -- both to avoid the flash and to
    * avoid re-triggering downstream effects keyed on this value (e.g.
-   * AiInsights' OpenAI call) on every no-op poll.
+   * AiInsights' Gemini call) on every no-op poll.
    */
   pollIntervalMs?: number
 }

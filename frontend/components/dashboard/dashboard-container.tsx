@@ -13,7 +13,7 @@ import { DollarSign, Users, Wallet, TrendingUp } from 'lucide-react'
 // Background poll interval for the main dashboard's data -- lets the page
 // pick up a newly generated report (new KPIs, chart point, AI commentary)
 // without the user needing to reload or navigate away and back. Chosen to
-// be frequent enough to feel "live" without hammering the backend/OpenAI
+// be frequent enough to feel "live" without hammering the backend/Gemini
 // for a personal dashboard that isn't updated more than a few times a year.
 const DASHBOARD_POLL_INTERVAL_MS = 60_000
 

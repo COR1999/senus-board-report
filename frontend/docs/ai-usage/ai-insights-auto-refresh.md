@@ -1,5 +1,15 @@
 # AI Usage — feature/ai-insights-auto-refresh
 
+> **Note**: this branch was authored while the AI Board Insights panel still
+> called OpenAI. `feature/gemini-ai-insights` (merged separately, afterwards)
+> swapped that panel over to Gemini. The "OpenAI" mentions below are a
+> historically accurate record of the provider *at the time this work was
+> done*; nothing in this branch's actual code depends on which provider
+> `getAiInsights` calls, so no functional changes were needed post-rebase --
+> only two stray code comments (in `dashboard-container.tsx` and
+> `use-async-data.ts`) were updated to say "Gemini" so they don't read as
+> stale/wrong once merged.
+
 ## What was built
 
 Two related requests in the same conversation:
@@ -76,10 +86,12 @@ just this one case.
   reference, a changed result replaces it, and `loading` never flips back
   to `true` on a background poll.
 - `cd frontend && npx vitest run components/dashboard/__tests__/ai-insights.test.tsx`
-  — 4 passed, including new tests proving `AiInsights` does not call
-  `getAiInsights` again on a re-render with the same `metrics` reference,
-  but does when a genuinely new one arrives.
-- `cd frontend && npx vitest run` — 111 passed (full suite).
+  — passed, including a test proving `AiInsights` does not call
+  `getAiInsights` again on a re-render with the same `metrics` reference
+  (the polling-safety contract this branch depends on), reconciled after
+  rebasing onto `main` with the data-driven refresh-gate tests added by
+  `feature/gemini-ai-insights`.
+- `cd frontend && npx vitest run` — full suite passes.
 - `cd frontend && npx tsc --noEmit` — no errors.
 - `cd frontend && npx next build` — succeeds.
 - Confirmed the still-running local preview (dev server + throwaway SQLite
