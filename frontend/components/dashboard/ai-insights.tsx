@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { Sparkles, TrendingUp, TriangleAlert, Lightbulb, RefreshCw } from 'lucide-react'
+import { Sparkles, TrendingUp, TriangleAlert, Lightbulb, RefreshCw, ArrowRight } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardAction } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -120,7 +120,23 @@ export function AiInsights({ metrics }: AiInsightsProps) {
                     <Icon className="h-3 w-3" />
                     {label}
                   </Badge>
-                  <p className="text-sm leading-relaxed text-foreground/90">{insight.text}</p>
+                  <div className="space-y-1">
+                    {/* Same caption treatment as KpiStatStrip's category
+                        label, so an insight visually anchors to the same
+                        section of the dashboard it's commenting on. */}
+                    {insight.category && (
+                      <span className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                        {insight.category}
+                      </span>
+                    )}
+                    <p className="text-sm leading-relaxed text-foreground/90">{insight.text}</p>
+                    {insight.action && (
+                      <p className="flex items-start gap-1 text-xs text-muted-foreground">
+                        <ArrowRight className="mt-0.5 h-3 w-3 flex-shrink-0" />
+                        {insight.action}
+                      </p>
+                    )}
+                  </div>
                 </div>
               )
             })}

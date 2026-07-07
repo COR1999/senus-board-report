@@ -27,7 +27,7 @@ const mockMetricsAfterNewUpload = {
 describe('AiInsights', () => {
   beforeEach(() => {
     vi.spyOn(dataService, 'getAiInsights').mockResolvedValue([
-      { text: 'ANY_INSIGHT_TEXT', type: 'positive' },
+      { text: 'ANY_INSIGHT_TEXT', type: 'positive', action: 'ANY_ACTION_TEXT', category: 'Growth & Revenue' },
     ])
   })
 
@@ -47,6 +47,13 @@ describe('AiInsights', () => {
     render(<AiInsights metrics={mockMetrics} />)
     expect(await screen.findByText('ANY_INSIGHT_TEXT')).toBeInTheDocument()
     expect(await screen.findByText('Positive')).toBeInTheDocument()
+  })
+
+  it('renders the category caption and recommended action alongside the observation', async () => {
+    render(<AiInsights metrics={mockMetrics} />)
+    expect(await screen.findByText('ANY_INSIGHT_TEXT')).toBeInTheDocument()
+    expect(screen.getByText('Growth & Revenue')).toBeInTheDocument()
+    expect(screen.getByText('ANY_ACTION_TEXT')).toBeInTheDocument()
   })
 
   it('disables the refresh button once insights exist for the current data, and blocks a click from re-firing', async () => {
@@ -91,8 +98,8 @@ describe('AiInsights', () => {
     // is the contract AiInsights must honor: a new object -> a new Gemini
     // call built from the new numbers, not a replay of the old commentary.
     vi.spyOn(dataService, 'getAiInsights')
-      .mockResolvedValueOnce([{ text: 'OLD_INSIGHT_TEXT', type: 'positive' }])
-      .mockResolvedValueOnce([{ text: 'NEW_INSIGHT_TEXT', type: 'opportunity' }])
+      .mockResolvedValueOnce([{ text: 'OLD_INSIGHT_TEXT', type: 'positive', action: 'OLD_ACTION_TEXT' }])
+      .mockResolvedValueOnce([{ text: 'NEW_INSIGHT_TEXT', type: 'opportunity', action: 'NEW_ACTION_TEXT' }])
 
     const { rerender } = render(<AiInsights metrics={mockMetrics} />)
     expect(await screen.findByText('OLD_INSIGHT_TEXT')).toBeInTheDocument()
