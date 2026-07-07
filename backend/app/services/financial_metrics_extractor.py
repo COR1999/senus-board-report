@@ -559,15 +559,40 @@ class FinancialMetricsExtractor:
             reporting_period_end = f"{month_name[:3]} {year}"
             reporting_period_end_prior = f"{month_name[:3]} {year - 1}"
 
-            # Period start, e.g. "Jul 2025" -- 5 months before the end month
-            # (a 6-month range inclusive of both ends: Jul..Dec = 6 months),
-            # with year rollover handled manually since there's no
+            # Period start, e.g. "Jul 2025" -- N-1 months before the end
+            # month, where N is the filing's own reporting cadence in
+            # months. The "ended DD Month YYYY" match above says nothing
+            # about cadence (it matches "twelve months ended" just as well
+            # as "six months ended"), so a hardcoded half-year assumption
+            # here would silently mislabel a full-year filing's start date
+            # by 6 months. Cadence is instead detected from the filing's
+            # own language; when neither a half-year nor a full-year cue is
+            # found, cadence is genuinely ambiguous and the start fields
+            # are left None rather than guessed -- same missing-vs-
+            # fabricated discipline as every other field in this extractor
+            # (bookings, customers, reporting_period all do the same).
+            # Year rollover is handled manually since there's no
             # python-dateutil dependency in this project.
-            end_index = _MONTH_ABBR.index(month_name[:3])
-            start_index = (end_index - 5) % 12
-            start_year = year - 1 if end_index - 5 < 0 else year
-            reporting_period_start = f"{_MONTH_ABBR[start_index]} {start_year}"
-            reporting_period_start_prior = f"{_MONTH_ABBR[start_index]} {start_year - 1}"
+            half_year_cues = re.search(
+                r"\bsix\s+months\s+ended\b|\bhalf[\s-]year\b|\(HY\d", text, re.IGNORECASE
+            )
+            full_year_cues = re.search(
+                r"\btwelve\s+months\s+ended\b|\b12\s+months\s+ended\b|\bfull\s+year\b|"
+                r"\bannual\s+report\b|\(FY\d",
+                text, re.IGNORECASE,
+            )
+            period_months = (
+                6 if half_year_cues and not full_year_cues else
+                12 if full_year_cues and not half_year_cues else
+                None
+            )
+            if period_months is not None:
+                start_offset = period_months - 1
+                end_index = _MONTH_ABBR.index(month_name[:3])
+                start_index = (end_index - start_offset) % 12
+                start_year = year - 1 if end_index - start_offset < 0 else year
+                reporting_period_start = f"{_MONTH_ABBR[start_index]} {start_year}"
+                reporting_period_start_prior = f"{_MONTH_ABBR[start_index]} {start_year - 1}"
 
         # -----------------------------------------------------
         # NORMALISE
