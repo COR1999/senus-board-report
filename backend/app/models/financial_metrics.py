@@ -66,6 +66,14 @@ class FinancialMetrics(Base):
     reporting_period: Mapped[Optional[str]] = mapped_column(default=None)
     reporting_period_prior: Mapped[Optional[str]] = mapped_column(default=None)
 
+    # Calendar-month version of the above, e.g. "Dec 2025"/"Dec 2024" --
+    # derived from the filing's own "ended DD Month YYYY" text. Used for
+    # chart axis labels, which "HY2026" alone didn't make clear (Senus's
+    # fiscal year runs Jul-Jun, so "HY" periods don't end in the month a
+    # reader might assume).
+    reporting_period_end: Mapped[Optional[str]] = mapped_column(default=None)
+    reporting_period_end_prior: Mapped[Optional[str]] = mapped_column(default=None)
+
     extracted_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
 
     # Relationship back to the source document.

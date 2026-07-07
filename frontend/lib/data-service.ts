@@ -64,6 +64,10 @@ export interface ChartDataPoint {
   period: string
   /** Revenue for this period. `null` means the document didn't report it (missing, not zero). */
   revenue: number | null
+  /** EBITDA for this period. `null` means the document didn't report it (missing, not zero). */
+  ebitda: number | null
+  /** Cash for this period. `null` means the document didn't report it (missing, not zero). */
+  cash: number | null
 }
 
 export interface ReportSummary {

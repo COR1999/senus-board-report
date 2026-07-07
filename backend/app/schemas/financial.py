@@ -86,6 +86,14 @@ class RevenueTrendPoint(BaseModel):
         None,
         description="Revenue for this period. Null means the document didn't report it -- never 0.",
     )
+    ebitda: Optional[float] = Field(
+        None,
+        description="EBITDA for this period. Null means the document didn't report it -- never 0.",
+    )
+    cash: Optional[float] = Field(
+        None,
+        description="Cash for this period. Null means the document didn't report it -- never 0.",
+    )
 
 
 # ==================== Document ====================

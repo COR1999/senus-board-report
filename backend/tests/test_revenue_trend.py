@@ -14,9 +14,15 @@ async def _add_metrics_row(
     *,
     revenue=None,
     revenue_prior=None,
+    ebitda=None,
+    ebitda_prior=None,
+    cash=None,
+    cash_prior=None,
     extracted_at=None,
     fm_reporting_period=None,
     fm_reporting_period_prior=None,
+    fm_reporting_period_end=None,
+    fm_reporting_period_end_prior=None,
     ai_reporting_period=None,
 ) -> FinancialMetrics:
     doc = Document(filename="test.pdf", status="completed", created_at=datetime.utcnow())
@@ -27,8 +33,14 @@ async def _add_metrics_row(
         document_id=doc.id,
         revenue=revenue,
         revenue_prior=revenue_prior,
+        ebitda=ebitda,
+        ebitda_prior=ebitda_prior,
+        cash=cash,
+        cash_prior=cash_prior,
         reporting_period=fm_reporting_period,
         reporting_period_prior=fm_reporting_period_prior,
+        reporting_period_end=fm_reporting_period_end,
+        reporting_period_end_prior=fm_reporting_period_end_prior,
         extracted_at=extracted_at or datetime.utcnow(),
     )
     session.add(metrics)
@@ -59,8 +71,8 @@ async def test_revenue_trend_orders_oldest_to_newest(async_client, async_session
     assert response.status_code == 200
     points = response.json()
     assert points == [
-        {"period": "Jan 2025", "revenue": 100_000.0},
-        {"period": "Jul 2025", "revenue": 200_000.0},
+        {"period": "Jan 2025", "revenue": 100_000.0, "ebitda": None, "cash": None},
+        {"period": "Jul 2025", "revenue": 200_000.0, "ebitda": None, "cash": None},
     ]
 
 
@@ -109,7 +121,7 @@ async def test_revenue_trend_prefers_deterministic_period_over_extracted_at(asyn
 
     assert response.status_code == 200
     points = response.json()
-    assert points == [{"period": "HY2026", "revenue": 100_000.0}]
+    assert points == [{"period": "HY2026", "revenue": 100_000.0, "ebitda": None, "cash": None}]
 
 
 @pytest.mark.anyio
@@ -127,7 +139,7 @@ async def test_revenue_trend_falls_back_to_ai_reporting_period(async_client, asy
 
     assert response.status_code == 200
     points = response.json()
-    assert points == [{"period": "H1 2025", "revenue": 100_000.0}]
+    assert points == [{"period": "H1 2025", "revenue": 100_000.0, "ebitda": None, "cash": None}]
 
 
 @pytest.mark.anyio
@@ -137,7 +149,7 @@ async def test_revenue_trend_falls_back_to_extracted_at_without_a_report(async_c
     response = await async_client.get("/metrics/dashboard/revenue-trend")
 
     assert response.status_code == 200
-    assert response.json() == [{"period": "Mar 2025", "revenue": 100_000.0}]
+    assert response.json() == [{"period": "Mar 2025", "revenue": 100_000.0, "ebitda": None, "cash": None}]
 
 
 @pytest.mark.anyio
@@ -162,8 +174,62 @@ async def test_revenue_trend_prepends_embedded_prior_point_with_only_one_documen
 
     assert response.status_code == 200
     assert response.json() == [
-        {"period": "HY25", "revenue": 340_931.0},
-        {"period": "HY2026", "revenue": 354_813.0},
+        {"period": "HY25", "revenue": 340_931.0, "ebitda": None, "cash": None},
+        {"period": "HY2026", "revenue": 354_813.0, "ebitda": None, "cash": None},
+    ]
+
+
+@pytest.mark.anyio
+async def test_revenue_trend_prefers_month_end_label_over_hy_label(async_client, async_session):
+    # "HY2026" alone doesn't say which calendar month the period ends --
+    # the deterministically-extracted month/year label is clearer on an
+    # axis and should win over the bare "HY" label when both exist.
+    await _add_metrics_row(
+        async_session,
+        revenue=100_000.0,
+        extracted_at=datetime(2026, 7, 6),
+        fm_reporting_period="HY2026",
+        fm_reporting_period_end="Dec 2025",
+    )
+
+    response = await async_client.get("/metrics/dashboard/revenue-trend")
+
+    assert response.status_code == 200
+    points = response.json()
+    assert points == [{"period": "Dec 2025", "revenue": 100_000.0, "ebitda": None, "cash": None}]
+
+
+@pytest.mark.anyio
+async def test_revenue_trend_includes_ebitda_and_cash(async_client, async_session):
+    await _add_metrics_row(async_session, revenue=100_000.0, ebitda=-20_000.0, cash=50_000.0)
+
+    response = await async_client.get("/metrics/dashboard/revenue-trend")
+
+    assert response.status_code == 200
+    points = response.json()
+    assert points == [{"period": points[0]["period"], "revenue": 100_000.0, "ebitda": -20_000.0, "cash": 50_000.0}]
+
+
+@pytest.mark.anyio
+async def test_revenue_trend_prepended_prior_point_includes_ebitda_and_cash(async_client, async_session):
+    await _add_metrics_row(
+        async_session,
+        revenue=354_813.0,
+        revenue_prior=340_931.0,
+        ebitda=-473_739.0,
+        ebitda_prior=-395_561.0,
+        cash=735_189.0,
+        cash_prior=72_382.0,
+        fm_reporting_period_end="Dec 2025",
+        fm_reporting_period_end_prior="Dec 2024",
+    )
+
+    response = await async_client.get("/metrics/dashboard/revenue-trend")
+
+    assert response.status_code == 200
+    assert response.json() == [
+        {"period": "Dec 2024", "revenue": 340_931.0, "ebitda": -395_561.0, "cash": 72_382.0},
+        {"period": "Dec 2025", "revenue": 354_813.0, "ebitda": -473_739.0, "cash": 735_189.0},
     ]
 
 

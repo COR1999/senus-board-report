@@ -263,17 +263,30 @@ async def get_revenue_trend(db: AsyncSession = Depends(get_db)):
     ai_periods = await _ai_reporting_periods_by_document(db, [r.document_id for r in rows])
 
     def period_label(r: FinancialMetrics) -> str:
-        # Prefer the deterministically-extracted reporting_period (e.g.
-        # "HY2026") over extracted_at -- extracted_at is when we
-        # *processed* the upload, not the period the filing actually
-        # covers, so it's misleading as an axis label whenever those
-        # dates differ (which they always will in practice). Falls back
-        # to the AI-extracted period, then to extracted_at, when no
-        # deterministic period was found for that document.
-        return r.reporting_period or ai_periods.get(r.document_id) or r.extracted_at.strftime("%b %Y")
+        # Prefer the calendar month/year (e.g. "Dec 2025") over the bare
+        # "HY2026" label -- stakeholders found "HY" ambiguous (Senus's
+        # fiscal year runs Jul-Jun, so "HY2026" doesn't end in June like a
+        # reader might assume) and asked for a real month on the axis.
+        # Falls back to the "HY" label, then the AI-extracted period, then
+        # extracted_at (when we *processed* the upload, least accurate --
+        # only used if nothing else is available).
+        return (
+            r.reporting_period_end
+            or r.reporting_period
+            or ai_periods.get(r.document_id)
+            or r.extracted_at.strftime("%b %Y")
+        )
+
+    def optional_float(value) -> Optional[float]:
+        return float(value) if value is not None else None
 
     points = [
-        RevenueTrendPoint(period=period_label(r), revenue=(float(r.revenue) if r.revenue is not None else None))
+        RevenueTrendPoint(
+            period=period_label(r),
+            revenue=optional_float(r.revenue),
+            ebitda=optional_float(r.ebitda),
+            cash=optional_float(r.cash),
+        )
         for r in reversed(rows)
     ]
 
@@ -288,8 +301,19 @@ async def get_revenue_trend(db: AsyncSession = Depends(get_db)):
     if len(rows) < 2 and rows:
         latest = rows[0]
         if latest.revenue_prior is not None:
-            prior_label = latest.reporting_period_prior or MetricsService.derive_prior_period(period_label(latest))
+            prior_label = (
+                latest.reporting_period_end_prior
+                or latest.reporting_period_prior
+                or MetricsService.derive_prior_period(period_label(latest))
+            )
             if prior_label:
-                points = [RevenueTrendPoint(period=prior_label, revenue=float(latest.revenue_prior))] + points
+                points = [
+                    RevenueTrendPoint(
+                        period=prior_label,
+                        revenue=float(latest.revenue_prior),
+                        ebitda=optional_float(latest.ebitda_prior),
+                        cash=optional_float(latest.cash_prior),
+                    )
+                ] + points
 
     return points

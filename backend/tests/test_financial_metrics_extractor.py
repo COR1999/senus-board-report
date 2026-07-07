@@ -90,6 +90,16 @@ class TestExtractComputesEbitdaFromStructuredLines:
         assert result["ebitda"] == -473_739.0
         assert result["ebitda_prior"] == -395_561.0
 
+    def test_reporting_period_end_is_extracted_from_ended_date(self):
+        # "for the six months ended 31 December 2025" appears (identically)
+        # above each of the P&L/Balance Sheet/cash flow sections in
+        # SYNTHETIC_FILING -- the first match is enough since they always
+        # agree. Prior-period end is derived as the same month one year
+        # earlier (half-year filings always compare like-for-like halves).
+        result = FME.extract(SYNTHETIC_FILING)
+        assert result["reporting_period_end"] == "Dec 2025"
+        assert result["reporting_period_end_prior"] == "Dec 2024"
+
     def test_narrative_ebitda_fy2028_mention_is_not_picked_up(self):
         result = FME.extract(SYNTHETIC_FILING)
         # Regression guard for the exact bug class this extractor was
@@ -260,6 +270,8 @@ class TestExtractAgainstRealFiling:
         assert result["bookings_pipeline"] == 500_000.0
         assert result["reporting_period"] == "HY2026"
         assert result["reporting_period_prior"] == "HY2025"
+        assert result["reporting_period_end"] == "Dec 2025"
+        assert result["reporting_period_end_prior"] == "Dec 2024"
 
     def test_extract_balance_sheet_matches_known_real_values(self, real_text):
         result = FME.extract_balance_sheet(real_text)
