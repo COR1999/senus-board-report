@@ -89,6 +89,10 @@ export function DashboardContainer() {
     value: metrics[key].value,
     changePercentage: metrics[key].change,
     trend: metrics[key].trend,
+    // Only Bookings lacks a real prior-period comparative today (its
+    // history is a single point, see Metrics.bookings) -- the other four
+    // stat-strip ratios have a real prior value whenever N/A isn't shown.
+    hasComparison: metrics[key].history.length >= 2,
   }))
 
   return (
@@ -110,16 +114,17 @@ export function DashboardContainer() {
         ))}
       </div>
 
+      {/* AI Board Insights -- surfaced right under the headline numbers
+          (rather than beside the chart, further down) per feedback that the
+          narrative commentary should be one of the first things a board
+          reader sees, not something they scroll past the chart to find. */}
+      <AiInsights metrics={metrics} />
+
       {/* Secondary metrics: Bookings, Profitability, Cash & Liquidity, Solvency & Leverage, Returns */}
       <KpiStatStrip items={statStripConfig} periodLabel={comparisonTimeframe('') || undefined} />
 
-      {/* Charts & Insights Section */}
-      <div className="grid gap-6 lg:grid-cols-3">
-        <div className="lg:col-span-2">
-          <RevenueChart data={chartData ?? []} periodLabel={metrics.current_period} />
-        </div>
-        <AiInsights metrics={metrics} />
-      </div>
+      {/* Revenue Trend chart */}
+      <RevenueChart data={chartData ?? []} periodLabel={metrics.current_period} />
 
       {/* Reports Table */}
       <ReportsTable reports={reports ?? []} onRegenerated={refetchReports} />

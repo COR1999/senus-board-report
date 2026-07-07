@@ -10,6 +10,12 @@ export interface StatStripItem {
   value: string
   changePercentage: number
   trend: Trend
+  /** Whether a real prior-period value backs `changePercentage` -- e.g.
+   * Bookings has no prior-period comparative at all, so its change is
+   * always a hardcoded 0/neutral. Showing "0%" next to that reads as a
+   * real (if unremarkable) delta rather than "no comparison exists" --
+   * the badge is only rendered when this is true. */
+  hasComparison: boolean
 }
 
 interface KpiStatStripProps {
@@ -39,7 +45,7 @@ export function KpiStatStrip({ items, periodLabel }: KpiStatStripProps) {
       {/* Single column on phone -- 5 items in 2 columns leaves an orphaned
           cell on the last row and cramps the category/label/value stack. */}
       <CardContent className="grid grid-cols-1 gap-6 sm:grid-cols-3 lg:grid-cols-5">
-        {items.map(({ key, category, label, value, changePercentage, trend }) => {
+        {items.map(({ key, category, label, value, changePercentage, trend, hasComparison }) => {
           const { textClass, bgClass, Icon: TrendIcon } = getTrendStyle(trend)
           return (
             <div key={key} className="flex flex-col gap-1">
@@ -62,16 +68,18 @@ export function KpiStatStrip({ items, periodLabel }: KpiStatStripProps) {
                 >
                   {value}
                 </span>
-                <span
-                  className={cn(
-                    'inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[11px] font-semibold',
-                    bgClass,
-                    textClass
-                  )}
-                >
-                  <TrendIcon className="h-2.5 w-2.5" strokeWidth={2.5} />
-                  {changePercentage}%
-                </span>
+                {hasComparison && (
+                  <span
+                    className={cn(
+                      'inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[11px] font-semibold',
+                      bgClass,
+                      textClass
+                    )}
+                  >
+                    <TrendIcon className="h-2.5 w-2.5" strokeWidth={2.5} />
+                    {changePercentage}%
+                  </span>
+                )}
               </div>
             </div>
           )
