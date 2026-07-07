@@ -13,15 +13,15 @@ const mockMetrics = {
   interest_cover: { value: '8.4x', change: 12, trend: 'up' as const, history: [] },
   roce: { value: '24.1%', change: 5.4, trend: 'up' as const, history: [] },
   bookings: { value: '€700K', change: 0, trend: 'neutral' as const, history: [] },
-  current_period: 'H1 2025',
-  prior_period: 'H1 2024',
+  current_period: 'Jul 2024 – Dec 2024',
+  prior_period: 'Jul 2023 – Dec 2023',
 }
 
 const mockMetricsAfterNewUpload = {
   ...mockMetrics,
   revenue: { value: '€1,050,000', change: 25.5, trend: 'up' as const, history: [] },
-  current_period: 'H1 2026',
-  prior_period: 'H1 2025',
+  current_period: 'Jul 2025 – Dec 2025',
+  prior_period: 'Jul 2024 – Dec 2024',
 }
 
 describe('AiInsights', () => {

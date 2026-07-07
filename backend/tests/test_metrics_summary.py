@@ -24,6 +24,10 @@ async def _add_metrics_row(
     extracted_at=None,
     fm_reporting_period=None,
     fm_reporting_period_prior=None,
+    fm_reporting_period_start=None,
+    fm_reporting_period_start_prior=None,
+    fm_reporting_period_end=None,
+    fm_reporting_period_end_prior=None,
     ai_reporting_period=None,
 ) -> FinancialMetrics:
     doc = Document(
@@ -46,6 +50,10 @@ async def _add_metrics_row(
         bookings_value=bookings_value,
         reporting_period=fm_reporting_period,
         reporting_period_prior=fm_reporting_period_prior,
+        reporting_period_start=fm_reporting_period_start,
+        reporting_period_start_prior=fm_reporting_period_start_prior,
+        reporting_period_end=fm_reporting_period_end,
+        reporting_period_end_prior=fm_reporting_period_end_prior,
         extracted_at=extracted_at or datetime.utcnow(),
     )
     session.add(metrics)
@@ -294,6 +302,31 @@ async def test_dashboard_summary_prefers_deterministic_period_over_ai_fallback(a
     body = response.json()
     assert body["current_period"] == "HY2026"
     assert body["prior_period"] == "HY25"
+
+
+@pytest.mark.anyio
+async def test_dashboard_summary_prefers_calendar_range_over_bare_label(async_client, async_session):
+    # When both reporting_period_start and reporting_period_end are known,
+    # the response shows a real calendar range ("Jul 2025 - Dec 2025")
+    # instead of the bare "HY2026" label -- "HY" alone doesn't say which
+    # calendar months a half-year covers.
+    await _add_metrics_row(
+        async_session,
+        revenue=100_000.0,
+        fm_reporting_period="HY2026",
+        fm_reporting_period_prior="HY2025",
+        fm_reporting_period_start="Jul 2025",
+        fm_reporting_period_start_prior="Jul 2024",
+        fm_reporting_period_end="Dec 2025",
+        fm_reporting_period_end_prior="Dec 2024",
+    )
+
+    response = await async_client.get("/metrics/dashboard/summary")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["current_period"] == "Jul 2025 – Dec 2025"
+    assert body["prior_period"] == "Jul 2024 – Dec 2024"
 
 
 @pytest.mark.anyio

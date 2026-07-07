@@ -139,6 +139,10 @@ class ReportService:
         metrics.reporting_period_end_prior = self._plain_metric_value(
             metrics_data.get("reporting_period_end_prior")
         )
+        metrics.reporting_period_start = self._plain_metric_value(metrics_data.get("reporting_period_start"))
+        metrics.reporting_period_start_prior = self._plain_metric_value(
+            metrics_data.get("reporting_period_start_prior")
+        )
 
         metrics.extracted_at = datetime.utcnow()
 

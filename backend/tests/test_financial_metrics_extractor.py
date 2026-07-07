@@ -100,6 +100,19 @@ class TestExtractComputesEbitdaFromStructuredLines:
         assert result["reporting_period_end"] == "Dec 2025"
         assert result["reporting_period_end_prior"] == "Dec 2024"
 
+    def test_reporting_period_start_is_five_months_before_end(self):
+        # Jul 2025 - Dec 2025 is a 6-month range inclusive of both ends.
+        result = FME.extract(SYNTHETIC_FILING)
+        assert result["reporting_period_start"] == "Jul 2025"
+        assert result["reporting_period_start_prior"] == "Jul 2024"
+
+    def test_missing_ended_date_leaves_period_start_none(self):
+        result = FME.extract("No 'ended DD Month YYYY' text in this document at all.")
+        assert result["reporting_period_end"] is None
+        assert result["reporting_period_end_prior"] is None
+        assert result["reporting_period_start"] is None
+        assert result["reporting_period_start_prior"] is None
+
     def test_narrative_ebitda_fy2028_mention_is_not_picked_up(self):
         result = FME.extract(SYNTHETIC_FILING)
         # Regression guard for the exact bug class this extractor was
@@ -272,6 +285,8 @@ class TestExtractAgainstRealFiling:
         assert result["reporting_period_prior"] == "HY2025"
         assert result["reporting_period_end"] == "Dec 2025"
         assert result["reporting_period_end_prior"] == "Dec 2024"
+        assert result["reporting_period_start"] == "Jul 2025"
+        assert result["reporting_period_start_prior"] == "Jul 2024"
 
     def test_extract_balance_sheet_matches_known_real_values(self, real_text):
         result = FME.extract_balance_sheet(real_text)

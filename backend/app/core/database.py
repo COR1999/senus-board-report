@@ -52,6 +52,8 @@ _COLUMNS_ADDED_AFTER_INITIAL_RELEASE = {
         ("reporting_period_prior", "VARCHAR"),
         ("reporting_period_end", "VARCHAR"),
         ("reporting_period_end_prior", "VARCHAR"),
+        ("reporting_period_start", "VARCHAR"),
+        ("reporting_period_start_prior", "VARCHAR"),
     ],
     # SHA256 of the uploaded file's bytes, for exact-duplicate-upload
     # detection (see documents.py's upload route). Existing rows get NULL
