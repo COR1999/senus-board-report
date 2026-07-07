@@ -18,7 +18,11 @@ export function DashboardShell({ title, description, children }: DashboardShellP
     <div className="flex min-h-screen flex-col bg-background">
       <Sidebar />
       <TopNav />
-      <main className="flex-1 md:ml-64 md:pt-0 pt-14">
+      {/* md:ml-20 matches Sidebar's permanent rail width -- the sidebar
+          expands wider on hover as a `fixed`/`overflow-hidden` overlay, so
+          this offset intentionally does NOT change with hover state (that
+          would reflow the whole page on every hover). */}
+      <main className="flex-1 md:ml-20 md:pt-0 pt-14">
         {/* space-y-10/p-10 previously made the page too tall to fit without
             zooming out to 50%, per direct user feedback -- dialed back to
             space-y-6/p-8, still a bit more breathing room than the original

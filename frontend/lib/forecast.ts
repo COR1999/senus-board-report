@@ -47,10 +47,11 @@ export function projectSeries(
     return {
       // "+1"/"+2"/"+3" read like leftover debug notation. Real periods can
       // be irregular, AI-extracted strings ("HY2026", "Q3 2025", ...) with
-      // no reliable way to compute "the next one" -- "Projected N" is
-      // honest about these being a simple trendline projection (per this
-      // function's own docstring), not a real future calendar period.
-      period: `Projected ${i + 1}`,
+      // no reliable way to compute a real future calendar date -- "Next
+      // Report N" is honest about tracking Senus's report cadence (per
+      // this function's own docstring, a simple trendline projection, not
+      // a real future calendar period) without implying a precise date.
+      period: `Next Report ${i + 1}`,
       revenue: null,
       ebitda: null,
       cash: null,

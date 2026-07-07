@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { Sparkles, TrendingUp, TriangleAlert, Lightbulb, RefreshCw, ArrowRight } from 'lucide-react'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardAction } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle, CardAction } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { getAiInsights, type Metrics } from '@/lib/data-service'
@@ -90,10 +90,7 @@ export function AiInsights({ metrics }: AiInsightsProps) {
       <CardHeader>
         <div className="flex items-center gap-2">
           <Sparkles className="h-6 w-6 text-blue-600" />
-          <div>
-            <CardTitle>AI Board Insights</CardTitle>
-            <CardDescription>AI-generated executive commentary</CardDescription>
-          </div>
+          <CardTitle>AI Board Insights</CardTitle>
         </div>
         <CardAction>
           <Button
