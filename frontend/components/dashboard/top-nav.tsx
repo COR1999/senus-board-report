@@ -17,14 +17,17 @@ import {
 
 export function TopNav() {
   return (
-    // `md:ml-64` matches <main>'s offset in dashboard-shell.tsx -- without
-    // it, this header rendered underneath the fixed-position Sidebar
-    // instead of starting to its right, which is what actually made the
-    // (also non-functional) search box look like a stray floating element
-    // clipped by the sidebar. Removed that search box outright rather than
-    // just repositioning it -- it was never wired to a handler, and both
-    // /reports and /documents now have their own real, working search.
-    <header className="sticky top-0 z-20 hidden border-b border-border/40 bg-card/95 backdrop-blur md:ml-64 md:flex md:h-16 md:items-center md:justify-end md:px-10">
+    // `md:ml-20` matches <main>'s offset in dashboard-shell.tsx (Sidebar's
+    // permanent icon-only rail width -- it expands wider on hover as an
+    // overlay, so this offset intentionally stays fixed regardless of hover
+    // state). Without this offset, this header rendered underneath the
+    // fixed-position Sidebar instead of starting to its right, which is what
+    // actually made the (also non-functional) search box look like a stray
+    // floating element clipped by the sidebar. Removed that search box
+    // outright rather than just repositioning it -- it was never wired to a
+    // handler, and both /reports and /documents now have their own real,
+    // working search.
+    <header className="sticky top-0 z-20 hidden border-b border-border/40 bg-card/95 backdrop-blur md:ml-20 md:flex md:h-16 md:items-center md:justify-end md:px-10">
       {/* Right: Notifications & User Menu */}
       <div className="flex items-center gap-4">
         {/* Notifications */}

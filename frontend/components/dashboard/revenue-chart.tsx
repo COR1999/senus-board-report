@@ -10,6 +10,7 @@ import { projectSeries } from '@/lib/forecast'
 import { Card, CardHeader, CardTitle, CardDescription, CardAction, CardContent } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 
 interface RevenueChartProps {
   data: ChartDataPoint[]
@@ -33,6 +34,34 @@ const METRICS: Record<MetricKey, { label: string; color: string }> = {
 
 const FORECAST_PERIODS = 3
 const FORECAST_COLOR = '#6366f1'
+
+// "Next Report N" x-axis ticks (see lib/forecast.ts) get the same indigo
+// used for the dashed forecast line/legend, in italics, so a projected
+// period visually reads as distinct from a real historical one instead of
+// looking like plain axis text.
+interface ForecastAwareTickProps {
+  x?: number
+  y?: number
+  payload?: { value?: string }
+}
+
+function ForecastAwareTick({ x = 0, y = 0, payload }: ForecastAwareTickProps) {
+  const value = payload?.value ?? ''
+  const isForecast = value.startsWith('Next Report ')
+  return (
+    <text
+      x={x}
+      y={y + 10}
+      textAnchor="middle"
+      fontSize={12}
+      fontStyle={isForecast ? 'italic' : 'normal'}
+      fill={isForecast ? FORECAST_COLOR : 'currentColor'}
+      className={isForecast ? undefined : 'text-muted-foreground'}
+    >
+      {value}
+    </text>
+  )
+}
 
 // Round-number, currency-short axis labels (e.g. "€250K") -- easier to scan
 // at a glance than raw values like "250000".
@@ -143,7 +172,15 @@ export function RevenueChart({ data, periodLabel }: RevenueChartProps) {
                 key={key}
                 type="button"
                 size="sm"
-                variant={metric === key ? 'secondary' : 'ghost'}
+                variant="ghost"
+                // `--secondary` and `--muted` are the exact same color
+                // token in this theme, so the old `variant="secondary"`
+                // active state was invisible against this row's own
+                // `bg-muted` track. An elevated bg-background/shadow pill
+                // (the standard segmented-control pattern) uses tokens
+                // that are genuinely distinct from `bg-muted` in both
+                // light and dark mode.
+                className={cn(metric === key && 'bg-background text-foreground shadow-sm')}
                 onClick={() => setMetric(key)}
               >
                 {METRICS[key].label}
@@ -183,8 +220,7 @@ export function RevenueChart({ data, periodLabel }: RevenueChartProps) {
               axisLine={false}
               tickLine={false}
               tickMargin={10}
-              tick={{ fill: 'currentColor', fontSize: 12 }}
-              className="text-muted-foreground"
+              tick={<ForecastAwareTick />}
               padding={{ left: 12, right: 12 }}
             />
             <YAxis
