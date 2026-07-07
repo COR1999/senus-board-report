@@ -6,6 +6,7 @@ import { KpiStatStrip, type StatStripItem } from './kpi-stat-strip'
 import { RevenueChart } from './revenue-chart'
 import { AiInsights } from './ai-insights'
 import { ReportsTable } from './reports-table'
+import { ErrorBanner } from '@/components/error-banner'
 import { useMetrics, useChartData, useReports } from '@/lib/hooks/use-dashboard-data'
 import { periodComparisonLabel, periodContextLabel } from '@/lib/period'
 import { DollarSign, Users, Wallet, TrendingUp } from 'lucide-react'
@@ -21,9 +22,7 @@ export function DashboardContainer() {
   if (error) {
     return (
       <DashboardShell title="Executive Dashboard">
-        <div className="text-red-600 bg-red-50 dark:bg-red-950 p-4 rounded-lg">
-          Error: {error}
-        </div>
+        <ErrorBanner error={error} />
       </DashboardShell>
     )
   }

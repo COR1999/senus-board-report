@@ -20,6 +20,7 @@ import { formatFileSize } from '@/lib/format'
 import { capitalize } from '@/lib/utils'
 import { useDocuments } from '@/lib/hooks/use-dashboard-data'
 import { useUploadDocument, useDeleteDocument } from '@/lib/hooks/use-mutations'
+import { ErrorBanner } from '@/components/error-banner'
 
 // Same status-color convention as reports-table.tsx's STATUS_STYLES.
 // DocumentItem.status is a plain string (not a fixed union like Report's),
@@ -63,11 +64,7 @@ export default function DocumentsPage() {
 
   return (
     <DashboardShell title="Documents" description="Uploaded financial reports and filings">
-      {error && (
-        <div className="mb-4 text-red-600 bg-red-50 dark:bg-red-950 p-4 rounded-lg">
-          Error: {error}
-        </div>
-      )}
+      {error && <ErrorBanner error={error} />}
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">

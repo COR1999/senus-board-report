@@ -2,6 +2,7 @@
 
 import { DashboardShell } from '@/components/dashboard/dashboard-shell'
 import { ReportsTable } from '@/components/dashboard/reports-table'
+import { ErrorBanner } from '@/components/error-banner'
 import { useReports } from '@/lib/hooks/use-dashboard-data'
 
 export default function ReportsPage() {
@@ -9,11 +10,7 @@ export default function ReportsPage() {
 
   return (
     <DashboardShell title="Reports" description="All generated board reports">
-      {error && (
-        <div className="mb-4 text-red-600 bg-red-50 dark:bg-red-950 p-4 rounded-lg">
-          Error: {error}
-        </div>
-      )}
+      {error && <ErrorBanner error={error} />}
       {loading ? (
         <div className="animate-pulse h-64 bg-muted rounded" />
       ) : (
