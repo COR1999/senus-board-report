@@ -1,11 +1,13 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { Sparkles, TrendingUp, TriangleAlert, Lightbulb } from 'lucide-react'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { useEffect, useRef, useState } from 'react'
+import { Sparkles, TrendingUp, TriangleAlert, Lightbulb, RefreshCw } from 'lucide-react'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardAction } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { getAiInsights, type Metrics } from '@/lib/data-service'
 import { FALLBACK_INSIGHTS, type Insight, type InsightType } from '@/lib/insights'
+import { cn } from '@/lib/utils'
 
 interface AiInsightsProps {
   metrics: Metrics
@@ -34,14 +36,23 @@ const INSIGHT_STYLE: Record<InsightType, { badgeClass: string; Icon: typeof Tren
 export function AiInsights({ metrics }: AiInsightsProps) {
   const [insights, setInsights] = useState<Insight[]>(FALLBACK_INSIGHTS)
   const [loading, setLoading] = useState(true)
+  // Tracks which `metrics` object insights were last generated for (auto or
+  // manual). A time-based cooldown alone still lets a user burn quota
+  // re-analyzing data that hasn't changed -- what actually matters is
+  // whether a *new report* has landed since the last call, not how long ago
+  // the button was clicked. Ref (not state) because updating it must not
+  // itself trigger a re-render/effect run.
+  const lastGeneratedForRef = useRef<Metrics | null>(null)
 
   useEffect(() => {
     let cancelled = false
 
+    setLoading(true)
     getAiInsights(metrics).then((result) => {
       if (!cancelled) {
         setInsights(result)
         setLoading(false)
+        lastGeneratedForRef.current = metrics
       }
     })
 
@@ -49,6 +60,21 @@ export function AiInsights({ metrics }: AiInsightsProps) {
       cancelled = true
     }
   }, [metrics])
+
+  const hasNewData = lastGeneratedForRef.current !== metrics
+
+  const handleRefresh = () => {
+    if (loading || !hasNewData) return
+
+    setLoading(true)
+    getAiInsights(metrics).then((result) => {
+      setInsights(result)
+      setLoading(false)
+      lastGeneratedForRef.current = metrics
+    })
+  }
+
+  const refreshDisabled = loading || !hasNewData
 
   return (
     <Card className="border-foreground/10">
@@ -60,6 +86,22 @@ export function AiInsights({ metrics }: AiInsightsProps) {
             <CardDescription>AI-generated executive commentary</CardDescription>
           </div>
         </div>
+        <CardAction>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleRefresh}
+            disabled={refreshDisabled}
+            title={
+              !loading && !hasNewData
+                ? 'Already up to date -- upload a new report to regenerate'
+                : 'Regenerate insights from the current data'
+            }
+          >
+            <RefreshCw className={cn('h-4 w-4', loading && 'animate-spin')} />
+            <span className="sr-only">Refresh AI insights</span>
+          </Button>
+        </CardAction>
       </CardHeader>
       <CardContent>
         {loading ? (

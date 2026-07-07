@@ -46,6 +46,11 @@ class GeminiAnalysisService:
     MAX_CALLS_PER_MINUTE = int(os.getenv("GEMINI_MAX_CALLS_PER_MINUTE", "10"))
     MAX_CALLS_PER_DAY = int(os.getenv("GEMINI_MAX_CALLS_PER_DAY", "1000"))
 
+    # Not hardcoded -- a pinned model version can lose free-tier quota
+    # eligibility on Google's side with no code change on ours. Overriding
+    # via env var means swapping models doesn't need a redeploy.
+    MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+
     _call_timestamps: "deque[float]" = deque()
     _daily_call_count: int = 0
     _daily_window_started: float = 0.0
@@ -150,7 +155,7 @@ class GeminiAnalysisService:
         try:
             self._record_call()
             response = client.models.generate_content(
-                model="gemini-2.0-flash",
+                model=self.MODEL,
                 contents=prompt,
                 config=types.GenerateContentConfig(
                     temperature=0.3,

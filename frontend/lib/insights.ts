@@ -8,7 +8,7 @@ export interface Insight {
 }
 
 /**
- * Shown when OpenAI is unavailable (no API key, request failure, or
+ * Shown when Gemini is unavailable (no API key, request failure, or
  * malformed response) so the panel never renders empty or broken.
  */
 export const FALLBACK_INSIGHTS: Insight[] = [
@@ -18,7 +18,7 @@ export const FALLBACK_INSIGHTS: Insight[] = [
   { text: 'Cash position supports 18+ months of operations at current burn rate.', type: 'opportunity' },
 ]
 
-/** Builds the prompt sent to OpenAI from the dashboard's current KPI values. */
+/** Builds the prompt sent to Gemini from the dashboard's current KPI values. */
 export function buildInsightsPrompt(metrics: Metrics): string {
   const lines = Object.entries(metrics).map(
     ([key, m]) => `- ${key}: ${m.value} (${m.change > 0 ? '+' : ''}${m.change}%, trend: ${m.trend})`
@@ -37,7 +37,7 @@ Respond with ONLY a JSON object shaped like \
 }
 
 /**
- * Parses OpenAI's raw response text into a validated Insight[]. Returns null
+ * Parses Gemini's raw response text into a validated Insight[]. Returns null
  * (rather than throwing) on anything malformed, so the caller can fall back
  * to FALLBACK_INSIGHTS -- never surface a parse error to the dashboard.
  */
