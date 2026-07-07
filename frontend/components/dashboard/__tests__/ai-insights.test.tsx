@@ -1,6 +1,7 @@
 import { render, screen, fireEvent } from '@testing-library/react'
 import { AiInsights } from '@/components/dashboard/ai-insights'
 import * as dataService from '@/lib/data-service'
+import { resetInsightsCache } from '@/lib/insights-cache'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 const mockMetrics = {
@@ -26,6 +27,11 @@ const mockMetricsAfterNewUpload = {
 
 describe('AiInsights', () => {
   beforeEach(() => {
+    // The insights cache is module-level, not component state (see
+    // lib/insights-cache.ts) -- reset it so one test's cached result doesn't
+    // leak into the next, since vitest doesn't reset modules between `it()`
+    // blocks by default.
+    resetInsightsCache()
     vi.spyOn(dataService, 'getAiInsights').mockResolvedValue([
       { text: 'ANY_INSIGHT_TEXT', type: 'positive', action: 'ANY_ACTION_TEXT', category: 'Growth & Revenue' },
     ])
@@ -118,5 +124,24 @@ describe('AiInsights', () => {
     expect(button).toBeDisabled()
     fireEvent.click(button)
     expect(dataService.getAiInsights).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not re-fetch after unmount/remount with unchanged data (e.g. navigating away and back)', async () => {
+    // Regression test: AiInsights only lives on the dashboard route, so
+    // visiting another page (Settings to change the theme, Reports,
+    // Documents) and returning unmounts and remounts it. A per-instance
+    // guard would reset on that remount and trigger a wasted,
+    // non-deterministic Gemini call even though the underlying report data
+    // hasn't changed -- the module-level cache in lib/insights-cache.ts must
+    // survive that remount.
+    const { unmount } = render(<AiInsights metrics={mockMetrics} />)
+    expect(await screen.findByText('ANY_INSIGHT_TEXT')).toBeInTheDocument()
+    expect(dataService.getAiInsights).toHaveBeenCalledTimes(1)
+
+    unmount()
+    render(<AiInsights metrics={mockMetrics} />)
+
+    expect(await screen.findByText('ANY_INSIGHT_TEXT')).toBeInTheDocument()
+    expect(dataService.getAiInsights).toHaveBeenCalledTimes(1)
   })
 })

@@ -1,12 +1,13 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Sparkles, TrendingUp, TriangleAlert, Lightbulb, RefreshCw, ArrowRight } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardAction } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { getAiInsights, type Metrics } from '@/lib/data-service'
 import { FALLBACK_INSIGHTS, type Insight, type InsightType } from '@/lib/insights'
+import { getCachedInsights, setCachedInsights, hasCachedInsightsFor } from '@/lib/insights-cache'
 import { cn } from '@/lib/utils'
 
 interface AiInsightsProps {
@@ -34,17 +35,25 @@ const INSIGHT_STYLE: Record<InsightType, { badgeClass: string; Icon: typeof Tren
 }
 
 export function AiInsights({ metrics }: AiInsightsProps) {
-  const [insights, setInsights] = useState<Insight[]>(FALLBACK_INSIGHTS)
-  const [loading, setLoading] = useState(true)
-  // Tracks which `metrics` object insights were last generated for (auto or
-  // manual). A time-based cooldown alone still lets a user burn quota
-  // re-analyzing data that hasn't changed -- what actually matters is
-  // whether a *new report* has landed since the last call, not how long ago
-  // the button was clicked. Ref (not state) because updating it must not
-  // itself trigger a re-render/effect run.
-  const lastGeneratedForRef = useRef<Metrics | null>(null)
+  // Keyed by metrics *content*, not object reference, and stored at module
+  // scope (see lib/insights-cache.ts) -- what actually matters is whether a
+  // new report has landed since the last call, not how long ago the button
+  // was clicked or whether this component instance happens to still be
+  // mounted. A per-instance ref/state guard here would reset every time a
+  // user navigates away (e.g. to Settings to change the theme) and back,
+  // triggering a wasted, non-deterministic Gemini re-call on unchanged data.
+  const cached = getCachedInsights(metrics)
+  const [insights, setInsights] = useState<Insight[]>(cached ?? FALLBACK_INSIGHTS)
+  const [loading, setLoading] = useState(cached === null)
 
   useEffect(() => {
+    const alreadyCached = getCachedInsights(metrics)
+    if (alreadyCached) {
+      setInsights(alreadyCached)
+      setLoading(false)
+      return
+    }
+
     let cancelled = false
 
     setLoading(true)
@@ -52,7 +61,7 @@ export function AiInsights({ metrics }: AiInsightsProps) {
       if (!cancelled) {
         setInsights(result)
         setLoading(false)
-        lastGeneratedForRef.current = metrics
+        setCachedInsights(metrics, result)
       }
     })
 
@@ -61,7 +70,7 @@ export function AiInsights({ metrics }: AiInsightsProps) {
     }
   }, [metrics])
 
-  const hasNewData = lastGeneratedForRef.current !== metrics
+  const hasNewData = !hasCachedInsightsFor(metrics)
 
   const handleRefresh = () => {
     if (loading || !hasNewData) return
@@ -70,7 +79,7 @@ export function AiInsights({ metrics }: AiInsightsProps) {
     getAiInsights(metrics).then((result) => {
       setInsights(result)
       setLoading(false)
-      lastGeneratedForRef.current = metrics
+      setCachedInsights(metrics, result)
     })
   }
 
