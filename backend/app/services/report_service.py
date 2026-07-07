@@ -135,6 +135,10 @@ class ReportService:
         # missing-means-None handling as bookings above.
         metrics.reporting_period = self._plain_metric_value(metrics_data.get("reporting_period"))
         metrics.reporting_period_prior = self._plain_metric_value(metrics_data.get("reporting_period_prior"))
+        metrics.reporting_period_end = self._plain_metric_value(metrics_data.get("reporting_period_end"))
+        metrics.reporting_period_end_prior = self._plain_metric_value(
+            metrics_data.get("reporting_period_end_prior")
+        )
 
         metrics.extracted_at = datetime.utcnow()
 

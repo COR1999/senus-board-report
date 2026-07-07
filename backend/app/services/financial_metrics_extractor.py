@@ -529,6 +529,31 @@ class FinancialMetricsExtractor:
             f"HY{_four_digit_year(reporting_period_prior_match.group(1))}" if reporting_period_prior_match else None
         )
 
+        # --- Reporting period end date, e.g. "Dec 2025" (a clearer axis
+        # label than the bare "HY2026", which doesn't say which calendar
+        # month the period actually ends -- Senus's fiscal year runs
+        # Jul-Jun, so "HY2026" ends in December, not June, and real
+        # stakeholders found the HY-only label ambiguous). The filing
+        # states this once per financial statement section, e.g. "for the
+        # six months ended 31 December 2025" -- there's no separate literal
+        # date for the *prior* period anywhere in the text (only the prior
+        # period's numeric column, no header), so the prior label is
+        # derived as the same month one year earlier, which is safe here
+        # because half-year filings always compare like-for-like halves a
+        # year apart, not an arbitrary guess.
+        period_end_match = re.search(
+            r"ended\s+(\d{1,2})\s+(January|February|March|April|May|June|July|"
+            r"August|September|October|November|December)\s+(\d{4})",
+            text, re.IGNORECASE,
+        )
+        reporting_period_end = None
+        reporting_period_end_prior = None
+        if period_end_match:
+            month_name = period_end_match.group(2).capitalize()
+            year = int(period_end_match.group(3))
+            reporting_period_end = f"{month_name[:3]} {year}"
+            reporting_period_end_prior = f"{month_name[:3]} {year - 1}"
+
         # -----------------------------------------------------
         # NORMALISE
         # -----------------------------------------------------
@@ -631,6 +656,8 @@ class FinancialMetricsExtractor:
             "bookings_pipeline": bookings_pipeline,
             "reporting_period": reporting_period,
             "reporting_period_prior": reporting_period_prior,
+            "reporting_period_end": reporting_period_end,
+            "reporting_period_end_prior": reporting_period_end_prior,
             "gross_margin": gross_margin,
             "gross_margin_prior": gross_margin_prior,
             "operating_margin": operating_margin,
@@ -669,6 +696,7 @@ class FinancialMetricsExtractor:
                 "customers",
                 "bookings_value", "bookings_customers", "bookings_pipeline",
                 "reporting_period", "reporting_period_prior",
+                "reporting_period_end", "reporting_period_end_prior",
                 "gross_margin", "gross_margin_prior",
                 "operating_margin", "operating_margin_prior",
             )

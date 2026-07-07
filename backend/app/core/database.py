@@ -50,6 +50,8 @@ _COLUMNS_ADDED_AFTER_INITIAL_RELEASE = {
         ("bookings_pipeline", "FLOAT"),
         ("reporting_period", "VARCHAR"),
         ("reporting_period_prior", "VARCHAR"),
+        ("reporting_period_end", "VARCHAR"),
+        ("reporting_period_end_prior", "VARCHAR"),
     ],
 }
 

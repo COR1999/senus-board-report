@@ -5,10 +5,13 @@ import { useMemo, useState } from 'react'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
 import type { TooltipContentProps } from 'recharts'
 import type { ValueType, NameType } from 'recharts/types/component/DefaultTooltipContent'
+import { Info } from 'lucide-react'
 import { type ChartDataPoint } from '@/lib/data-service'
-import { projectRevenue } from '@/lib/forecast'
+import { projectSeries } from '@/lib/forecast'
 import { Card, CardHeader, CardTitle, CardDescription, CardAction, CardContent } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
+import { Button } from '@/components/ui/button'
+import { Tooltip as InfoTooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 
 interface RevenueChartProps {
   data: ChartDataPoint[]
@@ -16,9 +19,22 @@ interface RevenueChartProps {
   periodLabel?: string | null
 }
 
+type MetricKey = 'revenue' | 'ebitda' | 'cash'
+
+// Series-swap toggle, not a dual-axis overlay: Revenue/EBITDA/Cash are on
+// very different scales and can have different signs (EBITDA is currently
+// negative), so only one is ever plotted at a time on a single y-axis.
+// Forecasting (a simple linear trendline, see lib/forecast.ts) is available
+// for all three -- with only 2 real data points today the projection is a
+// rough visual trend, not a real financial model, same caveat for every metric.
+const METRICS: Record<MetricKey, { label: string; color: string }> = {
+  revenue: { label: 'Revenue', color: '#10b981' },
+  ebitda: { label: 'EBITDA', color: '#f59e0b' },
+  cash: { label: 'Cash', color: '#2a78d6' },
+}
+
 const FORECAST_PERIODS = 3
-const REVENUE_COLOR = '#10b981'
-const FORECAST_COLOR = '#2a78d6'
+const FORECAST_COLOR = '#6366f1'
 
 // Round-number, currency-short axis labels (e.g. "€250K") -- easier to scan
 // at a glance than raw values like "250000".
@@ -48,9 +64,11 @@ function formatAxisValue(value: number): string {
 function RevenueTooltip({ active, payload, label }: TooltipContentProps<ValueType, NameType>) {
   if (!active || !payload) return null
   const withValue = payload.filter((entry) => entry.value !== null && entry.value !== undefined)
-  const revenueValue = withValue.find((entry) => entry.dataKey === 'revenue')?.value
+  // Whichever metric is the primary series (revenue/ebitda/cash -- never
+  // "forecast" itself), for the same handoff-point dedup described above.
+  const primaryValue = withValue.find((entry) => entry.dataKey !== 'forecast')?.value
   const entries = withValue.filter(
-    (entry) => !(entry.dataKey === 'forecast' && entry.value === revenueValue)
+    (entry) => !(entry.dataKey === 'forecast' && entry.value === primaryValue)
   )
   if (entries.length === 0) return null
 
@@ -71,18 +89,20 @@ function RevenueTooltip({ active, payload, label }: TooltipContentProps<ValueTyp
 }
 
 export function RevenueChart({ data, periodLabel }: RevenueChartProps) {
+  const [metric, setMetric] = useState<MetricKey>('revenue')
   const [showForecast, setShowForecast] = useState(false)
+  const { label, color } = METRICS[metric]
 
-  // Combined series: real points keep their `revenue` value and get `revenue`
-  // = null for forecast points (so the solid area stops there); forecast
-  // points carry `forecast` instead (so the dashed area only draws there).
-  // Recharts leaves a gap rather than connecting across a null value by
-  // default, which is what lets the two series visually hand off at the
-  // last real data point without one overwriting the other.
+  // Combined series: real points keep their selected-metric value and get
+  // `forecast` = null for real points (so the solid area stops there);
+  // forecast points carry `forecast` instead (so the dashed area only
+  // draws there). Recharts leaves a gap rather than connecting across a
+  // null value by default, which is what lets the two series visually
+  // hand off at the last real data point without one overwriting the other.
   const chartData = useMemo(() => {
     if (!showForecast) return data
 
-    const forecast = projectRevenue(data, FORECAST_PERIODS)
+    const forecast = projectSeries(data, metric, FORECAST_PERIODS)
     if (forecast.length === 0) return data
 
     // Give the *last real point itself* a `forecast` value (rather than
@@ -92,21 +112,66 @@ export function RevenueChart({ data, periodLabel }: RevenueChartProps) {
     // "HY2026") render twice in a row on the axis.
     const withHandoff = data.map((point, index) =>
       index === data.length - 1
-        ? { ...point, forecast: point.revenue as number | null }
+        ? { ...point, forecast: point[metric] as number | null }
         : { ...point, forecast: null as number | null }
     )
     return [
       ...withHandoff,
-      ...forecast.map((point) => ({ period: point.period, revenue: null, forecast: point.revenue })),
+      ...forecast.map((point) => ({
+        period: point.period,
+        revenue: null,
+        ebitda: null,
+        cash: null,
+        forecast: point[metric],
+      })),
     ]
-  }, [data, showForecast])
+  }, [data, showForecast, metric])
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Revenue Trend</CardTitle>
-        {periodLabel && <CardDescription>{periodLabel}</CardDescription>}
-        <CardAction>
+        <CardTitle>{label} Trend</CardTitle>
+        {periodLabel && (
+          <CardDescription className="flex items-center gap-1">
+            {periodLabel}
+            {/* "HY" (half-year) is Senus's own filing convention, but doesn't
+                say which calendar months it covers -- Senus's fiscal year
+                runs Jul-Jun, so e.g. "HY2026" actually ends in December, not
+                June, which a reader could easily assume. The chart axis
+                below already shows the real month; this explains the label
+                shown here for anyone who only reads this line. */}
+            <InfoTooltip>
+              <TooltipTrigger asChild>
+                <Info
+                  className="size-3.5 cursor-help text-muted-foreground/70"
+                  aria-label="What does HY mean?"
+                />
+              </TooltipTrigger>
+              <TooltipContent>
+                &ldquo;HY&rdquo; = half-year. Senus&apos;s fiscal year runs
+                July-June, so e.g. HY2026 covers Jul-Dec 2025 and ends 31
+                December 2025 -- not June. The chart axis shows the real
+                month for each period.
+              </TooltipContent>
+            </InfoTooltip>
+          </CardDescription>
+        )}
+        <CardAction className="flex items-center gap-4">
+          {/* Series-swap toggle: one metric plotted at a time on a single
+              y-axis, rather than a dual-axis overlay -- see METRICS above. */}
+          <div className="flex items-center gap-1 rounded-lg bg-muted p-0.5">
+            {(Object.keys(METRICS) as MetricKey[]).map((key) => (
+              <Button
+                key={key}
+                type="button"
+                size="sm"
+                variant={metric === key ? 'secondary' : 'ghost'}
+                onClick={() => setMetric(key)}
+              >
+                {METRICS[key].label}
+              </Button>
+            ))}
+          </div>
           <label className="flex items-center gap-2 text-sm text-muted-foreground">
             Show forecast
             <Switch checked={showForecast} onCheckedChange={setShowForecast} />
@@ -120,10 +185,12 @@ export function RevenueChart({ data, periodLabel }: RevenueChartProps) {
               box on click -- same issue and same fix as KpiSparkline. */}
           <AreaChart data={chartData} accessibilityLayer={false} margin={{ left: 4, right: 12, top: 8 }}>
             <defs>
-              <linearGradient id="revenueFill" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={REVENUE_COLOR} stopOpacity={0.25} />
-                <stop offset="100%" stopColor={REVENUE_COLOR} stopOpacity={0} />
-              </linearGradient>
+              {(Object.keys(METRICS) as MetricKey[]).map((key) => (
+                <linearGradient key={key} id={`${key}Fill`} x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={METRICS[key].color} stopOpacity={0.25} />
+                  <stop offset="100%" stopColor={METRICS[key].color} stopOpacity={0} />
+                </linearGradient>
+              ))}
               <linearGradient id="forecastFill" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor={FORECAST_COLOR} stopOpacity={0.15} />
                 <stop offset="100%" stopColor={FORECAST_COLOR} stopOpacity={0} />
@@ -137,6 +204,7 @@ export function RevenueChart({ data, periodLabel }: RevenueChartProps) {
               dataKey="period"
               axisLine={false}
               tickLine={false}
+              tickMargin={10}
               tick={{ fill: 'currentColor', fontSize: 12 }}
               className="text-muted-foreground"
               padding={{ left: 12, right: 12 }}
@@ -144,11 +212,17 @@ export function RevenueChart({ data, periodLabel }: RevenueChartProps) {
             <YAxis
               axisLine={false}
               tickLine={false}
+              tickMargin={8}
               tick={{ fill: 'currentColor', fontSize: 12 }}
               className="text-muted-foreground"
               tickFormatter={formatAxisValue}
               tickCount={5}
-              width={56}
+              // Wide enough for the longest label this chart ever shows --
+              // negative EBITDA (e.g. "-€473.7K") is longer than any
+              // Revenue/Cash value, so this must fit that case even when
+              // Revenue is the metric currently selected (width doesn't
+              // change per-metric, would look like layout jitter on toggle).
+              width={68}
             />
             {/* `offset={24}` pushes the box further from the cursor than
                 Recharts' 10px default -- at the default offset the box sat
@@ -162,12 +236,12 @@ export function RevenueChart({ data, periodLabel }: RevenueChartProps) {
             {showForecast && <Legend />}
             <Area
               type="monotone"
-              dataKey="revenue"
-              name="Revenue"
-              stroke={REVENUE_COLOR}
+              dataKey={metric}
+              name={label}
+              stroke={color}
               strokeWidth={2}
-              fill="url(#revenueFill)"
-              dot={{ fill: REVENUE_COLOR, r: 4, strokeWidth: 0 }}
+              fill={`url(#${metric}Fill)`}
+              dot={{ fill: color, r: 4, strokeWidth: 0 }}
               activeDot={{ r: 5, strokeWidth: 0 }}
               connectNulls={false}
               isAnimationActive={false}
