@@ -113,6 +113,34 @@ class TestExtractComputesEbitdaFromStructuredLines:
         assert result["reporting_period_start"] is None
         assert result["reporting_period_start_prior"] is None
 
+    def test_full_year_filing_uses_eleven_month_offset_not_five(self):
+        # Regression guard: the "ended DD Month YYYY" regex matches "twelve
+        # months ended" just as readily as "six months ended" -- without
+        # cadence detection this would wrongly compute a 6-month-back start
+        # ("Jan 2026") instead of the true 12-month-back start ("Jul 2025").
+        full_year_filing = """
+        Annual Report for the twelve months ended 30 June 2026.
+        Group Revenue up 4.1% to €700.0k (FY25: €672.0k).
+        """
+        result = FME.extract(full_year_filing)
+        assert result["reporting_period_end"] == "Jun 2026"
+        assert result["reporting_period_end_prior"] == "Jun 2025"
+        assert result["reporting_period_start"] == "Jul 2025"
+        assert result["reporting_period_start_prior"] == "Jul 2024"
+
+    def test_ambiguous_cadence_leaves_period_start_none_not_guessed(self):
+        # An "ended DD Month YYYY" match with no "six"/"twelve"/"half"/"full"
+        # cadence cue anywhere -- cadence can't be determined, so the start
+        # fields must stay None rather than defaulting to a half-year guess
+        # that might be wrong. The end date itself is still extracted since
+        # it doesn't depend on cadence.
+        ambiguous_filing = "Results for the period ended 31 December 2025."
+        result = FME.extract(ambiguous_filing)
+        assert result["reporting_period_end"] == "Dec 2025"
+        assert result["reporting_period_end_prior"] == "Dec 2024"
+        assert result["reporting_period_start"] is None
+        assert result["reporting_period_start_prior"] is None
+
     def test_narrative_ebitda_fy2028_mention_is_not_picked_up(self):
         result = FME.extract(SYNTHETIC_FILING)
         # Regression guard for the exact bug class this extractor was
