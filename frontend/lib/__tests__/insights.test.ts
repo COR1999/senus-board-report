@@ -28,17 +28,33 @@ describe('buildInsightsPrompt', () => {
     expect(prompt).toContain('"insights"')
     expect(prompt).toContain('"positive"|"risk"|"opportunity"')
   })
+
+  it('asks for exactly 3 insights, each with a distinct recommended action', () => {
+    const prompt = buildInsightsPrompt(mockMetrics)
+    expect(prompt).toContain('exactly 3')
+    expect(prompt).toContain('"action"')
+  })
+
+  it('lists the 5 assignment KPI categories and mentions the Revenue Trend chart', () => {
+    const prompt = buildInsightsPrompt(mockMetrics)
+    expect(prompt).toContain('Growth & Revenue')
+    expect(prompt).toContain('Profitability')
+    expect(prompt).toContain('Cash & Liquidity')
+    expect(prompt).toContain('Solvency & Leverage')
+    expect(prompt).toContain('Returns')
+    expect(prompt).toContain('Revenue Trend chart')
+  })
 })
 
 describe('parseInsightsResponse', () => {
   it('parses a wrapped {insights: [...]} object', () => {
     const raw = JSON.stringify({ insights: [{ text: 'Revenue is up', type: 'positive' }] })
-    expect(parseInsightsResponse(raw)).toEqual([{ text: 'Revenue is up', type: 'positive' }])
+    expect(parseInsightsResponse(raw)).toEqual([{ text: 'Revenue is up', type: 'positive', action: '', category: undefined }])
   })
 
   it('parses a bare array', () => {
     const raw = JSON.stringify([{ text: 'Cash is tight', type: 'risk' }])
-    expect(parseInsightsResponse(raw)).toEqual([{ text: 'Cash is tight', type: 'risk' }])
+    expect(parseInsightsResponse(raw)).toEqual([{ text: 'Cash is tight', type: 'risk', action: '', category: undefined }])
   })
 
   it('returns null for invalid JSON', () => {
@@ -56,7 +72,31 @@ describe('parseInsightsResponse', () => {
         { text: 'Invalid type', type: 'not-a-real-type' },
       ],
     })
-    expect(parseInsightsResponse(raw)).toEqual([{ text: 'Valid', type: 'positive' }])
+    expect(parseInsightsResponse(raw)).toEqual([{ text: 'Valid', type: 'positive', action: '', category: undefined }])
+  })
+
+  it('parses a well-formed response including action and category', () => {
+    const raw = JSON.stringify({
+      insights: [
+        { text: 'Revenue grew 38%.', type: 'positive', action: 'Keep investing in UK sales.', category: 'Growth & Revenue' },
+      ],
+    })
+
+    expect(parseInsightsResponse(raw)).toEqual([
+      { text: 'Revenue grew 38%.', type: 'positive', action: 'Keep investing in UK sales.', category: 'Growth & Revenue' },
+    ])
+  })
+
+  it('drops an unrecognized category rather than rejecting the insight', () => {
+    const raw = JSON.stringify({
+      insights: [
+        { text: 'Headcount grew.', type: 'positive', action: 'Keep hiring.', category: 'Not A Real Category' },
+      ],
+    })
+
+    const result = parseInsightsResponse(raw)
+    expect(result).toHaveLength(1)
+    expect(result?.[0].category).toBeUndefined()
   })
 })
 

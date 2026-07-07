@@ -1,11 +1,12 @@
 import { cn } from '@/lib/utils'
 import { getTrendStyle, type Trend } from '@/lib/format'
 import { Card, CardContent, CardHeader, CardDescription } from '@/components/ui/card'
+import type { KpiCategory } from '@/lib/kpi-categories'
 
 export interface StatStripItem {
   key: string
   /** Short category label shown above the metric name, e.g. "Profitability". */
-  category: string
+  category: KpiCategory
   label: string
   value: string
   changePercentage: number

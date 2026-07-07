@@ -9,6 +9,7 @@ import { ReportsTable } from './reports-table'
 import { ErrorBanner } from '@/components/error-banner'
 import { useMetrics, useChartData, useReports } from '@/lib/hooks/use-dashboard-data'
 import { periodComparisonLabel, periodContextLabel } from '@/lib/period'
+import { KPI_CATEGORIES } from '@/lib/kpi-categories'
 import { DollarSign, Users, Wallet, TrendingUp } from 'lucide-react'
 
 // Background poll interval for the main dashboard's data -- lets the page
@@ -83,16 +84,18 @@ export function DashboardContainer() {
   // from the number alone. Category captions below map each stat to the
   // assignment brief's own required categories (Growth & Revenue,
   // Profitability, Cash & Liquidity, Solvency & Leverage, Returns).
+  const [GROWTH_REVENUE, PROFITABILITY, CASH_LIQUIDITY, SOLVENCY_LEVERAGE, RETURNS] = KPI_CATEGORIES
+
   const statStripSource = [
     {
       key: 'bookings' as const,
-      category: 'Growth & Revenue',
+      category: GROWTH_REVENUE,
       label: 'Bookings (new business closed)',
     },
-    { key: 'ebitda_margin' as const, category: 'Profitability', label: 'EBITDA Margin' },
-    { key: 'cash_runway' as const, category: 'Cash & Liquidity', label: 'Cash Runway' },
-    { key: 'interest_cover' as const, category: 'Solvency & Leverage', label: 'Interest Cover' },
-    { key: 'roce' as const, category: 'Returns', label: 'ROCE' },
+    { key: 'ebitda_margin' as const, category: PROFITABILITY, label: 'EBITDA Margin' },
+    { key: 'cash_runway' as const, category: CASH_LIQUIDITY, label: 'Cash Runway' },
+    { key: 'interest_cover' as const, category: SOLVENCY_LEVERAGE, label: 'Interest Cover' },
+    { key: 'roce' as const, category: RETURNS, label: 'ROCE' },
   ]
   const statStripConfig: StatStripItem[] = statStripSource.map(({ key, category, label }) => ({
     key,
