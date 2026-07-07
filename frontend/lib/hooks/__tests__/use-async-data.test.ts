@@ -1,5 +1,5 @@
 import { renderHook, waitFor, act } from '@testing-library/react'
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import { useAsyncData } from '@/lib/hooks/use-async-data'
 
 describe('useAsyncData', () => {
@@ -35,5 +35,80 @@ describe('useAsyncData', () => {
     await waitFor(() => expect(result.current.data).toBe('RECOVERED'))
     expect(result.current.error).toBeNull()
     expect(fetcher).toHaveBeenCalledTimes(2)
+  })
+
+  describe('pollIntervalMs', () => {
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    it('re-invokes the fetcher in the background on the given interval', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true })
+      const fetcher = vi.fn().mockResolvedValue({ value: 1 })
+      renderHook(() => useAsyncData(fetcher, { pollIntervalMs: 1000 }))
+
+      await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1))
+
+      await act(async () => {
+        vi.advanceTimersByTime(1000)
+      })
+      expect(fetcher).toHaveBeenCalledTimes(2)
+
+      await act(async () => {
+        vi.advanceTimersByTime(2000)
+      })
+      expect(fetcher).toHaveBeenCalledTimes(4)
+    })
+
+    it('keeps the same data reference when a poll returns unchanged content', async () => {
+      // Critical for consumers like AiInsights that key a useEffect on this
+      // object -- a background poll returning identical content must never
+      // hand back a *new* object, or it would look like real new data and
+      // re-trigger an unnecessary OpenAI call every poll tick.
+      vi.useFakeTimers({ shouldAdvanceTime: true })
+      const fetcher = vi.fn().mockResolvedValue({ revenue: 100 })
+      const { result } = renderHook(() => useAsyncData(fetcher, { pollIntervalMs: 1000 }))
+
+      await vi.waitFor(() => expect(result.current.data).toEqual({ revenue: 100 }))
+      const firstReference = result.current.data
+
+      await act(async () => {
+        vi.advanceTimersByTime(1000)
+      })
+      await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2))
+
+      expect(result.current.data).toBe(firstReference)
+    })
+
+    it('replaces the data reference when a poll returns genuinely new content', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true })
+      const fetcher = vi.fn()
+        .mockResolvedValueOnce({ revenue: 100 })
+        .mockResolvedValueOnce({ revenue: 200 })
+      const { result } = renderHook(() => useAsyncData(fetcher, { pollIntervalMs: 1000 }))
+
+      await vi.waitFor(() => expect(result.current.data).toEqual({ revenue: 100 }))
+
+      await act(async () => {
+        vi.advanceTimersByTime(1000)
+      })
+
+      await vi.waitFor(() => expect(result.current.data).toEqual({ revenue: 200 }))
+    })
+
+    it('does not flip loading back to true on a background poll', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true })
+      const fetcher = vi.fn().mockResolvedValue({ revenue: 100 })
+      const { result } = renderHook(() => useAsyncData(fetcher, { pollIntervalMs: 1000 }))
+
+      await vi.waitFor(() => expect(result.current.loading).toBe(false))
+
+      await act(async () => {
+        vi.advanceTimersByTime(1000)
+      })
+      await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2))
+
+      expect(result.current.loading).toBe(false)
+    })
   })
 })

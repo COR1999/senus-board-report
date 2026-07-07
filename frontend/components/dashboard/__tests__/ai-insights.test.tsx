@@ -32,7 +32,8 @@ describe('AiInsights', () => {
   })
 
   // No `clearMocks` in vitest.config.ts, so spy call counts otherwise leak
-  // across tests in this file -- several tests below assert exact counts.
+  // across tests in this file (same issue found in feature/document-report-
+  // actions) -- several tests below assert exact call counts.
   afterEach(() => {
     vi.restoreAllMocks()
   })
@@ -63,6 +64,20 @@ describe('AiInsights', () => {
 
     fireEvent.click(button)
     fireEvent.click(button)
+
+    expect(dataService.getAiInsights).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not re-fetch insights on a re-render with the same metrics reference', async () => {
+    // This is what makes background polling (useAsyncData's pollIntervalMs)
+    // safe: a poll that returns unchanged content keeps the same object
+    // reference, so re-rendering with it must not trigger another Gemini
+    // call -- only a *genuinely new* metrics object should.
+    const { rerender } = render(<AiInsights metrics={mockMetrics} />)
+    await screen.findByText('ANY_INSIGHT_TEXT')
+    expect(dataService.getAiInsights).toHaveBeenCalledTimes(1)
+
+    rerender(<AiInsights metrics={mockMetrics} />)
 
     expect(dataService.getAiInsights).toHaveBeenCalledTimes(1)
   })
