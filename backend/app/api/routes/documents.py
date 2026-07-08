@@ -21,7 +21,7 @@ from app.core.database import get_db
 from app.models.document import Document
 from app.models.report import Report
 from app.models.financial_metrics import FinancialMetrics
-from app.schemas.financial import DocumentWithText, FinancialMetricsResponse
+from app.schemas.financial import DocumentResponse, DocumentWithText, FinancialMetricsResponse
 from app.services.pdf_service import PDFExtractionService
 from app.services.report_service import ReportService  
 
@@ -240,7 +240,16 @@ async def download_document_file(document_id: int, db: AsyncSession = Depends(ge
 # List documents
 # ============================================================
 
-@router.get("", response_model=List[DocumentWithText])
+# The list view (a table of filename/status/size/date) never needs
+# `extracted_text` (the full PDF text, tens of KB per document) or the
+# financial_metrics/report_id detail that GET /{id} returns -- returning
+# DocumentWithText for every row here sent that payload for no reason, and
+# fetching FinancialMetrics to fill it in meant one extra query per
+# document (an N+1: the exact pattern this codebase already avoids
+# elsewhere, see metrics.py's _ai_reporting_periods_by_document). Neither
+# is needed since DocumentResponse (filename/size/id/status/created_at) is
+# already the frontend's DocumentItem shape.
+@router.get("", response_model=List[DocumentResponse])
 async def list_documents(
     skip: int = 0,
     limit: int = 20,
@@ -249,31 +258,17 @@ async def list_documents(
 
     result = await db.execute(
         select(Document)
-        .options(selectinload(Document.reports))
         .order_by(Document.created_at.desc())
         .offset(skip)
         .limit(limit)
     )
 
-    docs = result.scalars().all()
-
-    responses = []
-    for doc in docs:
-        metrics_result = await db.execute(
-            select(FinancialMetrics)
-            .where(FinancialMetrics.document_id == doc.id)
-            .order_by(FinancialMetrics.extracted_at.desc())
-        )
-        metrics = metrics_result.scalars().first()
-        responses.append(
-            build_document_response(
-                doc,
-                doc.reports[0] if doc.reports else None,
-                metrics,
-            )
-        )
-
-    return responses
+    # Built explicitly (not left to FastAPI's automatic response_model
+    # filtering) so the shape is real and testable by calling this function
+    # directly, matching this codebase's established test pattern -- and so
+    # it's unambiguous at a glance that extracted_text never leaves this
+    # function, not just that it's dropped somewhere downstream.
+    return [DocumentResponse.model_validate(doc) for doc in result.scalars().all()]
 
 
 # ============================================================
