@@ -80,4 +80,12 @@ describe('DocumentsPage', () => {
     await screen.findByText('ANY_DOCUMENT.pdf')
     expect(screen.getByRole('button', { name: /filter by period/i })).toBeDisabled()
   })
+
+  it('links the download button to the real file download URL', async () => {
+    render(<DocumentsPage />)
+    await screen.findByText('ANY_DOCUMENT.pdf')
+
+    const downloadLink = screen.getByRole('link', { name: /download any_document\.pdf/i })
+    expect(downloadLink).toHaveAttribute('href', dataService.getDocumentFileUrl(1))
+  })
 })

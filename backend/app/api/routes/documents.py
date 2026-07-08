@@ -8,7 +8,10 @@ import logging
 from typing import List, Optional
 from datetime import datetime
 
+from pathlib import Path as FilePath
+
 from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
+from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -188,6 +191,38 @@ async def get_document(document_id: int, db: AsyncSession = Depends(get_db)):
     metrics = metrics_result.scalars().first()
 
     return build_document_response(doc, report, metrics)
+
+
+# ============================================================
+# Download original file
+# ============================================================
+
+@router.get("/{document_id}/file")
+async def download_document_file(document_id: int, db: AsyncSession = Depends(get_db)):
+    document = await db.get(Document, document_id)
+    if document is None:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    # Railway's filesystem is ephemeral (see backend/README.md) -- a
+    # document uploaded before the most recent deploy/restart can have its
+    # DB row and extracted text intact (Postgres persists independently)
+    # while the raw PDF bytes on disk are gone. Distinguished from "document
+    # not found" with a specific message, rather than a generic 404, so the
+    # frontend/user isn't told the document itself doesn't exist.
+    if not document.file_path or not FilePath(document.file_path).exists():
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "The original PDF is no longer available on the server "
+                "(uploads aren't yet persisted across deploys)."
+            ),
+        )
+
+    return FileResponse(
+        document.file_path,
+        media_type="application/pdf",
+        filename=document.filename,
+    )
 
 
 # ============================================================

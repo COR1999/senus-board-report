@@ -14,8 +14,8 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { Trash2, Upload, CalendarRange } from 'lucide-react'
-import { type DocumentItem } from '@/lib/data-service'
+import { Trash2, Upload, CalendarRange, Download } from 'lucide-react'
+import { type DocumentItem, getDocumentFileUrl } from '@/lib/data-service'
 import { formatFileSize } from '@/lib/format'
 import { capitalize } from '@/lib/utils'
 import { useDocuments } from '@/lib/hooks/use-dashboard-data'
@@ -143,16 +143,31 @@ export default function DocumentsPage() {
                           })}
                         </TableCell>
                         <TableCell className="text-right">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-8 w-8 p-0 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                            onClick={() => handleDelete(doc)}
-                            disabled={deletingId === doc.id}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                            <span className="sr-only">Delete {doc.filename}</span>
-                          </Button>
+                          <div className="flex justify-end">
+                            {/* Plain download link, not a fetch/blob helper --
+                                the browser handles the download itself once the
+                                backend sets Content-Disposition, and a direct
+                                navigation isn't subject to CORS the way a
+                                cross-origin `fetch` would be. May 404 with a
+                                specific message if the file wasn't retained
+                                across a backend redeploy (see getDocumentFileUrl). */}
+                            <Button variant="ghost" size="sm" className="h-8 w-8 p-0" asChild>
+                              <a href={getDocumentFileUrl(doc.id)} download={doc.filename}>
+                                <Download className="h-5 w-5" />
+                                <span className="sr-only">Download {doc.filename}</span>
+                              </a>
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 w-8 p-0 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                              onClick={() => handleDelete(doc)}
+                              disabled={deletingId === doc.id}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                              <span className="sr-only">Delete {doc.filename}</span>
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))
