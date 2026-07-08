@@ -103,14 +103,14 @@ describe('period selector fetchers', () => {
     )
   })
 
-  it('getChartData appends ?document_id= when a period is selected', async () => {
+  it('getChartData never appends a document_id -- the trend chart always shows the whole history', async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => [] })
     vi.stubGlobal('fetch', fetchMock)
 
-    await getChartData(7)
+    await getChartData()
 
     expect(fetchMock).toHaveBeenCalledWith(
-      expect.stringMatching(/\/metrics\/dashboard\/revenue-trend\?document_id=7$/),
+      expect.stringMatching(/\/metrics\/dashboard\/revenue-trend$/),
       expect.anything()
     )
   })

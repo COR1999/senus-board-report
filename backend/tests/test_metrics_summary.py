@@ -588,11 +588,16 @@ async def test_dashboard_summary_null_confidence_stays_permissive(async_client, 
 
 
 @pytest.mark.anyio
-async def test_revenue_trend_excludes_mismatched_cadence_row(async_client, async_session):
-    # A 12-month (full-year) row must not be blended into a trend series
-    # anchored on a 6-month (half-year) latest row -- confirmed real risk:
-    # an annual total plotted next to a half-year total as if sequential,
-    # same-length periods reads as a fabricated ~58% revenue collapse.
+async def test_revenue_trend_includes_both_cadences_tagged_for_the_frontend_to_split(async_client, async_session):
+    # As of the all-reports trend chart (see docs/roadmap.md), this endpoint
+    # no longer excludes a different-cadence row itself -- it always returns
+    # every eligible document, each tagged with its own `cadence_months`, and
+    # the *frontend* is responsible for rendering half-year and full-year
+    # points as two separate lines rather than connecting them as if
+    # sequential (still fully honoring the real incident this guarded
+    # against: a 12-month total plotted next to a 6-month total as if
+    # sequential reads as a fabricated ~58% revenue collapse -- just enforced
+    # client-side now instead of by dropping rows server-side).
     base = datetime(2026, 1, 1)
     await _add_metrics_row(
         async_session,
@@ -611,8 +616,10 @@ async def test_revenue_trend_excludes_mismatched_cadence_row(async_client, async
 
     assert response.status_code == 200
     points = response.json()
-    assert len(points) == 1
-    assert points[0]["revenue"] == 354_813.0
+    assert len(points) == 2
+    by_revenue = {p["revenue"]: p["cadence_months"] for p in points}
+    assert by_revenue[836_991.0] == 12
+    assert by_revenue[354_813.0] == 6
 
 
 @pytest.mark.anyio
@@ -774,7 +781,15 @@ async def test_dashboard_summary_without_document_id_matches_default_latest_beha
 
 
 @pytest.mark.anyio
-async def test_revenue_trend_anchored_on_older_document_id_excludes_newer_rows(async_client, async_session):
+async def test_revenue_trend_ignores_a_document_id_query_param_and_returns_everything(async_client, async_session):
+    # get_revenue_trend deliberately has no document_id param at all (unlike
+    # /dashboard/summary) -- the chart always shows the whole history
+    # regardless of which period is selected on the KPI cards; selection/
+    # highlighting is a frontend-only concern (see RevenueChart's
+    # selectedDocumentId prop). A stray ?document_id= in the URL is simply
+    # ignored by FastAPI (no declared param to bind it to), not a 404 or an
+    # error -- confirms this endpoint's contract is genuinely
+    # selection-independent, not just "the old anchoring silently still works".
     base = datetime(2026, 1, 1)
     older_fy = await _add_metrics_row(
         async_session,
@@ -799,16 +814,5 @@ async def test_revenue_trend_anchored_on_older_document_id_excludes_newer_rows(a
 
     assert response.status_code == 200
     points = response.json()
-    # Only the anchor row itself -- the newer FY row (extracted after it)
-    # and the mismatched-cadence HY row are both excluded.
-    assert len(points) == 1
-    assert points[0]["revenue"] == 688_317.0
-
-
-@pytest.mark.anyio
-async def test_revenue_trend_document_id_not_found_returns_404(async_client, async_session):
-    await _add_metrics_row(async_session, revenue=100_000.0)
-
-    response = await async_client.get("/metrics/dashboard/revenue-trend?document_id=999999")
-
-    assert response.status_code == 404
+    assert len(points) == 3
+    assert {p["revenue"] for p in points} == {688_317.0, 354_813.0, 836_991.0}

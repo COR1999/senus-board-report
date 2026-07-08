@@ -57,21 +57,27 @@ export const mockMetrics = {
   current_period: 'Jul 2025 – Dec 2025',
   prior_period: 'Jul 2024 – Dec 2024',
   data_extracted_at: '2026-03-19T08:38:00',
+  document_id: null,
 }
 
+// `cadence_months: 1` (not a real cadence any actual filing has) keeps every
+// mock point in the same bucket in RevenueChart's half-year/full-year split
+// -- this is illustrative fallback data shown only when the backend is
+// unreachable, not a real multi-cadence history, so it should render as one
+// continuous line, not artificially split.
 export const mockChartData = [
-  { period: 'Jan', revenue: 60000, ebitda: null, cash: null },
-  { period: 'Feb', revenue: 75000, ebitda: null, cash: null },
-  { period: 'Mar', revenue: 95000, ebitda: null, cash: null },
-  { period: 'Apr', revenue: 110000, ebitda: null, cash: null },
-  { period: 'May', revenue: 132000, ebitda: null, cash: null },
-  { period: 'Jun', revenue: 158000, ebitda: null, cash: null },
-  { period: 'Jul', revenue: 185000, ebitda: null, cash: null },
-  { period: 'Aug', revenue: 215000, ebitda: null, cash: null },
-  { period: 'Sep', revenue: 245000, ebitda: null, cash: null },
-  { period: 'Oct', revenue: 280000, ebitda: null, cash: null },
-  { period: 'Nov', revenue: 520000, ebitda: null, cash: null },
-  { period: 'Dec', revenue: 836991, ebitda: null, cash: null },
+  { period: 'Jan', revenue: 60000, ebitda: null, cash: null, document_id: null, cadence_months: 1 },
+  { period: 'Feb', revenue: 75000, ebitda: null, cash: null, document_id: null, cadence_months: 1 },
+  { period: 'Mar', revenue: 95000, ebitda: null, cash: null, document_id: null, cadence_months: 1 },
+  { period: 'Apr', revenue: 110000, ebitda: null, cash: null, document_id: null, cadence_months: 1 },
+  { period: 'May', revenue: 132000, ebitda: null, cash: null, document_id: null, cadence_months: 1 },
+  { period: 'Jun', revenue: 158000, ebitda: null, cash: null, document_id: null, cadence_months: 1 },
+  { period: 'Jul', revenue: 185000, ebitda: null, cash: null, document_id: null, cadence_months: 1 },
+  { period: 'Aug', revenue: 215000, ebitda: null, cash: null, document_id: null, cadence_months: 1 },
+  { period: 'Sep', revenue: 245000, ebitda: null, cash: null, document_id: null, cadence_months: 1 },
+  { period: 'Oct', revenue: 280000, ebitda: null, cash: null, document_id: null, cadence_months: 1 },
+  { period: 'Nov', revenue: 520000, ebitda: null, cash: null, document_id: null, cadence_months: 1 },
+  { period: 'Dec', revenue: 836991, ebitda: null, cash: null, document_id: null, cadence_months: 1 },
 ]
 
 export const mockReports = [

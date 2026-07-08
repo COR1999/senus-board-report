@@ -23,6 +23,7 @@ describe('DashboardContainer', () => {
       current_period: 'Jul 2025 – Dec 2025',
       prior_period: 'Jul 2024 – Dec 2024',
       data_extracted_at: '2026-03-19T08:38:00',
+      document_id: 1,
     })
 
     vi.spyOn(dataService, 'getChartData').mockResolvedValue([])
@@ -111,6 +112,7 @@ describe('DashboardContainer', () => {
       current_period: null,
       prior_period: null,
       data_extracted_at: null,
+      document_id: null,
     })
 
     render(<DashboardContainer />)
@@ -144,7 +146,7 @@ describe('DashboardContainer', () => {
       expect(screen.getByText('HY2026 (Jul 2025 – Dec 2025)')).toBeInTheDocument()
     })
 
-    it('refetches metrics and chart data with the selected document_id when a period is chosen', async () => {
+    it('refetches metrics with the selected document_id, but never refetches chart data -- the trend chart always shows the whole history', async () => {
       vi.spyOn(dataService, 'getDashboardPeriods').mockResolvedValue([
         { document_id: 2, label: 'HY2026 (Jul 2025 – Dec 2025)' },
         { document_id: 1, label: 'FY2025 (Jul 2024 – Jun 2025)' },
@@ -160,7 +162,7 @@ describe('DashboardContainer', () => {
 
       await screen.findByText('ANY_REVENUE')
       expect(getMetricsSpy).toHaveBeenCalledWith(1)
-      expect(getChartDataSpy).toHaveBeenCalledWith(1)
+      expect(getChartDataSpy).toHaveBeenCalledWith()
     })
   })
 })

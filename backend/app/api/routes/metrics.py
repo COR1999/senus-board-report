@@ -510,22 +510,30 @@ async def get_dashboard_metrics(
 
 
 @router.get("/dashboard/revenue-trend", response_model=List[RevenueTrendPoint])
-async def get_revenue_trend(
-    document_id: Optional[int] = Query(
-        None,
-        description="Anchor the trend on a specific document's reporting period instead of the "
-        "true latest -- see GET /dashboard/periods for the available options.",
-    ),
-    db: AsyncSession = Depends(get_db),
-):
+async def get_revenue_trend(db: AsyncSession = Depends(get_db)):
     """
     Revenue by period (oldest -> newest) for the revenue trend chart, from the
     last REVENUE_TREND_WINDOW FinancialMetrics rows. `revenue` is null (not 0)
     for a document that didn't report it -- same missing-vs-zero convention as
     the sparkline history on /dashboard/summary.
 
-    `document_id` anchors the trend the same way it anchors
-    /dashboard/summary -- see that endpoint's docstring.
+    Unlike /dashboard/summary, this endpoint always returns *every* eligible
+    document -- it deliberately does not anchor/truncate on a selected
+    `document_id` the way the KPI cards do. The chart's job is "where does
+    this period sit in the company's history", which needs the whole
+    history regardless of which period is selected; the frontend does its
+    own highlighting of the selected point using each point's `document_id`
+    (added below) rather than the backend filtering rows out. See
+    `docs/roadmap.md`'s "all-reports trend chart" entry for the real user
+    complaint this replaced ("picking an older report shows a near-empty
+    chart instead of the actual history").
+
+    Each point also carries `cadence_months` (see `_cadence_months`) so the
+    frontend can split half-year and full-year points into two separate
+    lines -- they were previously excluded from each other outright (the
+    real incident that guarded against blending a 12-month total and a
+    6-month total on one line as if sequential, still fully honored, just
+    enforced client-side now instead of by dropping rows server-side).
     """
     # Unlike /dashboard/summary above, this endpoint plots every document's
     # data independently per field (a document missing revenue specifically
@@ -542,45 +550,7 @@ async def get_revenue_trend(
         .order_by(FinancialMetrics.extracted_at.desc())
     )
     result = await db.execute(stmt)
-    rows = result.scalars().all()
-
-    if document_id is None:
-        anchor = rows[0] if rows else None
-    else:
-        anchor = next((r for r in rows if r.document_id == document_id), None)
-        if anchor is None:
-            raise HTTPException(
-                status_code=404,
-                detail="Requested period is not available on the dashboard.",
-            )
-
-    # Documents of different reporting cadence (e.g. this project's
-    # half-year filing alongside a full-year "Information Document") must
-    # never be blended into one trend line as if they were regular,
-    # comparable periods -- confirmed against the real data: an annual
-    # total (~€837K) plotted next to a half-year total (~€355K) as
-    # sequential same-length points reads as a ~58% revenue collapse and
-    # produces an actively misleading forecast (see `forecast.ts`'s
-    # `projectSeries`, which has no notion of how much calendar time each
-    # point covers). A row is excluded only when a *confirmed* mismatch
-    # exists (both its own cadence and the anchor row's are known and
-    # differ) -- most filings (including every existing test fixture)
-    # don't set `reporting_period_start`/`_end` at all, and an unknown
-    # cadence must not be treated as evidence of a mismatch, only a real,
-    # positively-detected one.
-    if anchor is not None:
-        anchor_cadence = _cadence_months(anchor)
-        if anchor_cadence is not None:
-            rows = [
-                r for r in rows
-                if (row_cadence := _cadence_months(r)) is None or row_cadence == anchor_cadence
-            ]
-        # Same "as of that period" truncation as /dashboard/summary -- an
-        # older selected period must not pull in a document extracted
-        # after it.
-        rows = [r for r in rows if r.extracted_at <= anchor.extracted_at]
-
-    rows = rows[:REVENUE_TREND_WINDOW]
+    rows = result.scalars().all()[:REVENUE_TREND_WINDOW]
 
     ai_periods = await _ai_reporting_periods_by_document(db, [r.document_id for r in rows])
 
@@ -608,6 +578,8 @@ async def get_revenue_trend(
             revenue=optional_float(r.revenue),
             ebitda=optional_float(r.ebitda),
             cash=optional_float(r.cash),
+            document_id=r.document_id,
+            cadence_months=_cadence_months(r),
         )
         for r in reversed(rows)
     ]
@@ -635,6 +607,15 @@ async def get_revenue_trend(
                         revenue=float(latest.revenue_prior),
                         ebitda=optional_float(latest.ebitda_prior),
                         cash=optional_float(latest.cash_prior),
+                        # No real document backs this point (it's derived
+                        # from `latest`'s own embedded prior-period column,
+                        # not a separate upload) -- `document_id=None` so
+                        # the frontend's "is this the selected point"
+                        # highlight never matches it, and so it's never
+                        # mistaken for the real `latest` point it sits next
+                        # to (which keeps its own real document_id below).
+                        document_id=None,
+                        cadence_months=_cadence_months(latest),
                     )
                 ] + points
 

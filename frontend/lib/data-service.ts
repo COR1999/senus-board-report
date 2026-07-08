@@ -77,6 +77,12 @@ export interface Metrics {
    * period, e.g. "FY2025"). Powers the dashboard's global "Data as of ..."
    * banner. Null only when there's no data at all yet. */
   data_extracted_at: string | null
+  /** The document backing "latest"/current_period above -- normally the true
+   * most-recently-extracted document, but reflects whichever document_id the
+   * period selector anchored this response on. Used to highlight the
+   * matching point on the (always-full-history) revenue trend chart. Null
+   * only in the no-data-at-all empty state. */
+  document_id: number | null
 }
 
 export interface ChartDataPoint {
@@ -89,6 +95,17 @@ export interface ChartDataPoint {
   ebitda: number | null
   /** Cash for this period. `null` means the document didn't report it (missing, not zero). */
   cash: number | null
+  /** The document this point came from -- lets the chart highlight whichever
+   * point matches the currently-selected period. `null` only for the single
+   * synthetic prior-period point the backend may prepend when just one
+   * document exists (derived from that document's own embedded prior-period
+   * column, not a separate upload) -- never matches a real selection. */
+  document_id: number | null
+  /** This point's reporting cadence in months (6 half-year, 12 full-year),
+   * when derivable -- used to split the chart into separate half-year/
+   * full-year lines rather than connecting incomparable period lengths on
+   * one line. `null` when undeterminable -- rendered as an isolated point. */
+  cadence_months: number | null
 }
 
 export interface ReportSummary {
@@ -122,10 +139,17 @@ export async function getMetrics(documentId?: number | null): Promise<Metrics> {
   }
 }
 
-export async function getChartData(documentId?: number | null): Promise<ChartDataPoint[]> {
+/**
+ * Always the full revenue-trend history, regardless of which period is
+ * selected elsewhere on the dashboard -- unlike `getMetrics`, this
+ * deliberately takes no `documentId` param. The chart's job is showing
+ * where the selected period sits in the company's whole history, which
+ * needs the whole history every time; the caller highlights the selected
+ * point client-side using each point's own `document_id` instead.
+ */
+export async function getChartData(): Promise<ChartDataPoint[]> {
   try {
-    const query = documentId != null ? `?document_id=${documentId}` : ''
-    return await apiFetch<ChartDataPoint[]>(`/metrics/dashboard/revenue-trend${query}`)
+    return await apiFetch<ChartDataPoint[]>('/metrics/dashboard/revenue-trend')
   } catch (error) {
     console.warn('Failed to fetch from backend, using mock chart data:', error)
     return mockChartData
