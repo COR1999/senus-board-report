@@ -28,6 +28,19 @@ Required metric categories: **Growth & Revenue** (YoY, MoM, Customers, Channels,
 capital), **Solvency & Leverage**, **Returns** (ROCE), plus AI-generated commentary. All five are
 implemented and visible on the dashboard (see `backend/docs/metrics-expansion-plan.md`).
 
+### Why this project, specifically
+
+The UI/UX direction here (a dark, Bloomberg-terminal-adjacent boardroom tool — see "Design system"
+in `frontend/AGENTS.md`) isn't just a stylistic choice for the assessment. I've long wanted to build
+a platform for analyzing public companies' financials properly — reading and extracting real
+structured data out of Form 10-K/10-Q filings, not just eyeballing a PDF. This assessment was the
+first real excuse to actually build that idea end-to-end: a real extraction pipeline, a real
+confidence gate on what the AI actually found, and a dashboard that presents it the way a board or
+investor would actually want to read it. Senus PLC's filings are the concrete case study here, but
+the underlying approach — deterministic extraction first, AI as a narrative-enrichment backup, never
+trusting a number the pipeline can't stand behind — is exactly what a 10-K/10-Q analysis tool would
+need too.
+
 ## Investor relations API
 
 Senus's investor relations page is a client-rendered SPA (`app.assiduous.tech/investor-relations/senus`)
@@ -118,7 +131,7 @@ on the table, and why. Full narrative detail (including bugs found while buildin
 | **Deterministic regex/table parsing first, Gemini only fills gaps** | Route every figure through an LLM (simpler code, one extraction path) | A reliable table match on real extractable text is more reproducible and auditable than trusting a vision/language model to re-derive numbers a parser can already get right — see "Architecture" above. Also directly protects against narrative leakage (a forward-looking "EBITDA positive by FY2028" sentence must never be read as a real figure). |
 | **A missing value is `null`, never a guessed `0`** | Default missing fields to `0` for simpler downstream math | Caused a real production incident (`docs/roadmap.md`, PRs #40-42) — a `0` silently overrode genuinely-undisclosed data and looked identical to a real zero-value filing on the dashboard. Enforced everywhere: the extractor, the Gemini fallback's own empty-response shape, and every KPI card's "N/A" rendering. |
 | **A transparent point-based confidence score, not an invented ML probability** | A single LLM-generated "confidence" number | No statistical model exists anywhere in this pipeline; asking an LLM to self-report a probability would itself be a fabrication — the exact failure mode this project avoids everywhere else. Instead: source-aware points (a deterministic table match counts for more than an LLM guess at the same field), tiered `auto_accept`/`needs_review`/`rejected` at thresholds matching standard IDP practice, with the exact point breakdown printed as human-readable `reasons`. |
-| **A rejected document persists nothing at all; a `needs_review` one persists but is hidden from the dashboard, not blocked entirely** | Either accept everything (a rejected/shaky document still becomes "latest"), or reject anything short of perfect | Matches real IDP practice: bad data shouldn't touch executive KPIs, but a borderline document is still real evidence worth keeping visible (Documents/Reports tables, a muted "Pending Review" tag) rather than silently discarded. |
+| **A `rejected` document is kept for review, not deleted; a `needs_review` one persists too and can be approved onto the dashboard** | Either accept everything (a rejected/shaky document still becomes "latest"), or reject anything short of perfect and discard it entirely | Matches real IDP practice: bad data shouldn't touch executive KPIs, but every attempt is still real evidence worth a human being able to see (Documents table tags, a review panel showing the actual attempted values and the confidence gate's own reasons). Reversed from this project's original PR #42 policy of deleting a `rejected` document's data outright, once a real review UI existed to make keeping it useful rather than just clutter — see `docs/roadmap.md`. A `rejected` row can never itself reach the dashboard (no approve path exists for it, unlike `needs_review`), and a `force=True` regenerate of an already-good document is specifically protected from ever being overwritten by a worse retry. |
 | **Confidence/cadence-mismatch indicators use neutral badges, never the same red/green language as trend indicators** | Reuse the existing up/down trend color vocabulary for data-quality flags too | A colored badge next to a KPI value reads as *performance*, not *data integrity* — mixing the two vocabularies would make the dashboard harder to read at a glance, the opposite of the goal for an executive tool. |
 | **No migration framework (no Alembic) — an idempotent `_add_missing_columns` step instead** | Alembic migrations | This project's schema evolved incrementally alongside features, on a single production database with no multi-environment migration story to coordinate; an idempotent startup check (safe to run on every deploy, a no-op once a column exists) fit the actual scale better than introducing a full migration framework for a handful of columns added over a few days. |
 | **A cadence-mismatch (e.g. a 6-month filing next to a 12-month one) excludes a row only on a *confirmed* mismatch, never an unknown one** | Exclude any row without an explicitly-matching cadence label | Most filings (including every pre-existing test fixture) don't set explicit period-start/end labels at all — treating "unknown" as "mismatched" would have silently broken every trend chart that already worked. Only a real, positively-detected difference excludes a row. |
@@ -199,10 +212,19 @@ large change. The working pattern, used consistently:
   available from either other filing. Because a scanned document has no independent deterministic
   cross-check the way a text one does, its result is always capped at the `needs_review` confidence
   tier regardless of score — visible via the existing "Pending Review" tag, never silently promoted
-  straight to the executive dashboard. See `docs/roadmap.md` for the full design, the free-OCR-vs-
-  vision tradeoff considered, and two real bugs found and fixed while getting this working end-to-end
-  (a pinned model with zero free-tier quota on a fresh key, and a text-detection check fooled by
-  PDF page markers). Because the two text-extracted
+  straight to the executive dashboard. A **review-and-approve workflow** (`POST
+  /api/documents/{id}/approve`, a "Review" panel on the Documents page showing every extracted
+  figure) lets a human check a `needs_review` document's figures against the source PDF and confirm
+  it's correct, without ever rewriting the underlying algorithmic score — approval sets a separate
+  `human_approved_at` timestamp, so the confidence gate's own record of what it actually found stays
+  honest and unaltered even after a document is promoted onto the dashboard. A `rejected` (<85%)
+  document gets the same review panel in a view-only mode (a destructive "Rejected" tag, the actual
+  attempted values, and the confidence gate's own point-by-point reasons) — kept for reference rather
+  than deleted outright, but with no approve path, since it never cleared even the lower review bar.
+  See `docs/roadmap.md` for the full design, the free-OCR-vs-vision tradeoff considered, and two real
+  bugs found and fixed while getting this working end-to-end (a pinned model with zero free-tier
+  quota on a fresh key, and a text-detection check fooled by PDF page markers). Because the two
+  text-extracted
   filings have different reporting cadences (6 months vs. 12
   months), an **extraction confidence service**
   (`backend/app/services/extraction_confidence.py`) scores every document before its data is trusted
@@ -226,7 +248,7 @@ large change. The working pattern, used consistently:
 
 ## How outputs were validated
 
-- **Automated tests**: 207 backend (pytest) + 152 frontend (Vitest) tests, run before every merge.
+- **Automated tests**: 214 backend (pytest) + 165 frontend (Vitest) tests, run before every merge.
 - **Type safety**: `tsc --noEmit` clean before every merge.
 - **Manual validation against the real filing**: extracted figures (revenue, EBITDA, cash,
   customers, bookings) were cross-checked by hand against the source PDF during

@@ -1,7 +1,13 @@
 import { renderHook, waitFor, act } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import * as dataService from '@/lib/data-service'
-import { useUploadDocument, useDeleteDocument, useRegenerateReport, useImportExternalFiling } from '@/lib/hooks/use-mutations'
+import {
+  useUploadDocument,
+  useDeleteDocument,
+  useRegenerateReport,
+  useImportExternalFiling,
+  useApproveDocument,
+} from '@/lib/hooks/use-mutations'
 
 describe('useUploadDocument', () => {
   beforeEach(() => vi.restoreAllMocks())
@@ -87,6 +93,56 @@ describe('useImportExternalFiling', () => {
     })
 
     expect(result.current.error).toBe('ANY_IMPORT_FAILURE')
+    expect(onSuccess).not.toHaveBeenCalled()
+  })
+})
+
+describe('useApproveDocument', () => {
+  beforeEach(() => vi.restoreAllMocks())
+
+  it('calls onSuccess and clears approvingId/error on a successful approve', async () => {
+    vi.spyOn(dataService, 'approveDocument').mockResolvedValue({
+      id: 3,
+      filename: 'ADF Farm Solutions Consolidated Financial Statements.pdf',
+      file_size: 6_800_000,
+      status: 'completed',
+      created_at: '2026-07-08T00:00:00Z',
+      extraction_confidence_tier: 'auto_accept',
+      financial_metrics: {
+        revenue: null,
+        customers: null,
+        cash: 120_000,
+        ebitda: null,
+        gross_margin: null,
+        operating_margin: null,
+        extraction_confidence: 55,
+        extraction_confidence_tier: 'auto_accept',
+        extraction_confidence_reasons: null,
+      },
+    })
+    const onSuccess = vi.fn()
+    const { result } = renderHook(() => useApproveDocument(onSuccess))
+
+    act(() => {
+      result.current.approve(3)
+    })
+    expect(result.current.approvingId).toBe(3)
+
+    await waitFor(() => expect(result.current.approvingId).toBeNull())
+    expect(onSuccess).toHaveBeenCalled()
+    expect(result.current.error).toBeNull()
+  })
+
+  it('surfaces a failed approve as a user-facing error instead of throwing', async () => {
+    vi.spyOn(dataService, 'approveDocument').mockRejectedValue(new Error('ANY_APPROVE_FAILURE'))
+    const onSuccess = vi.fn()
+    const { result } = renderHook(() => useApproveDocument(onSuccess))
+
+    await act(async () => {
+      await result.current.approve(3)
+    })
+
+    expect(result.current.error).toBe('ANY_APPROVE_FAILURE')
     expect(onSuccess).not.toHaveBeenCalled()
   })
 })

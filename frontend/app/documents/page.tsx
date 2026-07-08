@@ -17,6 +17,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Trash2, Upload, Download, DownloadCloud, RefreshCw, EyeOff, RotateCcw } from 'lucide-react'
 import { type DocumentItem, getDocumentFileUrl } from '@/lib/data-service'
+import { DocumentReviewSheet } from '@/components/documents/document-review-sheet'
 import { formatFileSize } from '@/lib/format'
 import { capitalize } from '@/lib/utils'
 import { useDocuments, useAvailableExternalFilings, useHiddenExternalFilings } from '@/lib/hooks/use-dashboard-data'
@@ -299,13 +300,27 @@ export default function DocumentsPage() {
                               {capitalize(doc.status)}
                             </Badge>
                             {doc.extraction_confidence_tier === 'needs_review' && (
-                              <Badge
-                                variant="outline"
-                                className="border-border/60 bg-muted text-muted-foreground"
-                                title="This document's extracted figures scored below the auto-accept confidence threshold -- they're saved, but excluded from the dashboard's headline KPIs until reviewed."
-                              >
-                                Pending Review
-                              </Badge>
+                              <>
+                                <Badge
+                                  variant="outline"
+                                  className="border-border/60 bg-muted text-muted-foreground"
+                                  title="This document's extracted figures scored below the auto-accept confidence threshold -- they're saved, but excluded from the dashboard's headline KPIs until reviewed."
+                                >
+                                  Pending Review
+                                </Badge>
+                                <DocumentReviewSheet document={doc} onApproved={refetch} />
+                              </>
+                            )}
+                            {doc.extraction_confidence_tier === 'rejected' && (
+                              <>
+                                <Badge
+                                  variant="destructive"
+                                  title="This document's extraction scored below the confidence threshold -- kept for review, but it can never drive the dashboard's headline KPIs."
+                                >
+                                  Rejected
+                                </Badge>
+                                <DocumentReviewSheet document={doc} onApproved={refetch} />
+                              </>
                             )}
                           </div>
                         </TableCell>

@@ -234,4 +234,110 @@ describe('DocumentsPage', () => {
     await waitFor(() => expect(dataService.getAvailableExternalFilings).toHaveBeenCalledTimes(2))
     await waitFor(() => expect(dataService.getHiddenExternalFilings).toHaveBeenCalledTimes(2))
   })
+
+  it('does not show a Review button for a document with no confidence tier', async () => {
+    render(<DocumentsPage />)
+    await screen.findByText('ANY_DOCUMENT.pdf')
+
+    expect(screen.queryByRole('button', { name: /review ANY_DOCUMENT\.pdf/i })).not.toBeInTheDocument()
+  })
+
+  it('opens the review sheet for a needs_review document and shows its extracted values', async () => {
+    vi.spyOn(dataService, 'getDocuments').mockResolvedValue([
+      {
+        id: 5, filename: 'shaky-extraction.pdf', file_size: 1024, status: 'completed',
+        created_at: '2025-12-31T00:00:00Z', extraction_confidence_tier: 'needs_review',
+      },
+    ])
+    vi.spyOn(dataService, 'getDocument').mockResolvedValue({
+      id: 5, filename: 'shaky-extraction.pdf', file_size: 1024, status: 'completed',
+      created_at: '2025-12-31T00:00:00Z', extraction_confidence_tier: 'needs_review',
+      financial_metrics: {
+        revenue: null, customers: null, cash: 120_000, ebitda: null,
+        gross_margin: null, operating_margin: null,
+        extraction_confidence: 55, extraction_confidence_tier: 'needs_review',
+        extraction_confidence_reasons: null,
+      },
+    })
+
+    render(<DocumentsPage />)
+    const reviewButton = await screen.findByRole('button', { name: /review shaky-extraction\.pdf/i })
+    fireEvent.click(reviewButton)
+
+    expect(await screen.findByText('€120K')).toBeInTheDocument()
+    expect(screen.getByText('55% confidence')).toBeInTheDocument()
+    expect(screen.getAllByText('Not reported').length).toBeGreaterThan(0)
+  })
+
+  it('approves a document from the review sheet and refreshes the document list', async () => {
+    vi.spyOn(dataService, 'getDocuments').mockResolvedValue([
+      {
+        id: 5, filename: 'shaky-extraction.pdf', file_size: 1024, status: 'completed',
+        created_at: '2025-12-31T00:00:00Z', extraction_confidence_tier: 'needs_review',
+      },
+    ])
+    vi.spyOn(dataService, 'getDocument').mockResolvedValue({
+      id: 5, filename: 'shaky-extraction.pdf', file_size: 1024, status: 'completed',
+      created_at: '2025-12-31T00:00:00Z', extraction_confidence_tier: 'needs_review',
+      financial_metrics: {
+        revenue: null, customers: null, cash: 120_000, ebitda: null,
+        gross_margin: null, operating_margin: null,
+        extraction_confidence: 55, extraction_confidence_tier: 'needs_review',
+        extraction_confidence_reasons: null,
+      },
+    })
+    const approveSpy = vi.spyOn(dataService, 'approveDocument').mockResolvedValue({
+      id: 5, filename: 'shaky-extraction.pdf', file_size: 1024, status: 'completed',
+      created_at: '2025-12-31T00:00:00Z', extraction_confidence_tier: 'auto_accept',
+      financial_metrics: null,
+    })
+
+    render(<DocumentsPage />)
+    fireEvent.click(await screen.findByRole('button', { name: /review shaky-extraction\.pdf/i }))
+    await screen.findByText('€120K')
+
+    fireEvent.click(screen.getByRole('button', { name: /approve for dashboard/i }))
+
+    await waitFor(() => expect(approveSpy).toHaveBeenCalledWith(5))
+    // onApproved refetches the document list -- once on mount, once after approve.
+    await waitFor(() => expect(dataService.getDocuments).toHaveBeenCalledTimes(2))
+  })
+
+  it('shows a destructive "Rejected" tag for a rejected document', async () => {
+    vi.spyOn(dataService, 'getDocuments').mockResolvedValue([
+      {
+        id: 6, filename: 'agm-notice.pdf', file_size: 1024, status: 'completed',
+        created_at: '2025-12-31T00:00:00Z', extraction_confidence_tier: 'rejected',
+      },
+    ])
+    render(<DocumentsPage />)
+    expect(await screen.findByText('Rejected')).toBeInTheDocument()
+  })
+
+  it('opens the review sheet for a rejected document view-only, with no Approve button', async () => {
+    vi.spyOn(dataService, 'getDocuments').mockResolvedValue([
+      {
+        id: 6, filename: 'agm-notice.pdf', file_size: 1024, status: 'completed',
+        created_at: '2025-12-31T00:00:00Z', extraction_confidence_tier: 'rejected',
+      },
+    ])
+    vi.spyOn(dataService, 'getDocument').mockResolvedValue({
+      id: 6, filename: 'agm-notice.pdf', file_size: 1024, status: 'completed',
+      created_at: '2025-12-31T00:00:00Z', extraction_confidence_tier: 'rejected',
+      financial_metrics: {
+        revenue: null, customers: null, cash: null, ebitda: null,
+        gross_margin: null, operating_margin: null,
+        extraction_confidence: 0, extraction_confidence_tier: 'rejected',
+        extraction_confidence_reasons: ['No recognized financial-statement section was found in this document.'],
+      },
+    })
+    const approveSpy = vi.spyOn(dataService, 'approveDocument')
+
+    render(<DocumentsPage />)
+    fireEvent.click(await screen.findByRole('button', { name: /review agm-notice\.pdf/i }))
+
+    expect(await screen.findByText('No recognized financial-statement section was found in this document.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /approve for dashboard/i })).not.toBeInTheDocument()
+    expect(approveSpy).not.toHaveBeenCalled()
+  })
 })

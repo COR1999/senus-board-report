@@ -22,6 +22,15 @@ export interface UseAsyncDataOptions {
    * AiInsights' Gemini call) on every no-op poll.
    */
   pollIntervalMs?: number
+  /**
+   * When `false`, skips fetching entirely (no request, `loading` stays
+   * `false`, `data` stays `null`) -- for fetch-on-demand cases like the
+   * document review sheet, which shouldn't hit the network for every row
+   * on the page, only the one a user actually opens. Defaults to `true`
+   * (today's always-fetch-on-mount behavior, unchanged for every existing
+   * caller).
+   */
+  enabled?: boolean
 }
 
 /**
@@ -39,9 +48,9 @@ export interface UseAsyncDataOptions {
  * instead of being silently swallowed.
  */
 export function useAsyncData<T>(fetcher: () => Promise<T>, options: UseAsyncDataOptions = {}): AsyncDataState<T> {
-  const { deps = [], pollIntervalMs } = options
+  const { deps = [], pollIntervalMs, enabled = true } = options
   const [data, setData] = useState<T | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(enabled)
   const [error, setError] = useState<string | null>(null)
   const [nonce, setNonce] = useState(0)
 
@@ -56,6 +65,11 @@ export function useAsyncData<T>(fetcher: () => Promise<T>, options: UseAsyncData
   }, [])
 
   useEffect(() => {
+    if (!enabled) {
+      setLoading(false)
+      return
+    }
+
     let cancelled = false
 
     const load = () => {
@@ -86,7 +100,7 @@ export function useAsyncData<T>(fetcher: () => Promise<T>, options: UseAsyncData
       if (timer) clearInterval(timer)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nonce, pollIntervalMs, ...deps])
+  }, [nonce, pollIntervalMs, enabled, ...deps])
 
   return { data, loading, error, refetch }
 }

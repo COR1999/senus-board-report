@@ -162,6 +162,7 @@ class ReportService:
         confidence = content.get("extraction_confidence")
         metrics.extraction_confidence = confidence.score if confidence else None
         metrics.extraction_confidence_tier = confidence.tier if confidence else None
+        metrics.extraction_confidence_reasons = confidence.reasons if confidence else None
 
         metrics.extracted_at = datetime.utcnow()
 
@@ -216,7 +217,17 @@ class ReportService:
     # =========================================================
     # MAIN PIPELINE (FAILSAFE FIRST)
     # =========================================================
-    async def _generate(self, document: Document, report: Report) -> Report:
+    async def _generate(self, document: Document, report: Report, *, persist_on_reject: bool = True) -> Report:
+        """
+        `persist_on_reject` distinguishes a first-time extraction (upload,
+        IR import, or `get_or_create_report`'s first call -- nothing exists
+        for this document yet, so a rejected attempt is safe, and useful,
+        to keep for review) from a `force=True` regenerate of a document
+        that already has better data (`generate_report` passes
+        `persist_on_reject=not force`) -- a regenerate that scores worse
+        than what's already there must never overwrite it. See the
+        `confidence.tier == "rejected"` branch below.
+        """
         try:
             from app.services.financial_metrics_extractor import FinancialMetricsExtractor
 
@@ -332,7 +343,29 @@ class ReportService:
                 cashflow_reconciles=cashflow_reconciles,
                 vision_extracted=vision_extracted,
             )
+            content["extraction_confidence"] = confidence
+
             if confidence.tier == "rejected":
+                if persist_on_reject:
+                    # A rejected document is still persisted (revised from
+                    # this project's original PR #42 policy of keeping
+                    # nothing at all) -- a human reviewing *why* an
+                    # extraction failed needs the actual attempted values
+                    # and the confidence gate's own reasons on hand, not
+                    # just the one-time 422 message below. Never a risk to
+                    # the dashboard either way: `_IS_CONFIDENT_ENOUGH_FOR_
+                    # DASHBOARD` (metrics.py) excludes any row scoring
+                    # below 95 that hasn't been human-approved, and a
+                    # `rejected` row is never offered an approve path (see
+                    # documents.py's `approve_document`) -- this is
+                    # strictly view-only. Skipped on a `force=True`
+                    # regenerate of a document that already has better
+                    # data (`persist_on_reject=False`) -- a worse retry
+                    # must never overwrite what's already there.
+                    await self._save_metrics(document.id, content)
+                    report.status = "rejected"
+                    report.updated_at = datetime.utcnow()
+                    await self.db.commit()
                 # Raised ahead of the broad `except Exception` below (see
                 # the `except LowConfidenceExtractionError: raise` clause)
                 # so it reaches whichever caller invoked `generate_report`
@@ -342,8 +375,6 @@ class ReportService:
                 # consequence. See extraction_confidence.py's module
                 # docstring for the incident this closes.
                 raise LowConfidenceExtractionError(confidence)
-
-            content["extraction_confidence"] = confidence
 
             # =====================================================
             # 4. REPORT FIELDS
@@ -395,10 +426,12 @@ class ReportService:
             return report
 
         except LowConfidenceExtractionError:
-            # Not caught by the broad `except Exception` below -- nothing
-            # about this document's report/metrics should be touched or
-            # persisted here; the caller (documents.py's `_ingest_document`
-            # or reports.py's regenerate route) decides the consequence.
+            # Not caught by the broad `except Exception` below -- whatever
+            # this method itself decided to persist (see `persist_on_reject`
+            # above) already happened before this raise; the caller
+            # (documents.py's `_ingest_document`, reports.py's
+            # `generate_or_get_report`, or reports.py's regenerate route)
+            # only decides the HTTP-level consequence from here.
             raise
 
         except Exception as e:
@@ -493,7 +526,11 @@ class ReportService:
             return report
 
         await self.db.refresh(report)
-        return await self._generate(document, report)
+        # `force=True` is always a regenerate of a document that already has
+        # (better) existing data -- `persist_on_reject=False` there protects
+        # it from being overwritten by a worse retry. See `_generate`'s own
+        # docstring.
+        return await self._generate(document, report, persist_on_reject=not force)
 
     # =========================================================
     # READ HELPERS

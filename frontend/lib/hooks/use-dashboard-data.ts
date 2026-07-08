@@ -6,6 +6,7 @@ import {
   getChartData,
   getReports,
   getDocuments,
+  getDocument,
   getAvailableExternalFilings,
   getHiddenExternalFilings,
   getDashboardPeriods,
@@ -13,6 +14,7 @@ import {
   type ChartDataPoint,
   type Report,
   type DocumentItem,
+  type DocumentDetail,
   type ExternalFiling,
   type DashboardPeriod,
 } from '@/lib/data-service'
@@ -50,6 +52,21 @@ export function useReports(options?: UseAsyncDataOptions): AsyncDataState<Report
 
 export function useDocuments(options?: UseAsyncDataOptions): AsyncDataState<DocumentItem[]> {
   return useAsyncData(getDocuments, options)
+}
+
+/**
+ * Full document detail (including extracted financial values) for the
+ * review sheet -- fetched only while `documentId` is non-null (see
+ * `enabled` on `useAsyncData`) and `null` while a row's sheet is closed, so
+ * opening one document's review doesn't fetch detail for every row on the
+ * page.
+ */
+export function useDocumentDetail(documentId: number | null, options?: UseAsyncDataOptions): AsyncDataState<DocumentDetail> {
+  return useAsyncData(() => getDocument(documentId as number), {
+    ...options,
+    deps: [documentId, ...(options?.deps ?? [])],
+    enabled: documentId !== null && (options?.enabled ?? true),
+  })
 }
 
 // No `pollIntervalMs` -- checked on page load and via a manual "Check now"

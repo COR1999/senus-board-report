@@ -17,6 +17,21 @@ export function formatPercent(value: number, opts?: { showSign?: boolean }): str
   return `${sign}${value}%`
 }
 
+/**
+ * Round-number, currency-short formatting (e.g. `formatCurrencyShort(250_000)`
+ * -> "€250K") -- easier to scan at a glance than a raw value like "250000".
+ * Shared by revenue-chart.tsx's axis/tooltip labels and the documents
+ * review panel's extracted-value display, rather than each maintaining its
+ * own copy of the same magnitude-bucketing logic.
+ */
+export function formatCurrencyShort(value: number): string {
+  const magnitude = Math.abs(value)
+  const sign = value < 0 ? '-' : ''
+  if (magnitude >= 1_000_000) return `${sign}€${(magnitude / 1_000_000).toFixed(1)}M`
+  if (magnitude >= 1_000) return `${sign}€${Math.round(magnitude / 1_000)}K`
+  return `${sign}€${magnitude}`
+}
+
 /** Formats a byte count as a readable size (e.g. `formatFileSize(245_000)` -> "239 KB"). */
 export function formatFileSize(bytes: number | null): string {
   if (bytes === null) return '—'

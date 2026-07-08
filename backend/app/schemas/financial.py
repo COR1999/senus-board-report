@@ -36,7 +36,10 @@ class FinancialMetricsResponse(FinancialMetricsBase):
         None, description="0-100 extraction confidence score, or null if not yet scored."
     )
     extraction_confidence_tier: Optional[str] = Field(
-        None, description="'auto_accept' / 'needs_review', or null if not yet scored."
+        None, description="'auto_accept' / 'needs_review' / 'rejected', or null if not yet scored."
+    )
+    extraction_confidence_reasons: Optional[List[str]] = Field(
+        None, description="Human-readable point breakdown behind the score above -- see score_extraction()."
     )
 
     model_config = ConfigDict(from_attributes=True)
