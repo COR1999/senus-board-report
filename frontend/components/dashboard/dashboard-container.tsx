@@ -69,6 +69,14 @@ export function DashboardContainer() {
     )
   }
 
+  // The Report row backing whichever period is currently shown -- resolved
+  // from metrics.document_id (the backend's own anchor, correct both when a
+  // period is explicitly selected and in the default "latest" case) against
+  // the reports list already fetched above. `null` when nothing matches yet
+  // (e.g. the empty-dashboard state) -- AiInsights still generates live in
+  // that case, it just has nothing to persist against.
+  const currentReport = (reports ?? []).find((r) => r.document_id === metrics.document_id)
+
   // Real date context, not a fabricated cadence claim -- every metric below
   // that has an actual prior-period comparative (revenue, ebitda, cash, and
   // the stat-strip ratios) shares the same current period, since they all
@@ -189,7 +197,7 @@ export function DashboardContainer() {
           (rather than beside the chart, further down) per feedback that the
           narrative commentary should be one of the first things a board
           reader sees, not something they scroll past the chart to find. */}
-      <AiInsights metrics={metrics} />
+      <AiInsights metrics={metrics} reportId={currentReport?.id ?? null} />
 
       {/* Secondary metrics: Bookings, Profitability, Cash & Liquidity, Solvency & Leverage, Returns */}
       <KpiStatStrip items={statStripConfig} periodLabel={metrics.current_period ?? undefined} />

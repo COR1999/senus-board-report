@@ -1,7 +1,6 @@
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { AiInsights } from '@/components/dashboard/ai-insights'
 import * as dataService from '@/lib/data-service'
-import { resetInsightsCache } from '@/lib/insights-cache'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 const mockMetrics = {
@@ -20,156 +19,138 @@ const mockMetrics = {
   document_id: 1,
 }
 
-const mockMetricsAfterNewUpload = {
-  ...mockMetrics,
-  revenue: { value: '€1,050,000', change: 25.5, trend: 'up' as const, history: [] },
-  current_period: 'Jul 2025 – Dec 2025',
-  prior_period: 'Jul 2024 – Dec 2024',
-}
-
 describe('AiInsights', () => {
   beforeEach(() => {
-    // The insights cache is module-level, not component state (see
-    // lib/insights-cache.ts) -- reset it so one test's cached result doesn't
-    // leak into the next, since vitest doesn't reset modules between `it()`
-    // blocks by default.
-    resetInsightsCache()
-    vi.spyOn(dataService, 'getAiInsights').mockResolvedValue({
-      insights: [
-        { text: 'ANY_INSIGHT_TEXT', type: 'positive', action: 'ANY_ACTION_TEXT', category: 'Growth & Revenue' },
-      ],
-      isFallback: false,
-    })
+    vi.restoreAllMocks()
   })
 
-  // No `clearMocks` in vitest.config.ts, so spy call counts otherwise leak
-  // across tests in this file (same issue found in feature/document-report-
-  // actions) -- several tests below assert exact call counts.
   afterEach(() => {
     vi.restoreAllMocks()
   })
 
-  it('renders without crashing', () => {
-    const { container } = render(<AiInsights metrics={mockMetrics} />)
-    expect(container.firstChild).toBeInTheDocument()
+  it('renders a stored result directly, with no live Gemini call at all', async () => {
+    const getStoredSpy = vi.spyOn(dataService, 'getStoredInsights').mockResolvedValue({
+      report_id: 7,
+      insights: [{ text: 'Stored insight text', type: 'positive', action: '', category: undefined }],
+      model_version: 'gemini-2.5-flash',
+      generated_at: '2026-01-01T00:00:00Z',
+    })
+    const getLiveSpy = vi.spyOn(dataService, 'getAiInsights')
+
+    render(<AiInsights metrics={mockMetrics} reportId={7} />)
+
+    expect(await screen.findByText('Stored insight text')).toBeInTheDocument()
+    expect(getStoredSpy).toHaveBeenCalledWith(7)
+    expect(getLiveSpy).not.toHaveBeenCalled()
   })
 
-  it('renders fetched insights with a type badge', async () => {
-    render(<AiInsights metrics={mockMetrics} />)
-    expect(await screen.findByText('ANY_INSIGHT_TEXT')).toBeInTheDocument()
-    expect(await screen.findByText('Positive')).toBeInTheDocument()
-  })
-
-  it('renders the category caption and recommended action alongside the observation', async () => {
-    render(<AiInsights metrics={mockMetrics} />)
-    expect(await screen.findByText('ANY_INSIGHT_TEXT')).toBeInTheDocument()
-    expect(screen.getByText('Growth & Revenue')).toBeInTheDocument()
-    expect(screen.getByText('ANY_ACTION_TEXT')).toBeInTheDocument()
-  })
-
-  it('disables the refresh button once insights exist for the current data, and blocks a click from re-firing', async () => {
-    // A time-based cooldown alone still lets a user re-spend quota
-    // re-analyzing data that hasn't changed. The real guard is "has a new
-    // report actually landed since the last generation" -- if not, the
-    // button stays disabled regardless of how much time has passed.
-    render(<AiInsights metrics={mockMetrics} />)
-    await screen.findByText('ANY_INSIGHT_TEXT')
-    expect(dataService.getAiInsights).toHaveBeenCalledTimes(1)
-
-    const button = screen.getByRole('button', { name: 'Refresh AI insights' })
-    expect(button).toBeDisabled()
-    expect(button).toHaveAttribute('title', 'Already up to date -- upload a new report to regenerate')
-
-    fireEvent.click(button)
-    fireEvent.click(button)
-
-    expect(dataService.getAiInsights).toHaveBeenCalledTimes(1)
-  })
-
-  it('does not re-fetch insights on a re-render with the same metrics reference', async () => {
-    // This is what makes background polling (useAsyncData's pollIntervalMs)
-    // safe: a poll that returns unchanged content keeps the same object
-    // reference, so re-rendering with it must not trigger another Gemini
-    // call -- only a *genuinely new* metrics object should.
-    const { rerender } = render(<AiInsights metrics={mockMetrics} />)
-    await screen.findByText('ANY_INSIGHT_TEXT')
-    expect(dataService.getAiInsights).toHaveBeenCalledTimes(1)
-
-    rerender(<AiInsights metrics={mockMetrics} />)
-
-    expect(dataService.getAiInsights).toHaveBeenCalledTimes(1)
-  })
-
-  it('generates fresh insights reflecting a new document/report, not the old ones', async () => {
-    // Simulates the real end-to-end path: a new PDF is uploaded -> the
-    // backend extracts new metrics -> the dashboard's data layer eventually
-    // hands AiInsights a genuinely new `metrics` object (today: on
-    // remount/navigation; with feature/ai-insights-auto-refresh merged in:
-    // automatically, via polling). Whatever delivers the new object, this
-    // is the contract AiInsights must honor: a new object -> a new Gemini
-    // call built from the new numbers, not a replay of the old commentary.
-    vi.spyOn(dataService, 'getAiInsights')
-      .mockResolvedValueOnce({
-        insights: [{ text: 'OLD_INSIGHT_TEXT', type: 'positive', action: 'OLD_ACTION_TEXT' }],
-        isFallback: false,
-      })
-      .mockResolvedValueOnce({
-        insights: [{ text: 'NEW_INSIGHT_TEXT', type: 'opportunity', action: 'NEW_ACTION_TEXT' }],
-        isFallback: false,
-      })
-
-    const { rerender } = render(<AiInsights metrics={mockMetrics} />)
-    expect(await screen.findByText('OLD_INSIGHT_TEXT')).toBeInTheDocument()
-    expect(dataService.getAiInsights).toHaveBeenCalledWith(mockMetrics)
-
-    rerender(<AiInsights metrics={mockMetricsAfterNewUpload} />)
-
-    expect(await screen.findByText('NEW_INSIGHT_TEXT')).toBeInTheDocument()
-    expect(screen.queryByText('OLD_INSIGHT_TEXT')).not.toBeInTheDocument()
-    expect(dataService.getAiInsights).toHaveBeenLastCalledWith(mockMetricsAfterNewUpload)
-    expect(dataService.getAiInsights).toHaveBeenCalledTimes(2)
-
-    // And once the new data has been analyzed, the button locks again --
-    // there's nothing newer to regenerate from until another report arrives.
-    const button = screen.getByRole('button', { name: 'Refresh AI insights' })
-    expect(button).toBeDisabled()
-    fireEvent.click(button)
-    expect(dataService.getAiInsights).toHaveBeenCalledTimes(2)
-  })
-
-  it('keeps the refresh button enabled after a fallback result, instead of treating it as up to date', async () => {
-    // Real production bug: a quota-exhausted/failed Gemini call previously
-    // got cached identically to a real success, permanently disabling
-    // refresh for that data even though nothing real was ever generated --
-    // see getAiInsights' own docstring in data-service.ts.
+  it('falls back to a live generation and persists it when nothing is stored yet', async () => {
+    vi.spyOn(dataService, 'getStoredInsights').mockResolvedValue(null)
     vi.spyOn(dataService, 'getAiInsights').mockResolvedValue({
-      insights: [{ text: 'FALLBACK_TEXT', type: 'positive', action: '' }],
-      isFallback: true,
+      insights: [{ text: 'Freshly generated insight', type: 'opportunity', action: '', category: undefined }],
+      isFallback: false,
+      model: 'gemini-2.5-flash',
+    })
+    const saveSpy = vi.spyOn(dataService, 'saveInsights').mockResolvedValue({
+      report_id: 7,
+      insights: [],
+      model_version: 'gemini-2.5-flash',
+      generated_at: '2026-01-01T00:00:00Z',
     })
 
-    render(<AiInsights metrics={mockMetrics} />)
-    await screen.findByText('FALLBACK_TEXT')
+    render(<AiInsights metrics={mockMetrics} reportId={7} />)
 
-    const button = screen.getByRole('button', { name: 'Refresh AI insights' })
-    expect(button).not.toBeDisabled()
+    expect(await screen.findByText('Freshly generated insight')).toBeInTheDocument()
+    await waitFor(() =>
+      expect(saveSpy).toHaveBeenCalledWith(
+        7,
+        [{ text: 'Freshly generated insight', type: 'opportunity', action: '', category: undefined }],
+        'gemini-2.5-flash'
+      )
+    )
   })
 
-  it('does not re-fetch after unmount/remount with unchanged data (e.g. navigating away and back)', async () => {
-    // Regression test: AiInsights only lives on the dashboard route, so
-    // visiting another page (Settings to change the theme, Reports,
-    // Documents) and returning unmounts and remounts it. A per-instance
-    // guard would reset on that remount and trigger a wasted,
-    // non-deterministic Gemini call even though the underlying report data
-    // hasn't changed -- the module-level cache in lib/insights-cache.ts must
-    // survive that remount.
-    const { unmount } = render(<AiInsights metrics={mockMetrics} />)
-    expect(await screen.findByText('ANY_INSIGHT_TEXT')).toBeInTheDocument()
-    expect(dataService.getAiInsights).toHaveBeenCalledTimes(1)
+  it('never persists fallback content -- a quota-exhausted result still renders but is not saved', async () => {
+    vi.spyOn(dataService, 'getStoredInsights').mockResolvedValue(null)
+    vi.spyOn(dataService, 'getAiInsights').mockResolvedValue({
+      insights: [{ text: 'Fallback content', type: 'positive', action: '', category: undefined }],
+      isFallback: true,
+      model: null,
+    })
+    const saveSpy = vi.spyOn(dataService, 'saveInsights')
 
-    unmount()
-    render(<AiInsights metrics={mockMetrics} />)
+    render(<AiInsights metrics={mockMetrics} reportId={7} />)
 
-    expect(await screen.findByText('ANY_INSIGHT_TEXT')).toBeInTheDocument()
-    expect(dataService.getAiInsights).toHaveBeenCalledTimes(1)
+    expect(await screen.findByText('Fallback content')).toBeInTheDocument()
+    expect(saveSpy).not.toHaveBeenCalled()
+  })
+
+  it('generates live without ever calling getStoredInsights/saveInsights when reportId is null', async () => {
+    const getStoredSpy = vi.spyOn(dataService, 'getStoredInsights')
+    const saveSpy = vi.spyOn(dataService, 'saveInsights')
+    vi.spyOn(dataService, 'getAiInsights').mockResolvedValue({
+      insights: [{ text: 'No report to anchor on yet', type: 'positive', action: '', category: undefined }],
+      isFallback: false,
+      model: 'gemini-2.5-flash',
+    })
+
+    render(<AiInsights metrics={mockMetrics} reportId={null} />)
+
+    expect(await screen.findByText('No report to anchor on yet')).toBeInTheDocument()
+    expect(getStoredSpy).not.toHaveBeenCalled()
+    expect(saveSpy).not.toHaveBeenCalled()
+  })
+
+  it('disables the refresh button once a stored result exists, with an explanatory tooltip', async () => {
+    vi.spyOn(dataService, 'getStoredInsights').mockResolvedValue({
+      report_id: 7,
+      insights: [{ text: 'Stored insight text', type: 'positive', action: '', category: undefined }],
+      model_version: 'gemini-2.5-flash',
+      generated_at: '2026-01-01T00:00:00Z',
+    })
+
+    render(<AiInsights metrics={mockMetrics} reportId={7} />)
+
+    await screen.findByText('Stored insight text')
+    const refreshButton = screen.getByRole('button', { name: 'Refresh AI insights' })
+    expect(refreshButton).toBeDisabled()
+    expect(refreshButton).toHaveAttribute('title', 'Already up to date -- upload a new report to regenerate')
+  })
+
+  it('leaves refresh enabled after a fallback result, and clicking it triggers a real second generation', async () => {
+    vi.spyOn(dataService, 'getStoredInsights').mockResolvedValue(null)
+    const getLiveSpy = vi
+      .spyOn(dataService, 'getAiInsights')
+      .mockResolvedValueOnce({
+        insights: [{ text: 'First attempt (fallback)', type: 'positive', action: '', category: undefined }],
+        isFallback: true,
+        model: null,
+      })
+      .mockResolvedValueOnce({
+        insights: [{ text: 'Second attempt (real)', type: 'positive', action: '', category: undefined }],
+        isFallback: false,
+        model: 'gemini-2.5-flash',
+      })
+    const saveSpy = vi.spyOn(dataService, 'saveInsights').mockResolvedValue({
+      report_id: 7,
+      insights: [],
+      model_version: 'gemini-2.5-flash',
+      generated_at: '2026-01-01T00:00:00Z',
+    })
+
+    render(<AiInsights metrics={mockMetrics} reportId={7} />)
+    await screen.findByText('First attempt (fallback)')
+
+    const refreshButton = screen.getByRole('button', { name: 'Refresh AI insights' })
+    expect(refreshButton).not.toBeDisabled()
+    fireEvent.click(refreshButton)
+
+    expect(await screen.findByText('Second attempt (real)')).toBeInTheDocument()
+    expect(getLiveSpy).toHaveBeenCalledTimes(2)
+    expect(saveSpy).toHaveBeenCalledWith(
+      7,
+      [{ text: 'Second attempt (real)', type: 'positive', action: '', category: undefined }],
+      'gemini-2.5-flash'
+    )
   })
 })

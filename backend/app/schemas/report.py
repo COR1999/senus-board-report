@@ -55,6 +55,38 @@ class ReportDeleteResponse(BaseModel):
     deleted: bool
 
 
+# ==================== AI Board Insights (persisted) ====================
+# The frontend's own Gemini integration (`GEMINI_INSIGHTS_API_KEY`,
+# app/api/insights/route.ts) generates these client-side; the backend only
+# ever persists what the frontend already generated -- see
+# `app/models/report_insights.py` for the full reasoning.
+class StoredInsight(BaseModel):
+    """Mirrors the frontend's own `Insight` shape (frontend/lib/insights.ts) exactly."""
+
+    text: str
+    type: str
+    action: str = ""
+    category: Optional[str] = None
+
+
+class ReportInsightsUpsert(BaseModel):
+    """Request body for PUT /api/reports/{report_id}/insights."""
+
+    insights: List[StoredInsight]
+    model_version: Optional[str] = None
+
+
+class ReportInsightsResponse(BaseModel):
+    """Response schema for GET/PUT /api/reports/{report_id}/insights."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    report_id: int
+    insights: List[StoredInsight]
+    model_version: Optional[str] = None
+    generated_at: datetime
+
+
 # ==================== Dashboard ====================
 class DashboardDocument(BaseModel):
     id: int
