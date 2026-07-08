@@ -109,11 +109,15 @@ a *running* server — it is not part of the pytest suite.
   via a committed `.env`).
 - **Uploaded PDFs are stored on local disk** (`uploads/`), which is
   ephemeral on Railway — files will not survive a redeploy or restart.
-  This is not currently a functional problem because extracted text is
-  persisted to Postgres immediately on upload and nothing re-reads the
-  file from disk afterwards, but it means there is no "download the
-  original PDF" capability today. Move to object storage (e.g. S3/R2) if
-  that feature is ever needed.
+  This is not a functional problem for the extracted metrics (persisted to
+  Postgres immediately on upload, never re-read from disk afterwards), but
+  it does affect `GET /api/documents/{id}/file` (download the original
+  PDF): that endpoint only works for documents uploaded since the most
+  recent deploy/restart. Confirmed empirically (2026-07-08) against the
+  real deployed document — its DB row and metrics were intact, but the
+  file itself was already gone, and the endpoint returned a 404 with a
+  clear "no longer available" message rather than a generic error. Move to
+  object storage (e.g. S3/R2) if reliable long-term download matters.
 - CORS automatically allows all origins (`*`) when `DEBUG=True` or
   `ENVIRONMENT=development` — make sure both are set correctly in
   production so this widening doesn't apply.

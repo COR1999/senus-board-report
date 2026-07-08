@@ -130,3 +130,27 @@ async def test_rejects_empty_file_with_400_not_500(async_session):
         await documents_routes.upload_document(upload_file, async_session)
 
     assert exc_info.value.status_code == 400
+
+
+@pytest.mark.anyio
+async def test_rejects_oversized_file_with_413(async_session):
+    # FastAPI/Starlette impose no default request-body size limit on their
+    # own -- this is the only enforcement point.
+    oversized_content = b"x" * (documents_routes.MAX_UPLOAD_SIZE_BYTES + 1)
+    upload_file = UploadFile(filename="huge.pdf", file=BytesIO(oversized_content))
+
+    with pytest.raises(HTTPException) as exc_info:
+        await documents_routes.upload_document(upload_file, async_session)
+
+    assert exc_info.value.status_code == 413
+    assert "20MB" in exc_info.value.detail
+
+
+@pytest.mark.anyio
+async def test_accepts_a_file_right_at_the_size_limit(async_session):
+    exact_limit_content = b"x" * documents_routes.MAX_UPLOAD_SIZE_BYTES
+    upload_file = UploadFile(filename="exactly-at-limit.pdf", file=BytesIO(exact_limit_content))
+
+    response = await documents_routes.upload_document(upload_file, async_session)
+
+    assert response.filename == "exactly-at-limit.pdf"

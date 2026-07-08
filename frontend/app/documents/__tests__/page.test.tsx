@@ -75,10 +75,36 @@ describe('DocumentsPage', () => {
     expect(screen.queryByText('other-report.pdf')).not.toBeInTheDocument()
   })
 
-  it('shows a disabled year/month filter button noting it is coming soon', async () => {
+  it('filters by period (year/month of created_at)', async () => {
+    vi.spyOn(dataService, 'getDocuments').mockResolvedValue([
+      { id: 1, filename: 'december.pdf', file_size: 1024, status: 'completed', created_at: '2025-12-15T12:00:00Z' },
+      { id: 2, filename: 'june.pdf', file_size: 1024, status: 'completed', created_at: '2025-06-15T12:00:00Z' },
+    ])
+
     render(<DocumentsPage />)
+    await screen.findByText('december.pdf')
+
+    fireEvent.click(screen.getByRole('combobox', { name: 'Filter by period' }))
+    fireEvent.click(await screen.findByRole('option', { name: 'December 2025' }))
+
+    expect(await screen.findByText('december.pdf')).toBeInTheDocument()
+    expect(screen.queryByText('june.pdf')).not.toBeInTheDocument()
+  })
+
+  it('rejects an oversized file before uploading, with no network call', async () => {
+    const uploadSpy = vi.spyOn(dataService, 'uploadPDF')
+
+    const { container } = render(<DocumentsPage />)
     await screen.findByText('ANY_DOCUMENT.pdf')
-    expect(screen.getByRole('button', { name: /filter by period/i })).toBeDisabled()
+
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement
+    const oversizedFile = new File(['x'.repeat(10)], 'huge.pdf', { type: 'application/pdf' })
+    Object.defineProperty(oversizedFile, 'size', { value: 21 * 1024 * 1024 })
+
+    fireEvent.change(fileInput, { target: { files: [oversizedFile] } })
+
+    expect(await screen.findByText(/huge\.pdf.*over the 20MB upload limit/i)).toBeInTheDocument()
+    expect(uploadSpy).not.toHaveBeenCalled()
   })
 
   it('links the download button to the real file download URL', async () => {
