@@ -90,4 +90,13 @@ class TestBillingExhaustedBackoff:
         result = svc.generate_report("some prompt")
 
         assert result["ai_commentary"] == "AI unavailable or failed (safe fallback)."
-        assert result["financial_metrics"]["revenue"] == 0
+        # None, not a fabricated 0 -- this fallback fires exactly when the
+        # deterministic baseline is incomplete (see report_service._generate,
+        # which only calls Gemini at all when _baseline_is_complete is
+        # False), so a `0` here would silently override a genuinely-missing
+        # baseline field with a fake zero in the merge. Real bug found by
+        # testing against the real Information Document filing (its
+        # undisclosed EBITDA came back as 0 instead of null).
+        assert result["financial_metrics"]["revenue"] is None
+        assert result["financial_metrics"]["ebitda"] is None
+        assert result["financial_metrics"]["customers"] is None

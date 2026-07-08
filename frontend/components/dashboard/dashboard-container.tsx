@@ -112,8 +112,24 @@ export function DashboardContainer() {
     hasComparison: metrics[key].history.length >= 2,
   }))
 
+  // Every figure on this dashboard is EUR-only (Senus is an Irish company;
+  // no multi-currency document exists in this project) and every KPI here
+  // shares the same "latest" extraction (see get_dashboard_metrics) -- one
+  // clear statement at the top of the page, not repeated per card, matches
+  // how a real board pack states its "as of" date once on the cover.
+  const dataAsOfLabel = metrics.data_extracted_at
+    ? new Date(metrics.data_extracted_at).toLocaleDateString('en-US', {
+        year: 'numeric', month: 'short', day: 'numeric',
+      })
+    : null
+
   return (
     <DashboardShell title="Executive Dashboard" description="How the business is performing, at a glance">
+      {dataAsOfLabel && (
+        <p className="-mt-2 text-xs text-muted-foreground">
+          All figures in EUR · Data as of {dataAsOfLabel}
+        </p>
+      )}
       {/* Hero KPI row */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {heroMetricConfig.map(({ key, title, icon: Icon, timeframe }) => (

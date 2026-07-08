@@ -30,6 +30,7 @@ from app.schemas.financial import (
 from app.services.pdf_service import PDFExtractionService
 from app.services.report_service import ReportService
 from app.services import investor_relations_client
+from app.services.extraction_confidence import LowConfidenceExtractionError
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +69,8 @@ def build_document_response(
             gross_margin=metrics.gross_margin,
             operating_margin=metrics.operating_margin,
             extracted_at=metrics.extracted_at or doc.extracted_at,
+            extraction_confidence=metrics.extraction_confidence,
+            extraction_confidence_tier=metrics.extraction_confidence_tier,
         )
 
     return DocumentWithText(
@@ -156,6 +159,22 @@ async def _ingest_document(
     try:
         service = ReportService(db)
         report = await service.generate_report(document.id)
+    except LowConfidenceExtractionError as e:
+        # Nothing about this document is trustworthy enough to keep. A
+        # plain `db.rollback()` here is NOT enough: `generate_report`
+        # already committed the initial "pending" Report row (and, via
+        # that same commit, the Document row flushed above) before
+        # `_generate` ever reaches the confidence check -- both are
+        # already durable by this point, confirmed by testing, not
+        # assumed. Deleting the Document explicitly cascades to its
+        # Report/FinancialMetrics/BalanceSheetMetrics rows (see the
+        # `cascade="all, delete-orphan"` relationships on Document), so a
+        # rejected document leaves no trace at all (see
+        # extraction_confidence.py's module docstring for the incident
+        # this closes).
+        await db.delete(document)
+        await db.commit()
+        raise HTTPException(status_code=422, detail=str(e))
     except Exception as e:
         logger.warning(f"Report generation failed: {e}")
 
@@ -344,13 +363,33 @@ async def list_documents(
         .offset(skip)
         .limit(limit)
     )
+    docs = result.scalars().all()
+
+    # A single batched query for extraction_confidence_tier, not one
+    # per-document lookup -- same pattern as metrics.py's
+    # _ai_reporting_periods_by_document, avoiding the exact N+1 this list
+    # endpoint's own docstring above already had fixed once for
+    # financial_metrics generally.
+    tiers: dict[int, str] = {}
+    if docs:
+        tier_result = await db.execute(
+            select(FinancialMetrics.document_id, FinancialMetrics.extraction_confidence_tier).where(
+                FinancialMetrics.document_id.in_([doc.id for doc in docs])
+            )
+        )
+        tiers = {document_id: tier for document_id, tier in tier_result.all() if tier is not None}
 
     # Built explicitly (not left to FastAPI's automatic response_model
     # filtering) so the shape is real and testable by calling this function
     # directly, matching this codebase's established test pattern -- and so
     # it's unambiguous at a glance that extracted_text never leaves this
     # function, not just that it's dropped somewhere downstream.
-    return [DocumentResponse.model_validate(doc) for doc in result.scalars().all()]
+    responses = []
+    for doc in docs:
+        response = DocumentResponse.model_validate(doc)
+        response.extraction_confidence_tier = tiers.get(doc.id)
+        responses.append(response)
+    return responses
 
 
 # ============================================================

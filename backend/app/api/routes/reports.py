@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -9,12 +10,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.models.financial_metrics import FinancialMetrics
+from app.models.report import Report
 from app.schemas.report import (
     ReportResponse,
     ReportDeleteResponse,
     ReportDashboardResponse,
 )
 from app.services.report_service import ReportService
+from app.services.extraction_confidence import LowConfidenceExtractionError
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +56,22 @@ async def generate_or_get_report(document_id: int, db: AsyncSession = Depends(ge
     try:
         service = ReportService(db)
         return await service.get_or_create_report(document_id)
+    except LowConfidenceExtractionError as exc:
+        # `ReportService.generate_report` already commits a "generating"-
+        # status Report row *before* the confidence check runs (to claim
+        # the generation atomically against concurrent requests, see
+        # report_service.py) -- a plain `db.rollback()` here has nothing
+        # left to undo, that commit already happened. This document never
+        # had a report before this call, so the newly (and now
+        # permanently-"generating") created Report row is deleted outright
+        # rather than left stuck -- confirmed by testing, not assumed.
+        stmt = select(Report).where(Report.document_id == document_id)
+        result = await db.execute(stmt)
+        stuck_report = result.scalars().first()
+        if stuck_report is not None:
+            await db.delete(stuck_report)
+            await db.commit()
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception as exc:
         logger.error("Error generating report: %s", exc, exc_info=True)
         raise HTTPException(status_code=500, detail=str(exc)) from exc
@@ -66,7 +85,30 @@ async def regenerate_report(report_id: int, db: AsyncSession = Depends(get_db)):
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
 
-    return await service.generate_report(report.document_id, force=True)
+    # Captured before attempting regeneration -- restored below on a
+    # low-confidence rejection, since `generate_report` already commits
+    # the report's status to "generating" *before* the confidence check
+    # runs (see the comment in `generate_or_get_report` above), so a plain
+    # `db.rollback()` cannot undo it.
+    previous_status = report.status
+
+    try:
+        return await service.generate_report(report.document_id, force=True)
+    except LowConfidenceExtractionError as exc:
+        # A regenerate attempt that would produce worse data than what's
+        # already there must not silently overwrite it -- the existing
+        # FinancialMetrics/Report.summary/ai_commentary were never touched
+        # (the rejection happens before `_save_metrics` runs), but the
+        # Report's `status` was already committed to "generating" and must
+        # be explicitly restored, not left stuck.
+        stmt = select(Report).where(Report.id == report_id)
+        result = await db.execute(stmt)
+        stuck_report = result.scalars().first()
+        if stuck_report is not None:
+            stuck_report.status = previous_status
+            stuck_report.updated_at = datetime.utcnow()
+            await db.commit()
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.delete("/{report_id}", response_model=ReportDeleteResponse)

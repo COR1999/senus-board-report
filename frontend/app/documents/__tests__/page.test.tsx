@@ -14,7 +14,7 @@ describe('DocumentsPage', () => {
     // rely on shared state.
     vi.restoreAllMocks()
     vi.spyOn(dataService, 'getDocuments').mockResolvedValue([
-      { id: 1, filename: 'ANY_DOCUMENT.pdf', file_size: 1024, status: 'completed', created_at: '2025-12-31T00:00:00Z' },
+      { id: 1, filename: 'ANY_DOCUMENT.pdf', file_size: 1024, status: 'completed', created_at: '2025-12-31T00:00:00Z', extraction_confidence_tier: null },
     ])
     // Otherwise every test in this file makes a real network call (the
     // hook has no mock/fallback data path like getDocuments) -- default to
@@ -65,10 +65,27 @@ describe('DocumentsPage', () => {
     expect(screen.getByText('1 KB')).toBeInTheDocument()
   })
 
+  it('shows a muted "Pending Review" tag for a needs_review document', async () => {
+    vi.spyOn(dataService, 'getDocuments').mockResolvedValue([
+      {
+        id: 1, filename: 'shaky-extraction.pdf', file_size: 1024, status: 'completed',
+        created_at: '2025-12-31T00:00:00Z', extraction_confidence_tier: 'needs_review',
+      },
+    ])
+    render(<DocumentsPage />)
+    expect(await screen.findByText('Pending Review')).toBeInTheDocument()
+  })
+
+  it('shows no confidence tag for an auto-accepted document', async () => {
+    render(<DocumentsPage />)
+    await screen.findByText('ANY_DOCUMENT.pdf')
+    expect(screen.queryByText('Pending Review')).not.toBeInTheDocument()
+  })
+
   it('filters the list by filename search', async () => {
     vi.spyOn(dataService, 'getDocuments').mockResolvedValue([
-      { id: 1, filename: 'senus-filing.pdf', file_size: 1024, status: 'completed', created_at: '2025-12-31T00:00:00Z' },
-      { id: 2, filename: 'other-report.pdf', file_size: 2048, status: 'completed', created_at: '2025-12-31T00:00:00Z' },
+      { id: 1, filename: 'senus-filing.pdf', file_size: 1024, status: 'completed', created_at: '2025-12-31T00:00:00Z', extraction_confidence_tier: null },
+      { id: 2, filename: 'other-report.pdf', file_size: 2048, status: 'completed', created_at: '2025-12-31T00:00:00Z', extraction_confidence_tier: null },
     ])
 
     render(<DocumentsPage />)
@@ -82,8 +99,8 @@ describe('DocumentsPage', () => {
 
   it('filters by period (year/month of created_at)', async () => {
     vi.spyOn(dataService, 'getDocuments').mockResolvedValue([
-      { id: 1, filename: 'december.pdf', file_size: 1024, status: 'completed', created_at: '2025-12-15T12:00:00Z' },
-      { id: 2, filename: 'june.pdf', file_size: 1024, status: 'completed', created_at: '2025-06-15T12:00:00Z' },
+      { id: 1, filename: 'december.pdf', file_size: 1024, status: 'completed', created_at: '2025-12-15T12:00:00Z', extraction_confidence_tier: null },
+      { id: 2, filename: 'june.pdf', file_size: 1024, status: 'completed', created_at: '2025-06-15T12:00:00Z', extraction_confidence_tier: null },
     ])
 
     render(<DocumentsPage />)
@@ -146,6 +163,7 @@ describe('DocumentsPage', () => {
       file_size: 1_056_649,
       status: 'completed',
       created_at: '2026-07-08T00:00:00Z',
+      extraction_confidence_tier: null,
     })
 
     render(<DocumentsPage />)

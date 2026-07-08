@@ -205,16 +205,28 @@ class GeminiAnalysisService:
     # FALLBACK (SAFE EMPTY STRUCTURE ONLY)
     # =========================================================
     def _empty_response(self) -> Dict[str, Any]:
+        # `None` for every field, not `0` -- a real bug found by testing:
+        # this fallback fires whenever Gemini is unavailable/rate-limited/
+        # fails, which is exactly when the deterministic baseline is
+        # *incomplete* (report_service._generate only calls Gemini at all
+        # when `_baseline_is_complete` is False). The old `0` defaults here
+        # silently overrode a genuinely-missing baseline field (e.g. the
+        # Information Document's undisclosed EBITDA) with a fabricated
+        # zero in the merge, reproducing the exact "missing data becomes a
+        # fake 0" bug already fixed once in report_service.py's
+        # `_normalize_metric` -- this fallback just does it from a
+        # different code path. `None` here lets baseline's real "not
+        # disclosed" verdict stand instead of being silently overwritten.
         return {
             "company_name": None,
             "reporting_period": None,
             "financial_metrics": {
-                "revenue": 0,
-                "cash": 0,
-                "ebitda": 0,
-                "customers": 0,
-                "gross_margin": 0,
-                "operating_margin": 0,
+                "revenue": None,
+                "cash": None,
+                "ebitda": None,
+                "customers": None,
+                "gross_margin": None,
+                "operating_margin": None,
             },
             "key_findings": [],
             "ai_commentary": "AI unavailable or failed (safe fallback).",

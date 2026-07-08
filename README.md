@@ -6,8 +6,8 @@ an executive dashboard with AI-generated commentary.
 
 Built as a graduate technical assessment for **Assiduous Corp**. The case-study company is
 **Senus PLC**, a real Irish natural-capital/MRV SaaS company admitted to Euronext Access Dublin on
-22 December 2025 — the dashboard is populated from its real, first-ever public half-year results,
-not synthetic data.
+22 December 2025 — the dashboard is populated from its real public filings (half-year results and
+its Euronext listing prospectus), not synthetic data.
 
 **Live app:** https://senus-board-report.vercel.app
 **API:** https://senus-board-report-production.up.railway.app
@@ -80,6 +80,16 @@ regex/table parse over real extractable text is more reproducible and auditable 
 figure through a vision model — the LLM is reserved for genuine gaps and narrative commentary, not
 asked to re-derive numbers a parser can already get right.
 
+This philosophy extends numerically, not just architecturally: `extraction_confidence.py` scores
+every processed document (0-100, weighted so a deterministic table match counts for more than an
+LLM guess at the same field) before its data is trusted. A document that doesn't match a known
+financial-statement format at all — or where the deterministic baseline contributed nothing — scores
+too low to ever reach the dashboard; a value found only via Gemini narrative inference is treated as
+less certain than one read directly from a table. Two independent arithmetic reconciliation checks
+(does revenue − cost of sales equal gross profit; does the cash flow statement's components sum to
+the stated net change) catch a genuine misparse the presence-only checks wouldn't. Built directly in
+response to a real incident — see `docs/roadmap.md`.
+
 - **Frontend** (`frontend/`): Next.js App Router dashboard. Fetches from the FastAPI backend on a
   60-second poll (metrics, chart data, reports), each independently content-deduped so an unchanged
   poll never triggers a re-render or a wasted downstream AI call.
@@ -128,7 +138,7 @@ extract metrics, generate an AI-enriched report, render it on a dashboard — be
 AI-assisted-development workflow began.
 
 **Phase 2 (6–8 July 2026).** Once that foundation existed, development was streamlined using
-**Claude Code (Sonnet 5)** across 27 feature/fix branches, merged one at a time rather than as one
+**Claude Code (Sonnet 5)** across 37 feature/fix branches, merged one at a time rather than as one
 large change. The working pattern, used consistently:
 
 1. **Plan before code** — for any nontrivial change, the agent explored the actual codebase first,
@@ -150,19 +160,25 @@ large change. The working pattern, used consistently:
 
 ## Assumptions
 
-- **Only one real filing has been ingested so far — this is a known gap, not a data ceiling.**
-  Every prior-period comparative currently on the dashboard comes from the HY2026 half-year filing's
-  own comparison column, not from separate historical documents. Initially believed that filing was
-  the only real financial document Senus had ever published — a more thorough look at the investor
-  relations page (`app.assiduous.tech/investor-relations/senus`), and finding the API it's built on
-  (see "Investor relations API" below), turned up two more real documents: an **Information
-  Document (December 2025)** — the Euronext listing prospectus, which includes FY2024/FY2025 annual
-  figures — and **ADF Farm Solutions' audited Consolidated Financial Statements (30 June 2025)**
-  (Senus's predecessor entity, pre-re-registration). Both are downloaded into
-  `backend/docs/source-documents/` but **not yet extracted into the pipeline** — see
-  `docs/roadmap.md` for why this is flagged as the top follow-up priority rather than backfilled
-  under time pressure or, worse, fabricated. What *is* on the dashboard is never synthetic: no
-  additional historical quarter has been invented to fill this gap.
+- **Two real filings are ingested: the HY2026 half-year results and the FY2025 Information
+  Document.** Initially believed the half-year filing was the only real financial document Senus had
+  ever published — a more thorough look at the investor relations page
+  (`app.assiduous.tech/investor-relations/senus`), and finding the API it's built on (see "Investor
+  relations API" below), turned up more real documents. The **Information Document (December
+  2025)** — the Euronext listing prospectus, with FY2024/FY2025 annual figures — was extracted once
+  its actual structure was inspected directly (a single summary table, much sparser than a full
+  annual report; EBITDA and the Solvency/Returns ratios are genuinely undisclosed there and stay
+  `null`, never guessed). **ADF Farm Solutions' audited Consolidated Financial Statements (30 June
+  2025)** (Senus's predecessor entity, pre-re-registration) turned out to be a **scanned PDF with no
+  text layer at all** — not extractable by this project's text-based pipeline without OCR or a
+  vision-capable model call, a genuinely separate capability; see `docs/roadmap.md` for why this is
+  left as a real, scoped future item rather than backfilled under time pressure or, worse,
+  fabricated. Because the two ingested filings have different reporting cadences (6 months vs. 12
+  months), an **extraction confidence service**
+  (`backend/app/services/extraction_confidence.py`) scores every document before its data is trusted
+  (0-100, tiered auto-accept/needs-review/reject) and a separate cadence check keeps them from ever
+  being blended into one misleading trend line — both were built directly in response to a real
+  production incident, documented in `docs/roadmap.md`.
 - **This is a single-user tool**, not a multi-tenant product. The dashboard assumes one fixed
   presenter identity (a board member/CEO giving a live presentation) — there is no real
   authentication, login, or account system, by design, not as an oversight.
@@ -177,11 +193,18 @@ large change. The working pattern, used consistently:
 
 ## How outputs were validated
 
-- **Automated tests**: 118 backend (pytest) + 118 frontend (Vitest) tests, run before every merge.
+- **Automated tests**: 167 backend (pytest) + 129 frontend (Vitest) tests, run before every merge.
 - **Type safety**: `tsc --noEmit` clean before every merge.
 - **Manual validation against the real filing**: extracted figures (revenue, EBITDA, cash,
   customers, bookings) were cross-checked by hand against the source PDF during
   `feature/financial-metrics-expansion` and `feature/bookings-extraction`.
+- **Manual validation of the Information Document extraction and confidence gate against a
+  throwaway local database** (never production, for testing): uploaded the real filing and
+  confirmed its figures matched the source PDF exactly; attempted importing a real governance
+  filing (an AGM proxy notice) via the live investor relations API and confirmed it was rejected
+  with a real, computed confidence score rather than silently creating a junk document; uploaded
+  both real filings together and confirmed the revenue-trend chart correctly kept their different
+  reporting cadences separate instead of blending them.
 - **Manual validation against the live, deployed system** (not a local mock): confirmed via direct
   API calls against the real production database that a regenerated report produces the exact
   expected values end-to-end (e.g. `bookings: {value: "€700K", ...}`), and that the PDF-download
@@ -215,6 +238,12 @@ npm run dev
 - The Reports table's "PDF export" (of the AI-generated report itself, distinct from downloading the
   source upload) is not yet built.
 - No bulk actions (bulk delete/download) on the Reports or Documents tables.
+- The ADF Farm Solutions statements (Senus's other real historical filing) are a scanned PDF with no
+  text layer — not extractable without OCR or a vision-capable model call, a genuinely separate
+  capability from this project's text-based pipeline. See "Assumptions" above.
+- The "Pending Review" extraction-confidence tag is shown on the Documents table but not yet the
+  Reports table (same document underneath either way — a quick follow-up, not a gap in the
+  underlying confidence gate itself, which applies everywhere already).
 
 ## Further reading
 

@@ -56,6 +56,11 @@ export interface Metrics {
    * couldn't be parsed -- use a generic fallback rather than fabricating one. */
   current_period: string | null
   prior_period: string | null
+  /** When the "latest" data shown above was actually extracted (ISO
+   * timestamp) -- distinct from `current_period` (the filing's *reporting*
+   * period, e.g. "FY2025"). Powers the dashboard's global "Data as of ..."
+   * banner. Null only when there's no data at all yet. */
+  data_extracted_at: string | null
 }
 
 export interface ChartDataPoint {
@@ -140,6 +145,14 @@ export interface DocumentItem {
   file_size: number | null
   status: string
   created_at: string
+  /** See app/services/extraction_confidence.py. `'needs_review'` (85-94%
+   * extraction confidence) shows a "Pending Review" tag -- that data is
+   * real and persisted, but deliberately excluded from the dashboard's
+   * headline KPIs until it clears the 95% auto-accept threshold. `null`
+   * covers both "not yet scored" (no report generated) and "auto_accept"
+   * (>=95%) -- no tag needed for either, so the two are never
+   * distinguished on this list view. */
+  extraction_confidence_tier: 'needs_review' | 'auto_accept' | null
 }
 
 export async function getDocuments(): Promise<DocumentItem[]> {

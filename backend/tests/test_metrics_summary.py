@@ -29,6 +29,8 @@ async def _add_metrics_row(
     fm_reporting_period_end=None,
     fm_reporting_period_end_prior=None,
     ai_reporting_period=None,
+    extraction_confidence=None,
+    extraction_confidence_tier=None,
 ) -> FinancialMetrics:
     doc = Document(
         filename="test.pdf",
@@ -55,6 +57,8 @@ async def _add_metrics_row(
         reporting_period_end=fm_reporting_period_end,
         reporting_period_end_prior=fm_reporting_period_end_prior,
         extracted_at=extracted_at or datetime.utcnow(),
+        extraction_confidence=extraction_confidence,
+        extraction_confidence_tier=extraction_confidence_tier,
     )
     session.add(metrics)
 
@@ -85,6 +89,20 @@ async def test_dashboard_summary_zero_rows(async_client, async_session):
         assert body[key]["change"] == 0
     assert body["current_period"] is None
     assert body["prior_period"] is None
+    assert body["data_extracted_at"] is None
+
+
+@pytest.mark.anyio
+async def test_dashboard_summary_reports_when_the_latest_data_was_extracted(async_client, async_session):
+    # Powers the dashboard's "Data as of ..." banner -- distinct from
+    # current_period (the filing's *reporting* period, e.g. "FY2025").
+    extracted_at = datetime(2026, 3, 19, 8, 38, 0)
+    await _add_metrics_row(async_session, revenue=354_813.0, extracted_at=extracted_at)
+
+    response = await async_client.get("/metrics/dashboard/summary")
+
+    assert response.status_code == 200
+    assert response.json()["data_extracted_at"] == extracted_at.isoformat()
 
 
 @pytest.mark.anyio
@@ -397,3 +415,98 @@ async def test_dashboard_summary_period_is_none_without_a_report(async_client, a
     body = response.json()
     assert body["current_period"] is None
     assert body["prior_period"] is None
+
+
+@pytest.mark.anyio
+async def test_dashboard_summary_excludes_a_needs_review_row_from_latest(async_client, async_session):
+    # Only an auto_accept-tier (>=95%) extraction may drive the executive
+    # dashboard's headline KPIs -- a needs_review (85-94%) row must not
+    # become "latest" just because it's more recent and cleared the
+    # (separate, lower) reject bar.
+    base = datetime(2026, 1, 1)
+    await _add_metrics_row(
+        async_session, revenue=354_813.0, extracted_at=base,
+        extraction_confidence=100.0, extraction_confidence_tier="auto_accept",
+    )
+    await _add_metrics_row(
+        async_session, revenue=999_999.0, extracted_at=base + timedelta(minutes=1),
+        extraction_confidence=88.0, extraction_confidence_tier="needs_review",
+    )
+
+    response = await async_client.get("/metrics/dashboard/summary")
+
+    assert response.status_code == 200
+    assert response.json()["revenue"]["value"] == "€355K"
+
+
+@pytest.mark.anyio
+async def test_dashboard_summary_null_confidence_stays_permissive(async_client, async_session):
+    # NULL means "extracted before this feature existed" (the original
+    # half-year filing) -- must be treated the same as auto_accept, not
+    # excluded as if it were a low-confidence row.
+    await _add_metrics_row(async_session, revenue=354_813.0, extraction_confidence=None)
+
+    response = await async_client.get("/metrics/dashboard/summary")
+
+    assert response.status_code == 200
+    assert response.json()["revenue"]["value"] == "€355K"
+
+
+@pytest.mark.anyio
+async def test_revenue_trend_excludes_mismatched_cadence_row(async_client, async_session):
+    # A 12-month (full-year) row must not be blended into a trend series
+    # anchored on a 6-month (half-year) latest row -- confirmed real risk:
+    # an annual total plotted next to a half-year total as if sequential,
+    # same-length periods reads as a fabricated ~58% revenue collapse.
+    base = datetime(2026, 1, 1)
+    await _add_metrics_row(
+        async_session,
+        revenue=836_991.0,
+        fm_reporting_period_start="Jul 2024", fm_reporting_period_end="Jun 2025",  # 12 months
+        extracted_at=base,
+    )
+    await _add_metrics_row(
+        async_session,
+        revenue=354_813.0,
+        fm_reporting_period_start="Jul 2025", fm_reporting_period_end="Dec 2025",  # 6 months
+        extracted_at=base + timedelta(days=200),
+    )
+
+    response = await async_client.get("/metrics/dashboard/revenue-trend")
+
+    assert response.status_code == 200
+    points = response.json()
+    assert len(points) == 1
+    assert points[0]["revenue"] == 354_813.0
+
+
+@pytest.mark.anyio
+async def test_revenue_trend_includes_rows_with_unknown_cadence(async_client, async_session):
+    # An unknown cadence (no reporting_period_start/_end at all -- the
+    # common case for most test fixtures and many real filings) must not
+    # be treated as a confirmed mismatch and excluded.
+    base = datetime(2026, 1, 1)
+    await _add_metrics_row(
+        async_session,
+        revenue=100_000.0,
+        fm_reporting_period_start="Jul 2025", fm_reporting_period_end="Dec 2025",
+        extracted_at=base,
+    )
+    await _add_metrics_row(async_session, revenue=200_000.0, extracted_at=base + timedelta(days=30))
+
+    response = await async_client.get("/metrics/dashboard/revenue-trend")
+
+    assert response.status_code == 200
+    assert len(response.json()) == 2
+
+
+@pytest.mark.anyio
+async def test_revenue_trend_excludes_a_needs_review_row(async_client, async_session):
+    await _add_metrics_row(
+        async_session, revenue=100_000.0, extraction_confidence=88.0, extraction_confidence_tier="needs_review",
+    )
+
+    response = await async_client.get("/metrics/dashboard/revenue-trend")
+
+    assert response.status_code == 200
+    assert response.json() == []

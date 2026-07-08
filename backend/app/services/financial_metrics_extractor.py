@@ -415,8 +415,316 @@ class FinancialMetricsExtractor:
         return cls._to_number(raw) if raw is not None else None
 
     # =========================================================
+    # PERIOD / CADENCE (shared by every document format)
+    # =========================================================
+
+    @classmethod
+    def _extract_period_fields(cls, text: str) -> Dict[str, Optional[str]]:
+        """
+        Reporting-period detection, shared by every document format this
+        extractor supports (narrative-only, same reliability class as
+        customers/bookings). Two independent signals:
+
+        1. A literal `(HYxx)`/`(HYxx: ...)` label, when the filing states
+           its own period that way (the half-year filing does; the
+           Information Document never does -- it has no "(HYxx)"/"(FYxx)"
+           notation at all, just repeated prose like "financial year ended
+           30 June 2025").
+        2. A generic "ended DD Month YYYY" date, present in both formats,
+           plus a cadence cue (half-year vs. full-year phrasing) to derive
+           the period's start date and, when no literal HY/FY label exists,
+           an "FY{year}" label for a full-year filing.
+        """
+        def _four_digit_year(digits: str) -> str:
+            # A 2-digit year always means 20xx for a company that didn't
+            # exist last century -- safe, unambiguous expansion, not a guess.
+            return f"20{digits}" if len(digits) == 2 else digits
+
+        reporting_period_match = re.search(r"\(HY(\d{2,4})\)", text)
+        reporting_period = (
+            f"HY{_four_digit_year(reporting_period_match.group(1))}" if reporting_period_match else None
+        )
+
+        reporting_period_prior_match = re.search(r"\(HY(\d{2,4}):", text)
+        reporting_period_prior = (
+            f"HY{_four_digit_year(reporting_period_prior_match.group(1))}" if reporting_period_prior_match else None
+        )
+
+        # --- Reporting period end date, e.g. "Dec 2025" (a clearer axis
+        # label than the bare "HY2026", which doesn't say which calendar
+        # month the period actually ends -- Senus's fiscal year runs
+        # Jul-Jun, so "HY2026" ends in December, not June, and real
+        # stakeholders found the HY-only label ambiguous). The filing
+        # states this once per financial statement section, e.g. "for the
+        # six months ended 31 December 2025" -- there's no separate literal
+        # date for the *prior* period anywhere in the text (only the prior
+        # period's numeric column, no header), so the prior label is
+        # derived as the same month one year earlier, which is safe here
+        # because both half-year and full-year filings compare like-for-like
+        # periods a year apart, not an arbitrary guess.
+        period_end_match = re.search(
+            r"ended\s+(\d{1,2})\s+(January|February|March|April|May|June|July|"
+            r"August|September|October|November|December)\s+(\d{4})",
+            text, re.IGNORECASE,
+        )
+        reporting_period_end = None
+        reporting_period_end_prior = None
+        reporting_period_start = None
+        reporting_period_start_prior = None
+        if period_end_match:
+            month_name = period_end_match.group(2).capitalize()
+            year = int(period_end_match.group(3))
+            reporting_period_end = f"{month_name[:3]} {year}"
+            reporting_period_end_prior = f"{month_name[:3]} {year - 1}"
+
+            # Period start, e.g. "Jul 2025" -- N-1 months before the end
+            # month, where N is the filing's own reporting cadence in
+            # months. The "ended DD Month YYYY" match above says nothing
+            # about cadence (it matches "twelve months ended" just as well
+            # as "six months ended"), so a hardcoded half-year assumption
+            # here would silently mislabel a full-year filing's start date
+            # by 6 months. Cadence is instead detected from the filing's
+            # own language; when neither a half-year nor a full-year cue is
+            # found, cadence is genuinely ambiguous and the start fields
+            # are left None rather than guessed -- same missing-vs-
+            # fabricated discipline as every other field in this extractor
+            # (bookings, customers, reporting_period all do the same).
+            # Year rollover is handled manually since there's no
+            # python-dateutil dependency in this project.
+            #
+            # Searched in a bounded window around the period-end match
+            # itself, not the whole document -- confirmed against the real
+            # Information Document that scanning the full text produces a
+            # real false positive: a forward-looking sentence 40+ pages
+            # away ("a trading update following completion of the half
+            # year ending 31 December 2025") matched `half_year_cues`
+            # despite this being an annual (FY2025) filing, making the
+            # cadence look ambiguous when it plainly isn't near the actual
+            # period statement. This is the same narrative-leakage failure
+            # mode this whole extractor was rewritten to avoid, just
+            # surfacing in a cue regex instead of a value regex.
+            _CADENCE_CUE_WINDOW = 200
+            cue_window = text[
+                max(0, period_end_match.start() - _CADENCE_CUE_WINDOW) : period_end_match.end() + _CADENCE_CUE_WINDOW
+            ]
+            half_year_cues = re.search(
+                r"\bsix\s+months\s+ended\b|\bhalf[\s-]year\b|\(HY\d", cue_window, re.IGNORECASE
+            )
+            # Broadened beyond the half-year filing's own phrasing to also
+            # match the Information Document's real, confirmed phrasings --
+            # "twelve months to 30 June 2025", "financial year ended 30 June
+            # 2025", "12-month period ended 30 June 2025" -- none of which
+            # the original (narrower) alternatives matched at all.
+            full_year_cues = re.search(
+                r"\btwelve\s+months\s+ended\b|\btwelve\s+months\s+to\b|\b12\s+months\s+ended\b|"
+                r"\b12-month\s+period\s+ended\b|\bfinancial\s+year\s+ended\b|\bfull\s+year\b|"
+                r"\bannual\s+report\b|\(FY\d",
+                cue_window, re.IGNORECASE,
+            )
+            period_months = (
+                6 if half_year_cues and not full_year_cues else
+                12 if full_year_cues and not half_year_cues else
+                None
+            )
+            if period_months is not None:
+                start_offset = period_months - 1
+                end_index = _MONTH_ABBR.index(month_name[:3])
+                start_index = (end_index - start_offset) % 12
+                start_year = year - 1 if end_index - start_offset < 0 else year
+                reporting_period_start = f"{_MONTH_ABBR[start_index]} {start_year}"
+                reporting_period_start_prior = f"{_MONTH_ABBR[start_index]} {start_year - 1}"
+
+            # No literal "(HYxx)"/"(FYxx)" label anywhere (the Information
+            # Document's case) but a full-year cadence was detected from
+            # the filing's own language -- derive an "FYyyyy" label from
+            # the same year already used for `reporting_period_end`, rather
+            # than leaving a full-year filing with no period label at all.
+            if reporting_period is None and period_months == 12:
+                reporting_period = f"FY{year}"
+                reporting_period_prior = f"FY{year - 1}"
+
+        return {
+            "reporting_period": reporting_period,
+            "reporting_period_prior": reporting_period_prior,
+            "reporting_period_end": reporting_period_end,
+            "reporting_period_end_prior": reporting_period_end_prior,
+            "reporting_period_start": reporting_period_start,
+            "reporting_period_start_prior": reporting_period_start_prior,
+        }
+
+    # =========================================================
+    # DOCUMENT FORMAT DETECTION
+    # =========================================================
+
+    @classmethod
+    def _get_information_document_summary(cls, text: str) -> str:
+        """
+        Isolates the Information Document's one financial table -- an
+        IPO/listing prospectus format, structurally unrelated to the
+        half-year filing's three separately-headed statements (see
+        backend/docs/source-documents/README.md). This document states
+        once that its real full accounts are a separate, appended (and
+        separately unparseable, scanned) filing -- this summary table is
+        genuinely all the structured data this format has.
+
+        Bounded to end at the "Profit and Loss" narrative subheading that
+        immediately follows the table (not the later "Bankruptcy,
+        Liquidation..." heading, tried first and found too wide): the real
+        document has narrative commentary between the table and that
+        later heading -- e.g. "...reflecting improved operational
+        efficiency and reductions in cost of sales" -- containing prose
+        sentences with their own numbers. `_extract_table_pair`'s keyword
+        matching doesn't distinguish a real table row from a narrative
+        sentence that happens to contain the same words, so including that
+        commentary in the isolated section previously matched "cost of
+        sales" against a sentence about administrative expenses instead of
+        the table (which has no cost-of-sales row at all) -- exactly the
+        narrative-leakage failure mode this extractor was rewritten to
+        avoid (see this file's module docstring). Confirmed by testing
+        against the real document, not assumed.
+        """
+        return cls._extract_section(text, "summary financial information", "profit and loss")
+
+    @classmethod
+    def is_format_recognized(cls, text: str) -> bool:
+        """
+        True when this document matches a format this extractor actually
+        knows how to parse -- the half-year filing's three-statement
+        layout, or the Information Document's single summary table. A
+        document matching neither (e.g. an AGM notice, a Memorandum &
+        Articles of Association) returns False here, which the extraction
+        confidence service (`extraction_confidence.py`) uses to cap
+        confidence at 0 regardless of any narrative-regex "hits" elsewhere
+        in the text -- an unrecognized format's other matches are more
+        likely coincidental noise than real data.
+        """
+        return bool(cls._get_pnl(text)) or bool(cls._get_information_document_summary(text))
+
+    # =========================================================
     # SHARED EXTRACTION CORE
     # =========================================================
+
+    # Every key `_extract_all`/`_extract_all_information_document` must
+    # return, defaulted to `None` -- the Information Document path fills in
+    # a small subset (see its own docstring for exactly which, and why the
+    # rest genuinely aren't disclosed by that document type) and returns
+    # this dict with those few keys overridden, rather than duplicating the
+    # full key list in two places.
+    _ALL_FIELDS_DEFAULT: Dict[str, Any] = {
+        "revenue": None, "revenue_prior": None,
+        "cash": None, "cash_prior": None,
+        "ebitda": None, "ebitda_prior": None,
+        "customers": None,
+        "bookings_value": None, "bookings_customers": None, "bookings_pipeline": None,
+        "reporting_period": None, "reporting_period_prior": None,
+        "reporting_period_end": None, "reporting_period_end_prior": None,
+        "reporting_period_start": None, "reporting_period_start_prior": None,
+        "gross_margin": None, "gross_margin_prior": None,
+        "operating_margin": None, "operating_margin_prior": None,
+        "total_debt": None, "total_debt_prior": None,
+        "interest_expense": None, "interest_expense_prior": None,
+        "cost_of_sales": None, "cost_of_sales_prior": None,
+        "administrative_expenses": None, "administrative_expenses_prior": None,
+        "working_capital_change": None, "working_capital_change_prior": None,
+        "capital_employed": None, "capital_employed_prior": None,
+        "net_cash_used_operating": None, "net_cash_used_operating_prior": None,
+        "operating_result": None, "operating_result_prior": None,
+    }
+
+    @classmethod
+    def _extract_all_information_document(cls, text: str) -> Dict[str, Any]:
+        """
+        Extraction path for Senus's "Information Document" (IPO/listing
+        prospectus) format -- see `_get_information_document_summary`'s
+        docstring for why this is structurally different from the
+        half-year filing. Only what's genuinely in that one summary table
+        is filled in; everything else stays `None` (never guessed) --
+        notably `ebitda`/`interest_expense`/`capital_employed`/
+        `total_debt`/`working_capital_change`/`net_cash_used_operating`,
+        since no depreciation, interest, or balance-sheet-subtotal figures
+        are disclosed anywhere in this document (confirmed by direct
+        inspection of the real filing, not assumed).
+        """
+        summary_lines = cls._clean_lines(cls._get_information_document_summary(text))
+
+        revenue_raw, revenue_prior_raw = cls._extract_table_pair(summary_lines, "turnover")
+        gross_profit_raw, gross_profit_prior_raw = cls._extract_table_pair(summary_lines, "gross profit")
+
+        # Unlike the half-year filing's "group operating loss"/"group
+        # operating profit" (two labels, sign implied by which one
+        # matched), this table uses one label ("Operating Profit / (Loss)")
+        # with the sign already embedded in the printed value itself via
+        # parentheses (e.g. "(633,694)") -- `_to_number` already handles
+        # parenthesized negatives, so no separate sign-flip is needed here.
+        operating_result_raw, operating_result_prior_raw = cls._extract_table_pair(
+            summary_lines, "operating profit / (loss)"
+        )
+
+        # Not the bare "cash and cash equivalents" substring -- this table
+        # has both a beginning-of-year and end-of-year row under that same
+        # substring, and the bare match would hit the beginning-of-year row
+        # first (wrong -- the ending balance is the point-in-time figure
+        # that belongs on the dashboard, matching the half-year filing's
+        # own balance-sheet convention).
+        cash_raw, cash_prior_raw = cls._extract_table_pair(
+            summary_lines, "cash and cash equivalents at end of financial year"
+        )
+
+        # Customers: this document's own phrasing ("provided its solution
+        # to 36 Enterprise customers...") differs from the half-year
+        # filing's ("serving 138 customers") -- tried first, falling back
+        # to the generic patterns in case a future filing uses either.
+        customers_raw = cls._find_first([
+            r"provided\s+its\s+solution\s+to\s+(\d[\d,]*)\s+Enterprise\s+customers",
+            r"serving\s+(\d[\d,]*)\s+customer",
+            r"(\d[\d,]*)\s+customers?",
+        ], text)
+
+        period_fields = cls._extract_period_fields(text)
+
+        revenue = cls._to_number_or_none(revenue_raw)
+        revenue_prior = cls._to_number_or_none(revenue_prior_raw)
+        gross_profit = cls._to_number_or_none(gross_profit_raw)
+        gross_profit_prior = cls._to_number_or_none(gross_profit_prior_raw)
+        operating_result = cls._to_number_or_none(operating_result_raw)
+        operating_result_prior = cls._to_number_or_none(operating_result_prior_raw)
+        cash = cls._to_number_or_none(cash_raw)
+        cash_prior = cls._to_number_or_none(cash_prior_raw)
+        customers = int(customers_raw.replace(",", "")) if customers_raw else None
+
+        gross_margin = (
+            gross_profit / revenue * 100 if gross_profit is not None and revenue else None
+        )
+        gross_margin_prior = (
+            gross_profit_prior / revenue_prior * 100
+            if gross_profit_prior is not None and revenue_prior
+            else None
+        )
+        operating_margin = (
+            operating_result / revenue * 100 if operating_result is not None and revenue else None
+        )
+        operating_margin_prior = (
+            operating_result_prior / revenue_prior * 100
+            if operating_result_prior is not None and revenue_prior
+            else None
+        )
+
+        fields = dict(cls._ALL_FIELDS_DEFAULT)
+        fields.update({
+            "revenue": revenue,
+            "revenue_prior": revenue_prior,
+            "cash": cash,
+            "cash_prior": cash_prior,
+            "customers": customers,
+            "gross_margin": gross_margin,
+            "gross_margin_prior": gross_margin_prior,
+            "operating_margin": operating_margin,
+            "operating_margin_prior": operating_margin_prior,
+            "operating_result": operating_result,
+            "operating_result_prior": operating_result_prior,
+            **period_fields,
+        })
+        return fields
 
     @classmethod
     def _extract_all(cls, text: str) -> Dict[str, Any]:
@@ -424,9 +732,22 @@ class FinancialMetricsExtractor:
         Parses every field `extract()` and `extract_balance_sheet()` need,
         once, so both public methods can pull their own subset of keys
         without re-running section isolation/table parsing twice.
+
+        Dispatches by document format: the half-year filing's three-
+        statement layout (`consolidated profit and loss` marker) is tried
+        first, since it's the format this method has always parsed;
+        falls back to the Information Document's single-summary-table
+        format when the half-year marker isn't found but the Information
+        Document's is. A document matching neither format (e.g. a
+        governance PDF) falls through to the code below, where every table
+        lookup simply fails to match and every field stays `None` --
+        unchanged behavior from before this dispatch existed.
         """
         if not text:
             text = ""
+
+        if not cls._get_pnl(text) and cls._get_information_document_summary(text):
+            return cls._extract_all_information_document(text)
 
         pnl = cls._get_pnl(text)
         balance = cls._get_balance_sheet(text)
@@ -507,92 +828,13 @@ class FinancialMetricsExtractor:
             r"further\s+approx\.?\s*[€$£]?([\d,.]+\s*[kKmMbB]?)\s+of\s+open\s+pipeline",
         ], text)
 
-        # --- Reporting period (narrative only, same reliability class as
-        # customers/bookings above). This filing states its own period as
-        # "(HY2026)" once near the top, and prints every comparative figure
-        # as "(HY25: <value>)" throughout. The year is normalized to 4
-        # digits (25 -> 2025) since showing "HY25 vs HY2026" side by side in
-        # the UI reads as inconsistent -- but the label's structure ("HY" +
-        # year) is otherwise kept as the filing states it, not reformatted
-        # into some other convention. Not using `_find_first` here since it
-        # discards everything but the captured group, and "HY" is part of
-        # the label itself, not just a marker around it. ---
-        def _four_digit_year(digits: str) -> str:
-            # A 2-digit year always means 20xx for a company that didn't
-            # exist last century -- safe, unambiguous expansion, not a guess.
-            return f"20{digits}" if len(digits) == 2 else digits
-
-        reporting_period_match = re.search(r"\(HY(\d{2,4})\)", text)
-        reporting_period = (
-            f"HY{_four_digit_year(reporting_period_match.group(1))}" if reporting_period_match else None
-        )
-
-        reporting_period_prior_match = re.search(r"\(HY(\d{2,4}):", text)
-        reporting_period_prior = (
-            f"HY{_four_digit_year(reporting_period_prior_match.group(1))}" if reporting_period_prior_match else None
-        )
-
-        # --- Reporting period end date, e.g. "Dec 2025" (a clearer axis
-        # label than the bare "HY2026", which doesn't say which calendar
-        # month the period actually ends -- Senus's fiscal year runs
-        # Jul-Jun, so "HY2026" ends in December, not June, and real
-        # stakeholders found the HY-only label ambiguous). The filing
-        # states this once per financial statement section, e.g. "for the
-        # six months ended 31 December 2025" -- there's no separate literal
-        # date for the *prior* period anywhere in the text (only the prior
-        # period's numeric column, no header), so the prior label is
-        # derived as the same month one year earlier, which is safe here
-        # because half-year filings always compare like-for-like halves a
-        # year apart, not an arbitrary guess.
-        period_end_match = re.search(
-            r"ended\s+(\d{1,2})\s+(January|February|March|April|May|June|July|"
-            r"August|September|October|November|December)\s+(\d{4})",
-            text, re.IGNORECASE,
-        )
-        reporting_period_end = None
-        reporting_period_end_prior = None
-        reporting_period_start = None
-        reporting_period_start_prior = None
-        if period_end_match:
-            month_name = period_end_match.group(2).capitalize()
-            year = int(period_end_match.group(3))
-            reporting_period_end = f"{month_name[:3]} {year}"
-            reporting_period_end_prior = f"{month_name[:3]} {year - 1}"
-
-            # Period start, e.g. "Jul 2025" -- N-1 months before the end
-            # month, where N is the filing's own reporting cadence in
-            # months. The "ended DD Month YYYY" match above says nothing
-            # about cadence (it matches "twelve months ended" just as well
-            # as "six months ended"), so a hardcoded half-year assumption
-            # here would silently mislabel a full-year filing's start date
-            # by 6 months. Cadence is instead detected from the filing's
-            # own language; when neither a half-year nor a full-year cue is
-            # found, cadence is genuinely ambiguous and the start fields
-            # are left None rather than guessed -- same missing-vs-
-            # fabricated discipline as every other field in this extractor
-            # (bookings, customers, reporting_period all do the same).
-            # Year rollover is handled manually since there's no
-            # python-dateutil dependency in this project.
-            half_year_cues = re.search(
-                r"\bsix\s+months\s+ended\b|\bhalf[\s-]year\b|\(HY\d", text, re.IGNORECASE
-            )
-            full_year_cues = re.search(
-                r"\btwelve\s+months\s+ended\b|\b12\s+months\s+ended\b|\bfull\s+year\b|"
-                r"\bannual\s+report\b|\(FY\d",
-                text, re.IGNORECASE,
-            )
-            period_months = (
-                6 if half_year_cues and not full_year_cues else
-                12 if full_year_cues and not half_year_cues else
-                None
-            )
-            if period_months is not None:
-                start_offset = period_months - 1
-                end_index = _MONTH_ABBR.index(month_name[:3])
-                start_index = (end_index - start_offset) % 12
-                start_year = year - 1 if end_index - start_offset < 0 else year
-                reporting_period_start = f"{_MONTH_ABBR[start_index]} {start_year}"
-                reporting_period_start_prior = f"{_MONTH_ABBR[start_index]} {start_year - 1}"
+        period_fields = cls._extract_period_fields(text)
+        reporting_period = period_fields["reporting_period"]
+        reporting_period_prior = period_fields["reporting_period_prior"]
+        reporting_period_end = period_fields["reporting_period_end"]
+        reporting_period_end_prior = period_fields["reporting_period_end_prior"]
+        reporting_period_start = period_fields["reporting_period_start"]
+        reporting_period_start_prior = period_fields["reporting_period_start_prior"]
 
         # -----------------------------------------------------
         # NORMALISE
@@ -761,3 +1003,77 @@ class FinancialMetricsExtractor:
                 "operating_result", "operating_result_prior",
             )
         }
+
+    # Reconciliation tolerance -- financial statements sometimes round
+    # individual lines to the nearest unit independently, so component
+    # sums can be off by a euro or two from the stated total without that
+    # being a real misparse. Anything beyond this is a genuine mismatch.
+    _RECONCILIATION_TOLERANCE = 2.0
+
+    @classmethod
+    def check_reconciliation(cls, text: str) -> Dict[str, Optional[bool]]:
+        """
+        Deterministic arithmetic sanity checks, independent of which
+        document format matched -- this project's equivalent of "Subtotal
+        + Tax = Total" for an invoice. Catches a genuine misparse (e.g. a
+        table-column shift silently matching the wrong number to a label)
+        that field-presence checks alone can't: all the involved fields
+        would still show as "found", just wrong.
+
+        Returns `None` for either check (not `False`) when the document
+        doesn't disclose enough of the relevant figures to check it at all
+        -- "we couldn't verify this" is a different, weaker signal than "we
+        verified it and it's wrong", and conflating the two would either
+        wrongly penalize a legitimately sparser filing (see the Information
+        Document, which has no `cost_of_sales` line at all) or wrongly wave
+        through a real mismatch as if it had been checked.
+        """
+        pnl_lines = cls._clean_lines(cls._get_pnl(text))
+        if not pnl_lines:
+            pnl_lines = cls._clean_lines(cls._get_information_document_summary(text))
+
+        revenue_raw, _ = cls._extract_table_pair(pnl_lines, "turnover")
+        if revenue_raw is None:
+            revenue_raw, _ = cls._extract_table_pair(pnl_lines, "revenue")
+        cost_of_sales_raw, _ = cls._extract_table_pair(pnl_lines, "cost of sales")
+        gross_profit_raw, _ = cls._extract_table_pair(pnl_lines, "gross profit")
+
+        revenue = cls._to_number_or_none(revenue_raw)
+        cost_of_sales = cls._to_number_or_none(cost_of_sales_raw)
+        gross_profit = cls._to_number_or_none(gross_profit_raw)
+
+        pnl_reconciles: Optional[bool] = None
+        if revenue is not None and cost_of_sales is not None and gross_profit is not None:
+            pnl_reconciles = abs((revenue - cost_of_sales) - gross_profit) <= cls._RECONCILIATION_TOLERANCE
+
+        # Cash flow: both formats print the same standard structure
+        # ("Cash flows from Operating/Investing/Financing Activities", a
+        # beginning balance, an ending balance) with identical labels --
+        # checked against the *whole* document rather than an isolated
+        # section, since the half-year filing's cash-flow lines sit inside
+        # its single "cash flow" section but the Information Document's
+        # sit inside its "summary financial information" table; scanning
+        # the full text for these specific, unambiguous labels works for
+        # both without needing per-format section isolation here too.
+        cashflow_lines = cls._clean_lines(text)
+        operating_raw, _ = cls._extract_table_pair(cashflow_lines, "cash flows from operating activities")
+        investing_raw, _ = cls._extract_table_pair(cashflow_lines, "cash flows from investing activities")
+        financing_raw, _ = cls._extract_table_pair(cashflow_lines, "cash flows from financing activities")
+        opening_cash_raw, _ = cls._extract_table_pair(cashflow_lines, "at beginning")
+        closing_cash_raw, _ = cls._extract_table_pair(cashflow_lines, "at end of")
+
+        operating_cf = cls._to_number_or_none(operating_raw)
+        investing_cf = cls._to_number_or_none(investing_raw)
+        financing_cf = cls._to_number_or_none(financing_raw)
+        opening_cash = cls._to_number_or_none(opening_cash_raw)
+        closing_cash = cls._to_number_or_none(closing_cash_raw)
+
+        cashflow_reconciles: Optional[bool] = None
+        if None not in (operating_cf, investing_cf, financing_cf, opening_cash, closing_cash):
+            net_change = closing_cash - opening_cash
+            cashflow_reconciles = (
+                abs((operating_cf + investing_cf + financing_cf) - net_change)
+                <= cls._RECONCILIATION_TOLERANCE
+            )
+
+        return {"pnl_reconciles": pnl_reconciles, "cashflow_reconciles": cashflow_reconciles}

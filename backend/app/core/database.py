@@ -54,6 +54,11 @@ _COLUMNS_ADDED_AFTER_INITIAL_RELEASE = {
         ("reporting_period_end_prior", "VARCHAR"),
         ("reporting_period_start", "VARCHAR"),
         ("reporting_period_start_prior", "VARCHAR"),
+        # Extraction confidence (see app/services/extraction_confidence.py)
+        # -- NULL for every row extracted before this feature existed,
+        # treated permissively (not excluded) wherever it's read.
+        ("extraction_confidence", "FLOAT"),
+        ("extraction_confidence_tier", "VARCHAR"),
     ],
     # SHA256 of the uploaded file's bytes, for exact-duplicate-upload
     # detection (see documents.py's upload route). Existing rows get NULL

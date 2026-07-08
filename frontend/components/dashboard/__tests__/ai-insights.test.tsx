@@ -16,6 +16,7 @@ const mockMetrics = {
   bookings: { value: '€700K', change: 0, trend: 'neutral' as const, history: [] },
   current_period: 'Jul 2024 – Dec 2024',
   prior_period: 'Jul 2023 – Dec 2023',
+  data_extracted_at: '2025-03-19T08:38:00',
 }
 
 const mockMetricsAfterNewUpload = {

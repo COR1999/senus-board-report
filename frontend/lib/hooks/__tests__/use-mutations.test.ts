@@ -62,6 +62,7 @@ describe('useImportExternalFiling', () => {
       file_size: 1_056_649,
       status: 'completed',
       created_at: '2026-07-08T00:00:00Z',
+      extraction_confidence_tier: null,
     })
     const onSuccess = vi.fn()
     const { result } = renderHook(() => useImportExternalFiling(onSuccess))
