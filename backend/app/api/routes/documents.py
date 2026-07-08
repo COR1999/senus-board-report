@@ -31,6 +31,7 @@ from app.schemas.financial import (
 from app.services.pdf_service import PDFExtractionService
 from app.services.report_service import ReportService
 from app.services import investor_relations_client
+from app.services import period_merge_service
 from app.services.extraction_confidence import LowConfidenceExtractionError
 
 logger = logging.getLogger(__name__)
@@ -102,6 +103,7 @@ def build_document_response(
         file_path=doc.file_path or "",
         report_id=report.id if report else None,
         financial_metrics=financial_metrics,
+        superseded_by_document_id=metrics.superseded_by_document_id if metrics else None,
     )
 
 
@@ -204,6 +206,18 @@ async def _ingest_document(
         .order_by(FinancialMetrics.extracted_at.desc())
     )
     metrics = metrics_result.scalars().first()
+
+    # A separate, additive follow-up step -- this document has already
+    # finished ingesting completely and normally above, exactly as it does
+    # today, regardless of what happens here. Only runs when this document's
+    # own extraction succeeded well enough to know its reporting period at
+    # all (see find_same_period_match). See period_merge_service's module
+    # docstring for the real incident (ADF Farm Solutions vs. the
+    # Information Document, both genuinely FY2025) this closes.
+    if metrics is not None:
+        existing_match = await period_merge_service.find_same_period_match(db, metrics)
+        if existing_match is not None:
+            await period_merge_service.merge_documents(db, existing_match, metrics)
 
     return build_document_response(document, report, metrics)
 
@@ -487,6 +501,36 @@ async def approve_document(document_id: int, db: AsyncSession = Depends(get_db))
 
 
 # ============================================================
+# Period reconciliation (same-period duplicate documents)
+# ============================================================
+
+@router.post("/reconcile-periods", response_model=List[DocumentResponse])
+async def reconcile_periods(db: AsyncSession = Depends(get_db)):
+    """
+    One-off (but safe to call repeatedly -- see period_merge_service's
+    `reconcile_all_periods`) sweep for documents that independently report
+    the exact same reporting period, merging each pair into a new combined
+    document. Ingest-time merging (see `_ingest_document`) already prevents
+    this for every future upload; this endpoint is for documents that
+    existed before that existed, or before their period fields were
+    derivable at all (e.g. a vision-extracted document uploaded before the
+    cadence-detection fix). Returns the newly-created merged documents --
+    an empty list means nothing needed merging.
+    """
+    merged_documents = await period_merge_service.reconcile_all_periods(db)
+    responses = []
+    for doc in merged_documents:
+        response = DocumentResponse.model_validate(doc)
+        metrics_result = await db.execute(
+            select(FinancialMetrics).where(FinancialMetrics.document_id == doc.id)
+        )
+        metrics = metrics_result.scalars().first()
+        response.extraction_confidence_tier = metrics.extraction_confidence_tier if metrics else None
+        responses.append(response)
+    return responses
+
+
+# ============================================================
 # List documents
 # ============================================================
 
@@ -520,18 +564,26 @@ async def list_documents(
     # endpoint's own docstring above already had fixed once for
     # financial_metrics generally.
     tiers: dict[int, str] = {}
+    superseded_by: dict[int, int] = {}
     if docs:
         tier_result = await db.execute(
             select(
                 FinancialMetrics.document_id,
                 FinancialMetrics.extraction_confidence_tier,
                 FinancialMetrics.human_approved_at,
+                FinancialMetrics.superseded_by_document_id,
             ).where(FinancialMetrics.document_id.in_([doc.id for doc in docs]))
         )
+        rows = tier_result.all()
         tiers = {
             document_id: effective
-            for document_id, tier, human_approved_at in tier_result.all()
+            for document_id, tier, human_approved_at, _ in rows
             if (effective := _effective_tier(tier, human_approved_at)) is not None
+        }
+        superseded_by = {
+            document_id: merged_into
+            for document_id, _, _, merged_into in rows
+            if merged_into is not None
         }
 
     # Built explicitly (not left to FastAPI's automatic response_model
@@ -543,6 +595,7 @@ async def list_documents(
     for doc in docs:
         response = DocumentResponse.model_validate(doc)
         response.extraction_confidence_tier = tiers.get(doc.id)
+        response.superseded_by_document_id = superseded_by.get(doc.id)
         responses.append(response)
     return responses
 

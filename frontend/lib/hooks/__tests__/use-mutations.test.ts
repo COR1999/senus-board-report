@@ -69,6 +69,7 @@ describe('useImportExternalFiling', () => {
       status: 'completed',
       created_at: '2026-07-08T00:00:00Z',
       extraction_confidence_tier: null,
+      superseded_by_document_id: null,
     })
     const onSuccess = vi.fn()
     const { result } = renderHook(() => useImportExternalFiling(onSuccess))
@@ -108,6 +109,7 @@ describe('useApproveDocument', () => {
       status: 'completed',
       created_at: '2026-07-08T00:00:00Z',
       extraction_confidence_tier: 'auto_accept',
+      superseded_by_document_id: null,
       financial_metrics: {
         revenue: null,
         customers: null,

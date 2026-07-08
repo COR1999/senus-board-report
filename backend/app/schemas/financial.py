@@ -153,6 +153,12 @@ class DocumentResponse(DocumentBase):
     # FinancialMetrics row yet, or one extracted before this feature
     # existed.
     extraction_confidence_tier: Optional[str] = None
+    # Populated the same way as extraction_confidence_tier above -- set when
+    # this document's data has been merged into a new combined document
+    # covering the same reporting period (see period_merge_service.py).
+    # `None` for the overwhelming majority of documents, which aren't
+    # superseded by anything.
+    superseded_by_document_id: Optional[int] = None
 
     model_config = ConfigDict(from_attributes=True)
 

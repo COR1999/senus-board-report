@@ -67,6 +67,8 @@ _COLUMNS_ADDED_AFTER_INITIAL_RELEASE = {
         # model's own docstring. Plain "JSON" (not "JSONB") works
         # identically for this raw ALTER TABLE statement on both engines.
         ("extraction_confidence_reasons", "JSON"),
+        # Set by period_merge_service -- see the model's own docstring.
+        ("superseded_by_document_id", "INTEGER"),
     ],
     # SHA256 of the uploaded file's bytes, for exact-duplicate-upload
     # detection (see documents.py's upload route). Existing rows get NULL

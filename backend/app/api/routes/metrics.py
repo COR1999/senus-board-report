@@ -3,7 +3,7 @@ from typing import Callable, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, or_
+from sqlalchemy import select, or_, and_
 
 from app.core.database import get_db
 from app.models.financial_metrics import FinancialMetrics
@@ -54,11 +54,18 @@ _HAS_CORE_METRICS = or_(
 # /api/documents/{id}/approve, see documents.py) also qualifies --
 # `human_approved_at` is a separate column from `extraction_confidence`,
 # so this never rewrites the algorithmic score itself, only adds a second,
-# independent way to earn dashboard eligibility.
-_IS_CONFIDENT_ENOUGH_FOR_DASHBOARD = or_(
-    FinancialMetrics.extraction_confidence >= 95,
-    FinancialMetrics.extraction_confidence.is_(None),
-    FinancialMetrics.human_approved_at.isnot(None),
+# independent way to earn dashboard eligibility. A row that's been
+# `superseded_by_document_id` (see period_merge_service.py -- two documents
+# independently reporting the exact same period, merged into a new one) is
+# excluded unconditionally: the merged document is what should drive the
+# dashboard for that period now, never the originals it was built from.
+_IS_CONFIDENT_ENOUGH_FOR_DASHBOARD = and_(
+    or_(
+        FinancialMetrics.extraction_confidence >= 95,
+        FinancialMetrics.extraction_confidence.is_(None),
+        FinancialMetrics.human_approved_at.isnot(None),
+    ),
+    FinancialMetrics.superseded_by_document_id.is_(None),
 )
 
 _EMPTY_RATIO = KPIMetric(value="N/A", change=0, trend="neutral", history=[])
