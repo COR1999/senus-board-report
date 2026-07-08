@@ -118,11 +118,17 @@ large change. The working pattern, used consistently:
 
 ## Assumptions
 
-- **There is no more historical structured data to obtain.** Senus's Dec-2025 half-year results
-  (its first set of results as a newly-public company) are the only real filing that exists. Every
-  prior-period comparative on the dashboard comes from that one filing's own comparison column, not
-  from separate historical documents — fabricating additional historical quarters would misrepresent
-  a real company in a graded submission.
+- **Only one real filing has been ingested so far — this is a known gap, not a data ceiling.**
+  Every prior-period comparative currently on the dashboard comes from the HY2026 half-year filing's
+  own comparison column, not from separate historical documents. Senus's investor relations page
+  (`app.assiduous.tech/investor-relations/senus`) also lists an **Information Document (December
+  2025)** — the Euronext listing prospectus, which includes FY2024/FY2025 annual figures — and
+  **ADF Farm Solutions' audited Consolidated Financial Statements (30 June 2025)** (Senus's
+  predecessor entity, pre-re-registration), either of which would give genuine additional historical
+  comparatives for Growth & Revenue YoY analysis. Neither has been extracted for this submission —
+  see `docs/roadmap.md` for why this is flagged as the top follow-up priority rather than backfilled
+  under time pressure or, worse, fabricated. What *is* on the dashboard is never synthetic: no
+  additional historical quarter has been invented to fill this gap.
 - **This is a single-user tool**, not a multi-tenant product. The dashboard assumes one fixed
   presenter identity (a board member/CEO giving a live presentation) — there is no real
   authentication, login, or account system, by design, not as an oversight.
