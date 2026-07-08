@@ -131,3 +131,61 @@ async def test_add_missing_columns_noop_on_already_current_table():
         await _add_missing_columns(conn)  # should be a clean no-op
 
     await engine.dispose()
+
+
+class TestNullableColumnBackfill:
+    """
+    A real production bug, not hypothetical: importing ADF Farm Solutions
+    (a document that genuinely doesn't disclose a customer count) was the
+    first insert to ever attempt a NULL `customers` value, and hit Postgres'
+    NotNullViolationError -- the SQLAlchemy model had said Optional[int] for
+    a long time, but `Base.metadata.create_all` never alters an existing
+    table's column constraints, so the live column was still NOT NULL from
+    whenever the table was first created.
+    """
+
+    @pytest.mark.anyio
+    async def test_skipped_entirely_on_sqlite_no_error(self):
+        # ALTER COLUMN ... DROP NOT NULL is Postgres-only syntax -- running
+        # against a SQLite connection (every test/local run) must not even
+        # attempt it, let alone error.
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:", poolclass=StaticPool)
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+            await _add_missing_columns(conn)  # must not raise
+        await engine.dispose()
+
+    @pytest.mark.anyio
+    async def test_drops_not_null_on_every_original_baseline_column_for_postgres(self):
+        # A minimal fake standing in for AsyncConnection -- real Postgres
+        # isn't available in this test environment, so this verifies the
+        # *logic* (which table, which columns, right SQL shape) rather than
+        # actually executing against a live database.
+        executed_sql: list[str] = []
+
+        class _FakeDialect:
+            name = "postgresql"
+
+        class _FakeConn:
+            dialect = _FakeDialect()
+
+            async def run_sync(self, fn, *args):
+                # _add_missing_columns calls run_sync with two different
+                # sync helpers (table_exists, get_existing_columns) --
+                # dispatch on name since both are nested closures.
+                if fn.__name__ == "table_exists":
+                    return True  # matches production: the table exists
+                if fn.__name__ == "get_existing_columns":
+                    return set()  # irrelevant to this test, must be iterable
+                raise AssertionError(f"unexpected run_sync target: {fn.__name__}")
+
+            async def execute(self, clause):
+                executed_sql.append(str(clause))
+
+        await _add_missing_columns(_FakeConn())
+
+        for column in ("revenue", "customers", "cash", "ebitda", "gross_margin", "operating_margin"):
+            assert any(
+                f"ALTER TABLE financial_metrics ALTER COLUMN {column} DROP NOT NULL" in sql
+                for sql in executed_sql
+            ), f"missing DROP NOT NULL for {column}"
