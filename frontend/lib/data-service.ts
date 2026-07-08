@@ -106,8 +106,8 @@ export async function getChartData(): Promise<ChartDataPoint[]> {
 
 /**
  * AI-generated board commentary from the current KPIs, via our own
- * /api/insights Next.js route (not the Python backend -- OpenAI is called
- * server-side there, keeping OPENAI_API_KEY out of the client bundle).
+ * /api/insights Next.js route (not the Python backend -- Gemini is called
+ * server-side there, keeping GEMINI_INSIGHTS_API_KEY out of the client bundle).
  */
 export async function getAiInsights(metrics: Metrics): Promise<Insight[]> {
   try {

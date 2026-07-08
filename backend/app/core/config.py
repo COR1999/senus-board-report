@@ -53,12 +53,6 @@ class Settings(BaseSettings):
         description="Proactive rolling 24h cap on Gemini API calls"
     )
 
-    # OpenAI API
-    OPENAI_API_KEY: Optional[str] = Field(
-        default=None,
-        description="OpenAI API key"
-    )
-
     # Environment
     ENVIRONMENT: str = Field(
         default="development",

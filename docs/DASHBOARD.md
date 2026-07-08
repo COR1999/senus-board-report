@@ -1,5 +1,10 @@
 # Dashboard Architecture
 
+> **Historical document.** Written during the project's initial manual-build phase (see
+> `docs/roadmap.md`), before most of the current architecture existed — some of what's described
+> below (e.g. the top-nav search box and notifications) was later removed as non-functional. Kept
+> for history; see `docs/architecture.md` for the current, accurate system architecture.
+
 ## Overview
 The Senus Board Intelligence Dashboard is an executive-level reporting platform that displays key business metrics, revenue trends, and recent reports in real-time.
 
