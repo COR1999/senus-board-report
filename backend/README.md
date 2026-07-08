@@ -70,7 +70,6 @@ environment variables in the Railway project dashboard for production.
 | `GEMINI_API_KEY` | No | AI enrichment is skipped (safe fallback) if unset |
 | `GEMINI_MAX_CALLS_PER_MINUTE` | No | Default `10` — proactive rate-limit cap |
 | `GEMINI_MAX_CALLS_PER_DAY` | No | Default `1000` — proactive rolling 24h cap |
-| `OPENAI_API_KEY` | No | Reserved; not currently used by any code path |
 | `ENVIRONMENT` | Yes (prod) | Set to `production` on Railway |
 | `DEBUG` | Yes (prod) | Set to `False` on Railway — enables permissive CORS (`*`) and leaks exception detail when `True` |
 | `FRONTEND_URL` | Yes | Deployed frontend origin, added to the CORS allow-list |
