@@ -153,6 +153,24 @@ async def get_dashboard_metrics(db: AsyncSession = Depends(get_db)):
         )
 
     latest = rows[0]
+
+    # Same cadence-safety principle as get_revenue_trend below, applied
+    # here too -- a real incident found live in production, not
+    # hypothetical: comparing a 12-month total against a 6-month total as
+    # if they were sequential periods produced a fabricated "+135.9%"
+    # revenue change (837K vs. the half-year filing's 355K) instead of the
+    # real, honest FY2025-vs-FY2024 comparison (837K vs. 688K, +21.6%,
+    # from the Information Document's own embedded revenue_prior). A row
+    # is excluded from `previous`/`history` only on a *confirmed* cadence
+    # mismatch (both known and different) -- an unknown cadence is never
+    # treated as evidence of a mismatch.
+    latest_cadence = _cadence_months(latest)
+    if latest_cadence is not None:
+        rows = [
+            r for r in rows
+            if (row_cadence := _cadence_months(r)) is None or row_cadence == latest_cadence
+        ]
+
     previous = rows[1] if len(rows) > 1 else None
 
     # Prefer the deterministic extractor's own reporting_period/_prior

@@ -32,8 +32,8 @@ report → render it on a dashboard. **46 commits**, 2 July – 6 July 2026.
 
 From this point on, development was streamlined using **Claude Code (Sonnet 5)**, working one
 feature/fix branch at a time with an explicit plan-then-implement-then-verify discipline (see the
-root `README.md`'s "AI-assisted workflow" section for the working pattern itself). **37 branches**,
-PRs #3–#42.
+root `README.md`'s "AI-assisted workflow" section for the working pattern itself). **38 branches**,
+PRs #3–#43.
 
 ### KPI system & financial metrics (PRs #3–#9, #13)
 
@@ -146,9 +146,25 @@ detection) and a real architectural finding (`ReportService.generate_report` com
 status row *before* the confidence check runs, so a plain rollback on rejection wasn't enough — it
 had to be handled explicitly).
 
+**PR #43** followed immediately, found entirely by actually using the live production app right
+after PR #42 merged (importing the real Information Document, then watching what the dashboard did
+with two real filings of different cadence present together) — a direct demonstration of why "verify
+against the real system" stayed a standing rule throughout this project rather than trusting tests
+alone: the *KPI cards'* own change%/history calculation still blended cadences (a "+135.9%" revenue
+change comparing the new annual filing against the old half-year filing's revenue, instead of the
+real +21.6% FY2025-vs-FY2024 figure), even though PR #42 had already fixed the revenue-trend chart
+the same way. Also fixed in the same branch: reports showing "Document #13" instead of a real name
+(a missing filename fallback on the Gemini code path), import errors showing a raw "422" instead of
+the confidence gate's actual explanation (the shared `apiFetch` helper never read a FastAPI error
+body's `detail` field), concurrent imports racing against each other, and a deeper bug behind "AI
+Board Insights didn't update" — the insights prompt-builder crashed on the dashboard's own non-KPI
+context fields (`current_period`/`prior_period`/`data_extracted_at`), silently falling back to
+static placeholder text in production even for genuinely new data. See
+`frontend/docs/ai-usage/mixed-cadence-kpi-comparison-and-report-naming.md` for the full record.
+
 ## Working discipline throughout Phase 2
 
-A few rules were established early and enforced consistently across all 37 branches:
+A few rules were established early and enforced consistently across all 38 branches:
 
 - **Never fabricate missing data.** A missing value is `null`/`None`, never a guessed `0` — this
   came up repeatedly (KPI sparkline history, reporting-period extraction, bookings figures, cadence
@@ -189,9 +205,37 @@ page/coordinate data captured at all. Doing this properly needs a different extr
 viewer on the frontend — a real, separate feature, not a quick add. What exists today instead: a
 "View source" link on each document opens the original PDF directly (already built, PR #30).
 
+**A real reporting-period selector, not just "latest by extraction time" (idea, not built).**
+Prompted by a real, live-confirmed gap: once a second real filing (the FY2025 Information Document,
+PR #42) existed alongside the half-year filing, the dashboard had no way to show *both* except by
+switching which one counted as "latest" -- there's no way for a board reader to deliberately pick
+"show me HY2026" vs. "show me FY2025." The fix isn't just a UI dropdown; it needs the backend's
+"latest" selection (currently `ORDER BY extracted_at DESC`) to become a `?period=` parameter instead,
+defaulting to the true latest when unset. Two concrete pieces worth building, based directly on user
+notes:
+- **Period selector labels should combine the bare label with its real calendar range**, e.g.
+  "HY2026 (1 Jul 2025 – 31 Dec 2025)" in one dropdown option -- self-explanatory for anyone viewing
+  the dashboard without prior context on Senus's fiscal calendar (which runs Jul–Jun, not
+  calendar-year), rather than assuming "HY2026" alone is legible outside the company. The underlying
+  calendar-range data already exists (`reporting_period_start`/`_end`, built for the KPI card
+  subtitles) -- this is a presentation change, not new extraction work.
+- **YoY comparisons should read from whichever *same-cadence* prior period exists**, not just
+  "whatever the second-most-recent upload happens to be" -- already fixed for the *current* single
+  "latest" view in the mixed-cadence KPI bug (see the section above), but a real period selector
+  would extend this naturally: selecting "FY2025" should compare against FY2024 (from that filing's
+  own embedded comparative), selecting "HY2026" against HY2025, never HY vs. FY.
+
+Deliberately **not** picking up the rest of a general executive-dashboard template (a monthly
+revenue bar chart, a segment/product-line donut breakdown, budget-vs-actual variance columns) --
+this project has one real filing per reporting period, not monthly-granularity data, no segment-level
+revenue breakdown, and no budget figures anywhere in the source filings. Building UI for data that
+doesn't exist would mean fabricating it, which this project has avoided everywhere else.
+
 **Other open items** (see the audit referenced in the README's "How outputs were validated"
 section): PDF-download storage durability (no persistent/object storage yet), a few remaining
 Documents/Reports-area gaps (bulk actions, document preview, the separate AI-generated-report PDF
 export, a "Pending Review" confidence tag on the Reports table to match the one already on
-Documents — same batched-query pattern, just not done in PR #42 given time), and a demo video
-recording.
+Documents — same batched-query pattern, just not done in PR #42 given time), fixing the frontend's
+separate AI Board Insights Gemini integration (currently silently falling back to static placeholder
+content in production -- needs someone with Vercel/Google AI Studio access to check
+`GEMINI_INSIGHTS_API_KEY`/quota, not a code fix), and a demo video recording.

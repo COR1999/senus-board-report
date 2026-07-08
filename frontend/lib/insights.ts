@@ -1,4 +1,4 @@
-import type { Metrics } from '@/lib/data-service'
+import type { Metrics, MetricValue } from '@/lib/data-service'
 import { KPI_CATEGORIES, type KpiCategory } from '@/lib/kpi-categories'
 
 export type InsightType = 'positive' | 'risk' | 'opportunity'
@@ -41,11 +41,30 @@ export const FALLBACK_INSIGHTS: Insight[] = [
   },
 ]
 
-/** Builds the prompt sent to Gemini from the dashboard's current KPI values. */
+function isMetricValue(value: unknown): value is MetricValue {
+  return typeof value === 'object' && value !== null && 'value' in value && 'trend' in value
+}
+
+/**
+ * Builds the prompt sent to Gemini from the dashboard's current KPI values.
+ *
+ * `Metrics` mixes real KPI cards (`MetricValue`-shaped: revenue, cash, ...)
+ * with plain string|null context fields (`current_period`, `prior_period`,
+ * `data_extracted_at`) -- a blind `Object.entries(metrics)` previously
+ * treated every one of those as a KPI too, reading `.value`/`.change`/
+ * `.trend` off a plain string (producing garbage "undefined" lines in the
+ * prompt) or off `null` (throwing outright, silently falling back to
+ * FALLBACK_INSIGHTS via this function's caller's try/catch -- a real,
+ * live-confirmed bug, not hypothetical: a genuinely new set of KPIs after
+ * importing a real filing still rendered the hardcoded fallback text).
+ * `isMetricValue` filters to only the real KPI entries, robust against any
+ * future non-KPI field being added to `Metrics` without this needing to be
+ * kept in sync with an explicit key list.
+ */
 export function buildInsightsPrompt(metrics: Metrics): string {
-  const lines = Object.entries(metrics).map(
-    ([key, m]) => `- ${key}: ${m.value} (${m.change > 0 ? '+' : ''}${m.change}%, trend: ${m.trend})`
-  )
+  const lines = Object.entries(metrics)
+    .filter((entry): entry is [string, MetricValue] => isMetricValue(entry[1]))
+    .map(([key, m]) => `- ${key}: ${m.value} (${m.change > 0 ? '+' : ''}${m.change}%, trend: ${m.trend})`)
 
   return `You are a financial analyst writing board-level commentary for Senus PLC, \
 a natural capital SaaS company. Given these current KPIs:

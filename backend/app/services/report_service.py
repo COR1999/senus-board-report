@@ -301,8 +301,19 @@ class ReportService:
             report.model_version = content.get("model_version", "gemini-2.0-flash")
             report.generation_source = "hybrid"
 
+            # Falls back to the document's filename when neither Gemini nor
+            # the baseline produced a company name -- previously only the
+            # `_baseline_is_complete` branch above had this fallback, so any
+            # document routed through Gemini (baseline incomplete -- exactly
+            # the Information Document's case, since its EBITDA is
+            # genuinely undisclosed) that didn't itself return a
+            # company_name fell through to the frontend's own "Document
+            # #{id}" placeholder instead. Found via a real report showing
+            # "Document #13" in production instead of a real name.
+            company_name = content.get("company_name") or document.filename
+
             report.summary = {
-                "company_name": content.get("company_name"),
+                "company_name": company_name,
                 "reporting_period": content.get("reporting_period"),
                 "metrics": merged_metrics,
                 "key_findings": report.key_findings,

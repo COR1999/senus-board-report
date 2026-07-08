@@ -45,6 +45,27 @@ describe('buildInsightsPrompt', () => {
     expect(prompt).toContain('Returns')
     expect(prompt).toContain('Revenue Trend chart')
   })
+
+  it('excludes the plain string/null context fields, not just the real KPI cards', () => {
+    // Real bug, live-confirmed against production: `Metrics` mixes
+    // MetricValue-shaped KPI cards with plain string|null context fields
+    // (current_period/prior_period/data_extracted_at). Blindly iterating
+    // every key previously produced "- current_period: undefined
+    // (undefined%, trend: undefined)" garbage lines, and a null
+    // prior_period threw outright (reading .value off null) -- caught by
+    // the API route's try/catch, silently falling back to the hardcoded
+    // FALLBACK_INSIGHTS text even for genuinely new, real KPI data.
+    const prompt = buildInsightsPrompt(mockMetrics)
+    expect(prompt).not.toContain('current_period')
+    expect(prompt).not.toContain('prior_period')
+    expect(prompt).not.toContain('data_extracted_at')
+    expect(prompt).not.toContain('undefined')
+  })
+
+  it('does not throw when prior_period/data_extracted_at are null', () => {
+    const metricsWithNulls = { ...mockMetrics, prior_period: null, data_extracted_at: null }
+    expect(() => buildInsightsPrompt(metricsWithNulls)).not.toThrow()
+  })
 })
 
 describe('parseInsightsResponse', () => {

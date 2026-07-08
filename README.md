@@ -138,7 +138,7 @@ extract metrics, generate an AI-enriched report, render it on a dashboard — be
 AI-assisted-development workflow began.
 
 **Phase 2 (6–8 July 2026).** Once that foundation existed, development was streamlined using
-**Claude Code (Sonnet 5)** across 37 feature/fix branches, merged one at a time rather than as one
+**Claude Code (Sonnet 5)** across 38 feature/fix branches, merged one at a time rather than as one
 large change. The working pattern, used consistently:
 
 1. **Plan before code** — for any nontrivial change, the agent explored the actual codebase first,
@@ -193,7 +193,7 @@ large change. The working pattern, used consistently:
 
 ## How outputs were validated
 
-- **Automated tests**: 167 backend (pytest) + 129 frontend (Vitest) tests, run before every merge.
+- **Automated tests**: 169 backend (pytest) + 131 frontend (Vitest) tests, run before every merge.
 - **Type safety**: `tsc --noEmit` clean before every merge.
 - **Manual validation against the real filing**: extracted figures (revenue, EBITDA, cash,
   customers, bookings) were cross-checked by hand against the source PDF during
@@ -244,6 +244,17 @@ npm run dev
 - The "Pending Review" extraction-confidence tag is shown on the Documents table but not yet the
   Reports table (same document underneath either way — a quick follow-up, not a gap in the
   underlying confidence gate itself, which applies everywhere already).
+- The AI Board Insights panel's own (frontend-only, separate-API-key) Gemini integration is
+  currently returning its static fallback content in production rather than real generated
+  commentary — confirmed by directly calling the deployed `/api/insights` endpoint with genuinely
+  different metrics and observing identical output. This needs `GEMINI_INSIGHTS_API_KEY`/quota
+  checked on Vercel and Google AI Studio directly; it isn't a code bug (the panel's own prompt-
+  building bug that could have caused this was found and fixed, see `docs/roadmap.md`, but the
+  fallback persisted after that fix too, pointing at an API key/quota/billing issue outside this
+  repo's code).
+- No period selector yet — the dashboard always shows the most-recently-extracted filing, with no
+  way to deliberately view an older one (e.g. "show me HY2026" vs. "show me FY2025") even though
+  both are ingested. See `docs/roadmap.md`'s "Next priorities" for a scoped design.
 
 ## Further reading
 

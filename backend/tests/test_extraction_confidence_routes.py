@@ -167,6 +167,25 @@ async def test_upload_with_partial_deterministic_match_persists_as_needs_review(
 
 
 @pytest.mark.anyio
+async def test_report_name_falls_back_to_filename_when_gemini_returns_no_company_name(async_session, monkeypatch):
+    # Real production bug: a document routed through the Gemini path (baseline
+    # incomplete -- e.g. the Information Document's genuinely-undisclosed
+    # EBITDA) whose Gemini response didn't include a company_name fell
+    # through to the frontend's "Document #{id}" placeholder, since only the
+    # baseline-complete branch had a filename fallback. `_mock_extraction`'s
+    # `_FakeGemini` returns no company_name, matching that real scenario.
+    partial_baseline = {**_GOVERNANCE_DOC_BASELINE, "revenue": 100_000.0, "cash": 50_000.0}
+    _mock_extraction(monkeypatch, format_recognized=True, baseline=partial_baseline)
+
+    upload_file = UploadFile(filename="Senus PLC Information Document.pdf", file=BytesIO(b"%PDF-1.4 fake"))
+    response = await documents_routes.upload_document(upload_file, async_session)
+
+    report_result = await async_session.execute(Report.__table__.select().where(Report.id == response.report_id))
+    report_row = report_result.first()
+    assert report_row.summary["company_name"] == "Senus PLC Information Document.pdf"
+
+
+@pytest.mark.anyio
 async def test_regenerate_with_low_confidence_leaves_existing_report_untouched(async_session, monkeypatch):
     # First: a real filing succeeds normally.
     _mock_extraction(monkeypatch, format_recognized=True, baseline=_REAL_FILING_BASELINE)

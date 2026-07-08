@@ -136,7 +136,13 @@ export default function DocumentsPage() {
                 <Button
                   size="sm"
                   onClick={() => importFiling(filing.attachment_id)}
-                  disabled={importingId === filing.attachment_id}
+                  // Disabled whenever *any* import is in flight, not just
+                  // this row's own -- `useImportExternalFiling` tracks a
+                  // single `importingId`, so triggering a second import
+                  // before the first resolves would let one request's
+                  // result silently overwrite the other's error/success
+                  // state. One import at a time avoids the race entirely.
+                  disabled={importingId !== null}
                 >
                   <DownloadCloud className="h-4 w-4" />
                   {importingId === filing.attachment_id ? 'Importing...' : 'Import'}
