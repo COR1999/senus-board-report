@@ -32,8 +32,8 @@ report → render it on a dashboard. **46 commits**, 2 July – 6 July 2026.
 
 From this point on, development was streamlined using **Claude Code (Sonnet 5)**, working one
 feature/fix branch at a time with an explicit plan-then-implement-then-verify discipline (see the
-root `README.md`'s "AI-assisted workflow" section for the working pattern itself). **45 branches**,
-PRs #3–#52.
+root `README.md`'s "AI-assisted workflow" section for the working pattern itself). **46 branches**,
+PRs #3–#53.
 
 ### KPI system & financial metrics (PRs #3–#9, #13)
 
@@ -385,9 +385,54 @@ would have been silently wrong the moment this branch landed if left unchecked. 
 now-redundant "delete the stuck row" cleanup blocks in `documents.py`/`reports.py`, both no longer
 reachable now that `_generate` itself finalizes the row cleanly before raising.
 
+### A second mixed-period comparison bug, found live in production (PR #53)
+
+Directly after PR #52 deployed, using the real live app surfaced a genuine third bug in the same
+family as PR #43's original mixed-cadence incident -- caught by the user asking, correctly, "why
+isn't this new PDF comparing against the year prior" after approving the real ADF Farm Solutions
+document into production. Two distinct root causes, confirmed against real production data before
+any fix was written:
+
+1. **A vision-extracted document's cadence was structurally unknowable.** Gemini vision only ever
+   returns a free-text `reporting_period` (e.g. "Financial year ended 30 June 2025") -- unlike the
+   deterministic extractor, it never derives separate `reporting_period_start`/`_end` calendar
+   labels. Without those, `_cadence_months()` (metrics.py) returns `None` for any vision-extracted
+   row, so PR #43's own cadence-mismatch safety filter can't protect it at all -- an unknown cadence
+   is (correctly, elsewhere) never treated as a mismatch, but that same permissiveness meant it was
+   never excluded from anything either. Fixed by reusing the deterministic extractor's own "ended DD
+   Month YYYY" + cadence-cue parser (`FinancialMetricsExtractor._extract_period_fields`) against
+   Gemini's own period string in the vision branch of `ReportService._generate` -- no new regex
+   needed, since "Financial year ended 30 June 2025" is literally the same pattern the deterministic
+   path already parses out of a filing's full text.
+2. **Two different documents reporting the identical period were never guarded against.** Even with
+   cadence fixed, ADF Farm Solutions and the Information Document are both genuine FY2025 (12-month)
+   filings -- same cadence, so PR #43's filter alone doesn't catch this. `get_dashboard_metrics`
+   picked "the next most recent same-cadence row" as `previous` regardless of whether it covered a
+   genuinely different period, so ADF (revenue €836,991) was diffed against the Information
+   Document's own *current* FY2025 figure (also €836,991 -- literally the same company/period under
+   Senus's prior name) instead of the Information Document's real, embedded FY2024 comparative
+   (€688,317). The result: a fabricated "0% change" that read as stagnation, on a company that had
+   genuinely grown. Fixed with a new `_covers_same_period`/`_select_previous` pair in metrics.py --
+   `previous` now skips any candidate row sharing the anchor's exact `reporting_period_start`/`_end`,
+   falling back to the anchor's own embedded `_prior` field (honestly `N/A`/neutral here, since vision
+   extraction has no `revenue_prior` of its own) rather than ever diffing against a same-period
+   duplicate. Deliberately did **not** attempt to reach into a different document's `_prior` field to
+   manufacture a comparison -- that would blend two independently-extracted documents' data into one
+   claimed figure, contradicting the "one document's own embedded prior column" principle this project
+   has held everywhere else; an honest "no comparison available" beats a plausible-looking borrowed one.
+
+Locked in by two new tests: a vision extraction with a real "ended DD Month YYYY" period string
+correctly derives `reporting_period_start`/`_end`, and a same-period-duplicate scenario correctly
+falls back to neutral instead of diffing two documents against each other. Note for whoever next
+touches ADF Farm Solutions in production: this fix only applies to a fresh extraction -- the
+already-persisted row from before this deploy still has `reporting_period_start=None` baked in, and
+Railway's ephemeral filesystem (see the README's "Known limitations") means the original PDF likely
+won't survive the redeploy either, so `regenerate` won't work -- a delete + fresh re-upload is needed
+to actually pick up the fix.
+
 ## Working discipline throughout Phase 2
 
-A few rules were established early and enforced consistently across all 45 branches:
+A few rules were established early and enforced consistently across all 46 branches:
 
 - **Never fabricate missing data.** A missing value is `null`/`None`, never a guessed `0` — this
   came up repeatedly (KPI sparkline history, reporting-period extraction, bookings figures, cadence

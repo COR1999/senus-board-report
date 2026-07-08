@@ -268,6 +268,33 @@ class ReportService:
                     self.gemini.generate_report_from_images(images, document.filename) or {}
                     if images else {}
                 )
+
+                # Gemini vision only ever returns a free-text `reporting_period`
+                # (e.g. "Financial year ended 30 June 2025") -- there's no
+                # separate start/end/cadence structure the way the
+                # deterministic extractor derives one from a filing's full
+                # text. Without reporting_period_start/end, a vision-extracted
+                # document's cadence is unknowable (_cadence_months in
+                # metrics.py returns None), so the mixed-cadence safety filter
+                # can't protect it at all. Confirmed as a real production bug:
+                # ADF Farm Solutions (a genuine FY2025 filing) was diffed
+                # against the Information Document's own FY2025 figure (the
+                # *same* period, not a real prior year) instead of that
+                # document's real FY2024 comparative, purely because nothing
+                # could tell two full-year filings apart from a half-year one.
+                # Fixed by reusing the exact same "ended DD Month YYYY" +
+                # cadence-cue parser the deterministic extractor already runs
+                # against a filing's full text (_extract_period_fields), here
+                # applied to Gemini's own period string instead -- the ADF
+                # example above is literally a match for that parser's
+                # existing pattern, no new regex needed.
+                reporting_period_text = content.get("reporting_period")
+                if reporting_period_text:
+                    baseline_metrics.update({
+                        key: value
+                        for key, value in FinancialMetricsExtractor._extract_period_fields(reporting_period_text).items()
+                        if value is not None
+                    })
             else:
                 # =====================================================
                 # 1. BASELINE (DETERMINISTIC EXTRACTION - SOURCE OF TRUTH)

@@ -99,6 +99,46 @@ def _cadence_months(row: FinancialMetrics) -> Optional[int]:
     return (end_year - start_year) * 12 + (end_month - start_month) + 1
 
 
+def _covers_same_period(a: FinancialMetrics, b: FinancialMetrics) -> bool:
+    """
+    True when both rows report the exact same calendar period (e.g. both
+    "Jul 2024 - Jun 2025") -- distinct from same *cadence* (both 12-month
+    filings), which two DIFFERENT full years both satisfy. Only true when
+    both rows have known start/end labels; an unknown period is never
+    treated as a match (same permissive-by-default principle as
+    `_cadence_months`'s callers).
+
+    A real production bug, not hypothetical: ADF Farm Solutions (a genuine
+    FY2025 filing, vision-extracted) and the Information Document (also
+    FY2025, for the same underlying company under a prior name) both
+    report the *same* period -- picking "the next most recent document" as
+    ADF's `previous` grabbed the Information Document's own FY2025 figure
+    instead of a real prior year, producing a fabricated "0% change"
+    (836,991 diffed against itself) even though a real FY2024 comparative
+    existed elsewhere. See `_select_previous` below.
+    """
+    return (
+        a.reporting_period_start is not None
+        and a.reporting_period_end is not None
+        and a.reporting_period_start == b.reporting_period_start
+        and a.reporting_period_end == b.reporting_period_end
+    )
+
+
+def _select_previous(anchor: FinancialMetrics, candidates: List[FinancialMetrics]) -> Optional[FinancialMetrics]:
+    """
+    The row to diff `anchor` against for change%/trend -- the most recent
+    *genuinely different* period among `candidates` (already same-cadence-
+    filtered and extracted-before-or-with `anchor`). Skips past any row
+    covering the identical period as `anchor` (see `_covers_same_period`)
+    rather than treating a same-period duplicate document as if it were a
+    real prior year. `None` when no genuinely different period exists --
+    `prior_fallback` (below) then falls back to `anchor`'s own embedded
+    `_prior` field rather than a wrong document-level comparison.
+    """
+    return next((r for r in candidates if not _covers_same_period(anchor, r)), None)
+
+
 def _range_or_bare(start: Optional[str], end: Optional[str], bare: Optional[str]) -> Optional[str]:
     """
     Prefer a real calendar-month range (e.g. "Jul 2025 - Dec 2025") over
@@ -273,7 +313,7 @@ async def get_dashboard_metrics(
 
     latest = rows[0]  # == anchor, by construction of the filters above
 
-    previous = rows[1] if len(rows) > 1 else None
+    previous = _select_previous(anchor, rows[1:])
 
     # Prefer the deterministic extractor's own reporting_period/_prior
     # (e.g. "HY2026"/"HY25", extracted directly from the filing's text) --

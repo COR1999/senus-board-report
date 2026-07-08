@@ -184,6 +184,43 @@ async def test_a_document_with_only_page_markers_still_takes_the_vision_path(asy
 
 
 @pytest.mark.anyio
+async def test_vision_extraction_derives_period_start_end_from_gemini_own_period_string(async_session, monkeypatch):
+    # Real production bug: Gemini vision only ever returns a free-text
+    # `reporting_period` (never a separate start/end), so a vision-extracted
+    # document's cadence was unknowable -- letting it be diffed against a
+    # same-period duplicate document as if it were a real prior year (see
+    # metrics.py's _covers_same_period/_select_previous). Fixed by reusing
+    # the deterministic extractor's own "ended DD Month YYYY" + cadence-cue
+    # parser against Gemini's period string.
+    doc, report = await _make_scanned_document_and_report(async_session)
+    service = ReportService(async_session)
+
+    monkeypatch.setattr(
+        service.gemini, "generate_report_from_images",
+        lambda images, context: {
+            "company_name": "ADF Farm Solutions",
+            "reporting_period": "Financial year ended 30 June 2025",
+            "financial_metrics": {"revenue": {"value": 836_991}, "cash": {"value": 140_135}},
+            "key_findings": [], "ai_commentary": "",
+        },
+    )
+
+    result = await service._generate(doc, report)
+    assert result.status == "completed"
+
+    from app.models.financial_metrics import FinancialMetrics
+    from sqlalchemy import select
+
+    metrics = (
+        await async_session.execute(select(FinancialMetrics).where(FinancialMetrics.document_id == doc.id))
+    ).scalars().first()
+
+    assert metrics.reporting_period_end == "Jun 2025"
+    assert metrics.reporting_period_start == "Jul 2024"
+    assert metrics.reporting_period_end_prior == "Jun 2024"
+
+
+@pytest.mark.anyio
 async def test_a_failed_vision_extraction_is_rejected_but_kept_for_review(async_session, monkeypatch):
     doc, report = await _make_scanned_document_and_report(async_session)
     service = ReportService(async_session)
