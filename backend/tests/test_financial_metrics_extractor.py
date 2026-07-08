@@ -290,9 +290,13 @@ class TestExtractAgainstRealFiling:
     @pytest.fixture(scope="class")
     @classmethod
     def real_text(cls):
+        # Committed under tests/fixtures/, not backend/uploads/ -- the latter
+        # is gitignored (it's the runtime upload directory), so this test
+        # silently only ran locally and failed with FileNotFoundError in a
+        # fresh CI checkout until this fixture copy was added.
         pdf_path = (
-            Path(__file__).resolve().parent.parent
-            / "uploads"
+            Path(__file__).resolve().parent
+            / "fixtures"
             / "Senus_HalfYearResultsDec2025_PR_V19032026 FINAL clean.pdf"
         )
         content = pdf_path.read_bytes()

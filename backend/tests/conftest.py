@@ -27,6 +27,18 @@ def _compile_jsonb_sqlite(type_, compiler, **kw):
     return "JSON"
 
 
+# Tests are marked `@pytest.mark.anyio`, which relies on the `anyio` pytest
+# plugin's own `anyio_backend` fixture -- undefined here, it defaults to
+# module scope, which can't be depended on by the session-scoped fixtures
+# below (a session-scoped fixture requesting a narrower-scoped one is a
+# hard pytest error: "ScopeMismatch"). This surfaced only in CI (Linux),
+# not local Windows dev -- apparently different plugin registration order
+# between platforms let it slide locally despite identical package versions.
+@pytest.fixture(scope="session")
+def anyio_backend():
+    return "asyncio"
+
+
 @pytest_asyncio.fixture(scope="session")
 async def test_async_engine():
     """Create test database engine"""
