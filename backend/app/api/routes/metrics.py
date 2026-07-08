@@ -3,7 +3,7 @@ from typing import Callable, List, Optional
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, or_
 
 from app.core.database import get_db
 from app.models.financial_metrics import FinancialMetrics
@@ -28,6 +28,20 @@ HISTORY_WINDOW = 8
 # may not be monthly (e.g. half-year results), so "period" is a display
 # label derived from extracted_at, not a guaranteed-regular time axis.
 REVENUE_TREND_WINDOW = 24
+
+# A document the extractor found none of the four baseline figures in
+# (e.g. a non-financial filing -- an AGM notice, a Memorandum & Articles of
+# Association -- run through the same pipeline as a real filing, which the
+# investor-relations import feature makes possible) must never be selected
+# as "the latest" for dashboard purposes: it would silently blank out a
+# real prior filing's data with an all-N/A row. Applied to both queries
+# below that pick "the most recent N FinancialMetrics rows".
+_HAS_CORE_METRICS = or_(
+    FinancialMetrics.revenue.isnot(None),
+    FinancialMetrics.customers.isnot(None),
+    FinancialMetrics.cash.isnot(None),
+    FinancialMetrics.ebitda.isnot(None),
+)
 
 _EMPTY_RATIO = KPIMetric(value="N/A", change=0, trend="neutral", history=[])
 
@@ -71,6 +85,7 @@ async def get_dashboard_metrics(db: AsyncSession = Depends(get_db)):
 
     stmt = (
         select(FinancialMetrics)
+        .where(_HAS_CORE_METRICS)
         .order_by(FinancialMetrics.extracted_at.desc())
         .limit(HISTORY_WINDOW)
     )
@@ -79,10 +94,12 @@ async def get_dashboard_metrics(db: AsyncSession = Depends(get_db)):
     rows = result.scalars().all()
 
     if not rows:
-        empty = KPIMetric(value="€0", change=0, trend="neutral", history=[])
-        empty_count = KPIMetric(value="0", change=0, trend="neutral", history=[])
+        # No data at all -- either nothing has ever been uploaded, or every
+        # uploaded document's extraction found nothing usable (a non-
+        # financial document, filtered out by _HAS_CORE_METRICS above). "N/A"
+        # here, not a fabricated "€0"/"0" -- same reasoning as `build()` below.
         return DashboardSummaryResponse(
-            revenue=empty, customers=empty_count, cash=empty, ebitda=empty,
+            revenue=_EMPTY_RATIO, customers=_EMPTY_RATIO, cash=_EMPTY_RATIO, ebitda=_EMPTY_RATIO,
             ebitda_margin=_EMPTY_RATIO, cash_runway=_EMPTY_RATIO,
             interest_cover=_EMPTY_RATIO, roce=_EMPTY_RATIO, bookings=_EMPTY_RATIO,
             current_period=None, prior_period=None,
@@ -140,6 +157,12 @@ async def get_dashboard_metrics(db: AsyncSession = Depends(get_db)):
     def build(field: str, formatter: Callable[[Optional[float]], str]) -> KPIMetric:
         curr_val = getattr(latest, field)
         prev_val = prior_fallback(field)
+        # A None current value must render "N/A", not the formatter's own
+        # None-default (format_currency renders "€0" for None, which would
+        # misrepresent "not extracted" as a real zero -- the exact bug this
+        # was hit by once already, see docs/roadmap.md).
+        if curr_val is None:
+            return KPIMetric(value="N/A", change=0, trend="neutral", history=history(field))
         pct_change = round(MetricsService.calculate_change(curr_val, prev_val), 1)
         return KPIMetric(
             value=formatter(curr_val),
@@ -263,6 +286,13 @@ async def get_revenue_trend(db: AsyncSession = Depends(get_db)):
     for a document that didn't report it -- same missing-vs-zero convention as
     the sparkline history on /dashboard/summary.
     """
+    # Unlike /dashboard/summary below, this endpoint plots every document's
+    # data independently per field (a document missing revenue specifically
+    # still contributes a real point with a null revenue value) -- so
+    # `_HAS_CORE_METRICS` is deliberately NOT applied here. Excluding a
+    # document based on a cross-field "no signal at all" heuristic would
+    # contradict the per-field missing-vs-zero convention this endpoint is
+    # built on (see `optional_float` below).
     stmt = (
         select(FinancialMetrics)
         .order_by(FinancialMetrics.extracted_at.desc())

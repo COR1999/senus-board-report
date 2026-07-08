@@ -137,6 +137,64 @@ async def test_dashboard_summary_preserves_null_for_missing_field(async_client, 
 
 
 @pytest.mark.anyio
+async def test_dashboard_summary_skips_an_all_null_latest_row(async_client, async_session):
+    # Real incident: importing a non-financial document (e.g. an AGM notice)
+    # via the investor-relations sync feature produced a FinancialMetrics
+    # row with every baseline field null (the extractor correctly found
+    # nothing). Being the most recently extracted row, it used to become
+    # "latest" and blank out the real filing's data with an all-N/A
+    # dashboard. The real document's data must win instead.
+    base = datetime(2026, 1, 1)
+    await _add_metrics_row(
+        async_session, revenue=354_813.0, customers=138, cash=735_189.0, ebitda=-473_739.0, extracted_at=base
+    )
+    await _add_metrics_row(
+        async_session,
+        revenue=None, customers=None, cash=None, ebitda=None,
+        extracted_at=base + timedelta(minutes=1),
+    )
+
+    response = await async_client.get("/metrics/dashboard/summary")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["revenue"]["value"] == "€355K"
+    assert body["customers"]["value"] == "138"
+
+
+@pytest.mark.anyio
+async def test_dashboard_summary_all_null_rows_render_na_not_zero(async_client, async_session):
+    # Confirms the *other* half of the fix: when there's genuinely nothing
+    # but empty rows (e.g. only non-financial documents imported so far),
+    # the KPI cards must show "N/A", not a fabricated "€0"/"0" that would
+    # misrepresent "not extracted" as a real zero-value filing.
+    await _add_metrics_row(async_session, revenue=None, customers=None, cash=None, ebitda=None)
+
+    response = await async_client.get("/metrics/dashboard/summary")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["revenue"]["value"] == "N/A"
+    assert body["customers"]["value"] == "N/A"
+    assert body["cash"]["value"] == "N/A"
+    assert body["ebitda"]["value"] == "N/A"
+
+
+@pytest.mark.anyio
+async def test_dashboard_summary_latest_row_with_partial_data_is_still_selected(async_client, async_session):
+    # A row missing SOME fields (but not all) is a real, legitimate document
+    # -- must still be selected as latest, not skipped like a zero-signal row.
+    await _add_metrics_row(async_session, revenue=None, customers=None, cash=50_000.0, ebitda=None)
+
+    response = await async_client.get("/metrics/dashboard/summary")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["cash"]["value"] == "€50K"
+    assert body["revenue"]["value"] == "N/A"
+
+
+@pytest.mark.anyio
 async def test_dashboard_summary_ratio_kpis_are_na_with_no_data(async_client, async_session):
     response = await async_client.get("/metrics/dashboard/summary")
 

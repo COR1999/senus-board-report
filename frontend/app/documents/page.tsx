@@ -101,8 +101,11 @@ export default function DocumentsPage() {
             <div className="flex items-center justify-between gap-3">
               <div>
                 <CardTitle className="text-base">
-                  {availableFilings!.length} new filing{availableFilings!.length === 1 ? '' : 's'} available from
-                  Senus&apos;s investor relations page
+                  {/* A single template-literal expression, not interleaved JSX
+                      text/expressions -- splitting this across source lines
+                      previously trimmed the space right after the
+                      pluralization expression, rendering "filingsavailable". */}
+                  {`${availableFilings!.length} new filing${availableFilings!.length === 1 ? '' : 's'} available from Senus's investor relations page`}
                 </CardTitle>
                 <CardDescription>Found via Senus&apos;s investor relations API -- import to add it to this dashboard.</CardDescription>
               </div>

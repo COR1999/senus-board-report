@@ -35,26 +35,33 @@ class ReportService:
     # =========================================================
     # NORMALISATION (AI + fallback safe)
     # =========================================================
-    def _normalize_metric(self, value: Any, force_int: bool = False) -> float | int:
-        if isinstance(value, dict):
-            value = value.get("value", 0)
+    def _normalize_metric(self, value: Any, force_int: bool = False) -> float | int | None:
+        """
+        Coerces to a real number, preserving `None` for a genuinely missing
+        value rather than defaulting to 0 -- a document the extractor found
+        nothing in (e.g. a non-financial filing run through this pipeline
+        via the investor-relations import feature) must not get a fake
+        all-zero metrics row that can then shadow a real document's data on
+        the dashboard (see docs/roadmap.md's note on this exact incident).
+        """
+        if value is None:
+            return None
 
         try:
-            if force_int:
-                return int(float(value))
-            return float(value)
+            return int(float(value)) if force_int else float(value)
         except Exception:
-            return 0
+            return None
 
-    def _extract_metric_value(self, value: Any) -> float | int:
+    def _extract_metric_value(self, value: Any) -> float | int | None:
         """
-        Handles BOTH formats safely:
-        - AI: {"value": 123}
-        - fallback: 123
+        Handles BOTH formats safely, preserving `None` (genuinely missing)
+        rather than defaulting to 0:
+        - AI: {"value": 123} or {"value": None}
+        - fallback: 123 or None
         """
         if isinstance(value, dict):
-            return value.get("value", 0) or 0
-        return value or 0
+            return value.get("value")
+        return value
 
     @staticmethod
     def _plain_metric_value(value: Any) -> Any:
@@ -92,11 +99,9 @@ class ReportService:
             self._extract_metric_value(metrics_data.get("revenue"))
         )
 
-        metrics.customers = int(
-            self._normalize_metric(
-                self._extract_metric_value(metrics_data.get("customers")),
-                force_int=True
-            )
+        metrics.customers = self._normalize_metric(
+            self._extract_metric_value(metrics_data.get("customers")),
+            force_int=True
         )
 
         metrics.cash = self._normalize_metric(
