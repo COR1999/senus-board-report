@@ -45,14 +45,21 @@ implemented and visible on the dashboard (see `backend/docs/metrics-expansion-pl
 └───────────┘                  └─────────────┘
 ```
 
+**Extraction philosophy — deterministic first, LLM as a fallback, not the primary reader.** Senus's
+filings are native-text PDFs, not scans — so `financial_metrics_extractor.py` parses them directly
+with a context-aware regex engine (it isolates the P&L/Balance Sheet/Cash Flow sections *before*
+parsing, specifically to prevent narrative leakage — e.g. "EBITDA positive by FY2028" in a
+forward-looking statement must never be misread as a real EBITDA figure). Gemini only runs to fill
+gaps the deterministic pass couldn't find. This is a deliberate choice, not a default: a reliable
+regex/table parse over real extractable text is more reproducible and auditable than routing every
+figure through a vision model — the LLM is reserved for genuine gaps and narrative commentary, not
+asked to re-derive numbers a parser can already get right.
+
 - **Frontend** (`frontend/`): Next.js App Router dashboard. Fetches from the FastAPI backend on a
   60-second poll (metrics, chart data, reports), each independently content-deduped so an unchanged
   poll never triggers a re-render or a wasted downstream AI call.
-- **Backend** (`backend/`): FastAPI + async SQLAlchemy. A **deterministic, context-aware regex
-  parser** (`financial_metrics_extractor.py`) is the source of truth for extraction — it isolates
-  the P&L/Balance Sheet/Cash Flow sections before parsing, specifically to avoid narrative leakage
-  (e.g. "EBITDA positive by FY2028" in a forward-looking statement must never parse as a real EBITDA
-  figure). Gemini only runs when that deterministic pass is incomplete.
+- **Backend** (`backend/`): FastAPI + async SQLAlchemy. See the extraction philosophy above —
+  Gemini only runs when the deterministic pass is incomplete.
 - **AI Board Insights** (frontend-only, `app/api/insights/route.ts`): a separate Gemini
   integration, deliberately on a separate API key from the backend's extraction Gemini usage, so the
   two features never share a quota pool. Generates a fixed 3-insight narrative (positive/risk/
