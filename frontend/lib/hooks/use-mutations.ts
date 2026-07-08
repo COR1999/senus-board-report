@@ -1,7 +1,14 @@
 'use client'
 
 import { useState } from 'react'
-import { uploadPDF, deleteDocument, regenerateReport, importExternalFiling } from '@/lib/data-service'
+import {
+  uploadPDF,
+  deleteDocument,
+  regenerateReport,
+  importExternalFiling,
+  hideExternalFiling,
+  unhideExternalFiling,
+} from '@/lib/data-service'
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'Something went wrong'
@@ -72,6 +79,46 @@ export function useImportExternalFiling(onSuccess?: () => void) {
   }
 
   return { importFiling, importingId, error }
+}
+
+export function useHideExternalFiling(onSuccess?: () => void) {
+  const [hidingId, setHidingId] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const hideFiling = async (attachmentId: string) => {
+    setHidingId(attachmentId)
+    setError(null)
+    try {
+      await hideExternalFiling(attachmentId)
+      onSuccess?.()
+    } catch (err) {
+      setError(errorMessage(err))
+    } finally {
+      setHidingId(null)
+    }
+  }
+
+  return { hideFiling, hidingId, error }
+}
+
+export function useUnhideExternalFiling(onSuccess?: () => void) {
+  const [unhidingId, setUnhidingId] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const unhideFiling = async (attachmentId: string) => {
+    setUnhidingId(attachmentId)
+    setError(null)
+    try {
+      await unhideExternalFiling(attachmentId)
+      onSuccess?.()
+    } catch (err) {
+      setError(errorMessage(err))
+    } finally {
+      setUnhidingId(null)
+    }
+  }
+
+  return { unhideFiling, unhidingId, error }
 }
 
 export function useRegenerateReport(onSuccess?: () => void) {
