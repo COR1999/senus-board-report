@@ -105,6 +105,12 @@ async def merge_documents(
     """
     existing_doc = await db.get(Document, existing_row.document_id)
     new_doc = await db.get(Document, new_row.document_id)
+    existing_report = (
+        await db.execute(select(Report).where(Report.document_id == existing_row.document_id))
+    ).scalars().first()
+    new_report = (
+        await db.execute(select(Report).where(Report.document_id == new_row.document_id))
+    ).scalars().first()
 
     merged_values = {}
     reasons: List[str] = []
@@ -133,6 +139,21 @@ async def merge_documents(
 
     period_label = existing_row.reporting_period_end or existing_row.reporting_period or "Unknown period"
 
+    def _real_company_name(report: Optional[Report]) -> Optional[str]:
+        # A real, extracted company name (e.g. "ADF Farm Solutions Limited"),
+        # not a bare filename fallback (build_document_response/report_service
+        # both fall back to `document.filename` when no company_name was
+        # ever extracted -- indistinguishable from a real name except that a
+        # real one never ends in a document extension).
+        name = report.summary.get("company_name") if report and report.summary else None
+        if name and not name.lower().endswith((".pdf", ".doc", ".docx")):
+            return name
+        return None
+
+    company_name = (
+        _real_company_name(existing_report) or _real_company_name(new_report) or period_label
+    )
+
     if not has_conflict:
         reasons.append(
             f"Merged from {existing_doc.filename} and {new_doc.filename} -- "
@@ -153,7 +174,7 @@ async def merge_documents(
         document_id=merged_document.id,
         status="completed",
         summary={
-            "company_name": existing_doc.filename,
+            "company_name": company_name,
             "reporting_period": existing_row.reporting_period or new_row.reporting_period,
             "merged_from": [existing_row.document_id, new_row.document_id],
         },

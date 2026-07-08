@@ -54,9 +54,11 @@ export interface Metrics {
   // backend's JSON keys exactly (snake_case) -- getMetrics() returns
   // res.json() directly with no key-mapping layer, so these must line up
   // with DashboardSummaryResponse's actual field names, not be renamed to
-  // camelCase. `value` may be "N/A" (no underlying data) or, for
-  // cash_runway specifically, "Cash flow +" when operations aren't
-  // burning cash (not a numeric months figure).
+  // camelCase. `value` may be a field-specific missing-value sentence
+  // (e.g. "EBITDA not reported in this filing" -- see metrics.py's
+  // _MISSING_VALUE_MESSAGES) or, for cash_runway specifically,
+  // "Cash flow +" when operations aren't burning cash (not a numeric
+  // months figure).
   ebitda_margin: MetricValue
   cash_runway: MetricValue
   interest_cover: MetricValue
@@ -157,7 +159,19 @@ export async function getDashboardPeriods(): Promise<DashboardPeriod[]> {
  * /api/insights Next.js route (not the Python backend -- Gemini is called
  * server-side there, keeping GEMINI_INSIGHTS_API_KEY out of the client bundle).
  */
-export async function getAiInsights(metrics: Metrics): Promise<Insight[]> {
+export interface AiInsightsResult {
+  insights: Insight[]
+  /** True when `insights` is the static FALLBACK_INSIGHTS content, not a
+   * real Gemini generation (quota exhausted, no API key, or a network/parse
+   * failure). Callers must not treat this the same as a successful
+   * generation -- see insights-cache.ts, which previously cached and gated
+   * the manual refresh button on fallback content exactly like real
+   * insights, silently blocking a retry even though nothing real had ever
+   * been generated for that data. */
+  isFallback: boolean
+}
+
+export async function getAiInsights(metrics: Metrics): Promise<AiInsightsResult> {
   try {
     const res = await fetch('/api/insights', {
       method: 'POST',
@@ -166,10 +180,10 @@ export async function getAiInsights(metrics: Metrics): Promise<Insight[]> {
     })
     if (!res.ok) throw new Error(`Failed to fetch insights: ${res.statusText}`)
     const data = await res.json()
-    return data.insights
+    return { insights: data.insights, isFallback: Boolean(data.isFallback) }
   } catch (error) {
     console.warn('Failed to fetch AI insights, using fallback:', error)
-    return FALLBACK_INSIGHTS
+    return { insights: FALLBACK_INSIGHTS, isFallback: true }
   }
 }
 
@@ -264,16 +278,44 @@ export async function approveDocument(documentId: number): Promise<DocumentDetai
 }
 
 /**
- * URL for downloading the original uploaded PDF. Not a `fetch`-based
- * helper like the others -- callers plug this straight into an `<a href>`,
- * so the browser handles the download itself (no CORS concern, unlike
- * `fetch`, since it's a plain navigation/download, not a script-read
- * response). The backend may 404 with a specific "no longer available"
- * message if the file wasn't retained across a redeploy -- Railway's
- * filesystem isn't persistent yet, see backend/README.md.
+ * URL for the original uploaded PDF -- used internally by `downloadDocument`
+ * below, and by anything that just wants to link to/embed the file directly
+ * (e.g. "View source" links, which don't need error handling since a 404
+ * there just opens a browser error page the user already understands as
+ * "this didn't work").
  */
 export function getDocumentFileUrl(documentId: number): string {
   return `${API_URL}/api/documents/${documentId}/file`
+}
+
+/**
+ * Downloads the original uploaded PDF as a real file-save, with a proper
+ * error surfaced to the caller on failure. Deliberately a `fetch`-and-blob
+ * flow, not a plain `<a href download>` navigation (this function's only
+ * caller used to be exactly that) -- a plain navigation gives the browser
+ * nothing to show the user when the backend 404s (Railway's filesystem
+ * isn't persistent yet, see backend/README.md -- an upload from before the
+ * most recent redeploy has a real, specific "no longer available" message
+ * the old approach silently dropped, leaving what looked like a dead
+ * button). Throws on failure so the caller can show that real message,
+ * same reasoning as `deleteDocument`/`uploadPDF`.
+ */
+export async function downloadDocument(documentId: number, filename: string): Promise<void> {
+  const res = await fetch(getDocumentFileUrl(documentId))
+  if (!res.ok) {
+    const detail = await res
+      .json()
+      .then((body) => (typeof body?.detail === 'string' ? body.detail : null))
+      .catch(() => null)
+    throw new Error(detail ?? `Failed to download file: ${res.statusText}`)
+  }
+  const blob = await res.blob()
+  const objectUrl = URL.createObjectURL(blob)
+  const link = window.document.createElement('a')
+  link.href = objectUrl
+  link.download = filename
+  link.click()
+  URL.revokeObjectURL(objectUrl)
 }
 
 /**

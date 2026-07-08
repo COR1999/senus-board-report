@@ -50,10 +50,11 @@ describe('POST /api/insights', () => {
     const body = await res.json()
 
     expect(body.insights.length).toBeGreaterThan(0)
+    expect(body.isFallback).toBe(true)
     expect(generateContent).not.toHaveBeenCalled()
   })
 
-  it('returns real insights on a successful Gemini call', async () => {
+  it('returns real insights on a successful Gemini call, with isFallback: false', async () => {
     generateContent.mockResolvedValue({
       text: JSON.stringify({ insights: [{ text: 'Real insight', type: 'positive' }] }),
     })
@@ -63,6 +64,17 @@ describe('POST /api/insights', () => {
     const body = await res.json()
 
     expect(body.insights).toEqual([{ text: 'Real insight', type: 'positive', action: '', category: undefined }])
+    expect(body.isFallback).toBe(false)
+  })
+
+  it('returns isFallback: true when Gemini fails, so callers never treat placeholder content as real', async () => {
+    generateContent.mockRejectedValue(new Error('some transient failure'))
+    const { POST } = await import('@/app/api/insights/route')
+
+    const res = await POST(makeRequest())
+    const body = await res.json()
+
+    expect(body.isFallback).toBe(true)
   })
 
   it('backs off for 60s after a rate-limit (429) error, skipping Gemini entirely on the next call', async () => {

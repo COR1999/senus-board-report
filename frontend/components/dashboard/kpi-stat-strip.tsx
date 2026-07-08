@@ -1,5 +1,5 @@
 import { cn } from '@/lib/utils'
-import { getTrendStyle, type Trend } from '@/lib/format'
+import { getTrendStyle, getValueTextClass, type Trend } from '@/lib/format'
 import { Card, CardContent } from '@/components/ui/card'
 import type { KpiCategory } from '@/lib/kpi-categories'
 
@@ -57,11 +57,12 @@ export function KpiStatStrip({ items, periodLabel }: KpiStatStripProps) {
                 <div className="flex items-baseline gap-2">
                   {/* Same trend-follows-value-color treatment as KpiCard --
                       a metric like EBITDA Margin at -133.5% shouldn't read in
-                      plain neutral text. */}
+                      plain neutral text just because it has no prior-period
+                      comparative to diff against. */}
                   <span
                     className={cn(
                       'text-xl font-semibold tracking-tight',
-                      trend === 'neutral' ? 'text-foreground' : textClass
+                      getValueTextClass(trend, value)
                     )}
                   >
                     {value}

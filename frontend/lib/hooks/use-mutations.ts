@@ -4,6 +4,7 @@ import { useState } from 'react'
 import {
   uploadPDF,
   deleteDocument,
+  downloadDocument,
   regenerateReport,
   importExternalFiling,
   hideExternalFiling,
@@ -60,6 +61,25 @@ export function useDeleteDocument(onSuccess?: () => void) {
   }
 
   return { remove, deletingId, error }
+}
+
+export function useDownloadDocument() {
+  const [downloadingId, setDownloadingId] = useState<number | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const download = async (documentId: number, filename: string) => {
+    setDownloadingId(documentId)
+    setError(null)
+    try {
+      await downloadDocument(documentId, filename)
+    } catch (err) {
+      setError(errorMessage(err))
+    } finally {
+      setDownloadingId(null)
+    }
+  }
+
+  return { download, downloadingId, error }
 }
 
 export function useImportExternalFiling(onSuccess?: () => void) {

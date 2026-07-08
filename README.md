@@ -249,7 +249,7 @@ large change. The working pattern, used consistently:
 
 ## How outputs were validated
 
-- **Automated tests**: 221 backend (pytest) + 166 frontend (Vitest) tests, run before every merge.
+- **Automated tests**: 223 backend (pytest) + 176 frontend (Vitest) tests, run before every merge.
 - **Type safety**: `tsc --noEmit` clean before every merge.
 - **Manual validation against the real filing**: extracted figures (revenue, EBITDA, cash,
   customers, bookings) were cross-checked by hand against the source PDF during
@@ -289,6 +289,11 @@ npm run dev
 ## Known limitations
 
 - Uploaded-PDF download durability (see Assumptions above) — no object storage migration yet.
+  **Future enhancement**: move uploaded PDFs to durable cloud/object storage (e.g. AWS S3, Cloudflare
+  R2, or Railway's own volume/bucket offering) instead of the app server's local, ephemeral disk — the
+  DB rows/extracted text/metrics are already unaffected by a redeploy today, only the original file
+  bytes are at risk, so this is an infrastructure swap behind the existing `file_path` column, not a
+  data-model change.
 - No real authentication — intentional for a single-user tool, but would need addressing before any
   multi-user use.
 - The Reports table's "PDF export" (of the AI-generated report itself, distinct from downloading the

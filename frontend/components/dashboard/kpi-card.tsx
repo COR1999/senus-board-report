@@ -1,6 +1,6 @@
 import * as React from "react"
 import { cn } from "@/lib/utils"
-import { getTrendStyle, type Trend } from "@/lib/format"
+import { getTrendStyle, getValueTextClass, type Trend } from "@/lib/format"
 import { KpiSparkline } from "@/components/dashboard/kpi-sparkline"
 import {
   Card,
@@ -103,11 +103,13 @@ export function KpiCard({
       <CardContent className={cn("flex flex-col gap-1.5", isHero && "gap-2.5 pt-1")}>
         {/* Value color follows trend (same emerald/rose/slate palette as the
             icon badge and delta pill) -- keeps the signal visible even
-            before reading the small pill text. */}
+            before reading the small pill text. A neutral trend (no prior-
+            period comparative) falls back to checking the value's own sign,
+            not a blanket default -- see getValueTextClass's own docstring. */}
         <div
           className={cn(
             "font-bold tracking-tight",
-            trend === "neutral" ? "text-foreground" : textClass,
+            getValueTextClass(trend, value),
             isHero ? "text-3xl sm:text-4xl" : "text-2xl sm:text-3xl"
           )}
         >

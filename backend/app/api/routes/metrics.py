@@ -68,7 +68,26 @@ _IS_CONFIDENT_ENOUGH_FOR_DASHBOARD = and_(
     FinancialMetrics.superseded_by_document_id.is_(None),
 )
 
-_EMPTY_RATIO = KPIMetric(value="N/A", change=0, trend="neutral", history=[])
+_EMPTY_RATIO = KPIMetric(value="No data yet", change=0, trend="neutral", history=[])
+
+# Field-specific missing-value copy, shown instead of a bare "N/A" -- a real
+# user-facing readability request: "N/A" doesn't say *what's* missing, and a
+# board reader shouldn't have to guess whether a field is unreported, not
+# calculable, or something went wrong. Only covers the fields `build()`/
+# `ratio_kpi()`/`bookings_kpi()` below can actually report missing -- not
+# used for `_EMPTY_RATIO` above, which is a different case entirely (no
+# eligible document exists at all, not "this one document skipped a field").
+_MISSING_VALUE_MESSAGES = {
+    "revenue": "Revenue not reported in this filing",
+    "customers": "Customer count not reported in this filing",
+    "cash": "Cash position not reported in this filing",
+    "ebitda": "EBITDA not reported in this filing",
+    "ebitda_margin": "EBITDA margin not available (EBITDA not reported)",
+    "cash_runway": "Cash runway not available (insufficient data)",
+    "interest_cover": "Interest cover not available (no interest expense reported)",
+    "roce": "ROCE not available (insufficient balance sheet data)",
+    "bookings": "No bookings reported in this filing",
+}
 
 _MONTH_LOOKUP = {
     name: index
@@ -363,12 +382,15 @@ async def get_dashboard_metrics(
     def build(field: str, formatter: Callable[[Optional[float]], str]) -> KPIMetric:
         curr_val = getattr(latest, field)
         prev_val = prior_fallback(field)
-        # A None current value must render "N/A", not the formatter's own
-        # None-default (format_currency renders "€0" for None, which would
-        # misrepresent "not extracted" as a real zero -- the exact bug this
-        # was hit by once already, see docs/roadmap.md).
+        # A None current value must render a field-specific missing-value
+        # message, not the formatter's own None-default (format_currency
+        # renders "€0" for None, which would misrepresent "not extracted" as
+        # a real zero -- the exact bug this was hit by once already, see
+        # docs/roadmap.md).
         if curr_val is None:
-            return KPIMetric(value="N/A", change=0, trend="neutral", history=history(field))
+            return KPIMetric(
+                value=_MISSING_VALUE_MESSAGES.get(field, "N/A"), change=0, trend="neutral", history=history(field)
+            )
         pct_change = round(MetricsService.calculate_change(curr_val, prev_val), 1)
         return KPIMetric(
             value=formatter(curr_val),
@@ -404,12 +426,13 @@ async def get_dashboard_metrics(
     capital_employed_prior = bs.capital_employed_prior if bs else None
 
     def ratio_kpi(
+        field: str,
         current: Optional[float],
         prior: Optional[float],
         formatter: Callable[[float], str],
     ) -> KPIMetric:
         if current is None:
-            return KPIMetric(value="N/A", change=0, trend="neutral", history=[])
+            return KPIMetric(value=_MISSING_VALUE_MESSAGES.get(field, "N/A"), change=0, trend="neutral", history=[])
         pct_change = round(MetricsService.calculate_change(current, prior), 1) if prior is not None else 0
         trend = MetricsService.get_trend(pct_change) if prior is not None else "neutral"
         history_points = [v for v in (prior, current) if v is not None]
@@ -432,7 +455,7 @@ async def get_dashboard_metrics(
             # burning cash -- distinguish that from genuinely missing data.
             is_cash_flow_positive = net_cash_used is not None and net_cash_used <= 0
             return KPIMetric(
-                value="Cash flow +" if is_cash_flow_positive else "N/A",
+                value="Cash flow +" if is_cash_flow_positive else _MISSING_VALUE_MESSAGES["cash_runway"],
                 change=0,
                 trend="neutral",
                 history=[],
@@ -461,7 +484,7 @@ async def get_dashboard_metrics(
         # zero-value bookings figure.
         value = latest.bookings_value
         if value is None:
-            return KPIMetric(value="N/A", change=0, trend="neutral", history=[])
+            return KPIMetric(value=_MISSING_VALUE_MESSAGES["bookings"], change=0, trend="neutral", history=[])
         return KPIMetric(
             value=MetricsService.format_currency(value),
             change=0,
@@ -474,10 +497,10 @@ async def get_dashboard_metrics(
         customers=build("customers", lambda v: f"{int(v or 0):,}"),
         cash=build("cash", MetricsService.format_currency),
         ebitda=build("ebitda", MetricsService.format_currency),
-        ebitda_margin=ratio_kpi(ebitda_margin_current, ebitda_margin_prior_val, lambda v: f"{v:.1f}%"),
+        ebitda_margin=ratio_kpi("ebitda_margin", ebitda_margin_current, ebitda_margin_prior_val, lambda v: f"{v:.1f}%"),
         cash_runway=cash_runway_kpi(),
-        interest_cover=ratio_kpi(interest_cover_current, interest_cover_prior_val, lambda v: f"{v:.1f}x"),
-        roce=ratio_kpi(roce_current, roce_prior_val, lambda v: f"{v:.1f}%"),
+        interest_cover=ratio_kpi("interest_cover", interest_cover_current, interest_cover_prior_val, lambda v: f"{v:.1f}x"),
+        roce=ratio_kpi("roce", roce_current, roce_prior_val, lambda v: f"{v:.1f}%"),
         bookings=bookings_kpi(),
         current_period=current_period,
         prior_period=prior_period,

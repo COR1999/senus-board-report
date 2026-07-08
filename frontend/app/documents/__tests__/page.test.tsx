@@ -131,12 +131,32 @@ describe('DocumentsPage', () => {
     expect(uploadSpy).not.toHaveBeenCalled()
   })
 
-  it('links the download button to the real file download URL', async () => {
+  it('downloads a document via the download button', async () => {
+    const downloadSpy = vi.spyOn(dataService, 'downloadDocument').mockResolvedValue(undefined)
+
     render(<DocumentsPage />)
     await screen.findByText('ANY_DOCUMENT.pdf')
 
-    const downloadLink = screen.getByRole('link', { name: /download any_document\.pdf/i })
-    expect(downloadLink).toHaveAttribute('href', dataService.getDocumentFileUrl(1))
+    fireEvent.click(screen.getByRole('button', { name: /download any_document\.pdf/i }))
+
+    await waitFor(() => expect(downloadSpy).toHaveBeenCalledWith(1, 'ANY_DOCUMENT.pdf'))
+  })
+
+  it('shows the backend\'s specific error message when a download fails', async () => {
+    // Real production gap: a plain <a href download> gave the browser
+    // nothing to show when the backend 404s (Railway's filesystem isn't
+    // persistent across redeploys) -- the fetch-and-blob approach surfaces
+    // the actual detail message instead of a silently dead button.
+    vi.spyOn(dataService, 'downloadDocument').mockRejectedValue(
+      new Error("The original PDF is no longer available on the server (uploads aren't yet persisted across deploys).")
+    )
+
+    render(<DocumentsPage />)
+    await screen.findByText('ANY_DOCUMENT.pdf')
+
+    fireEvent.click(screen.getByRole('button', { name: /download any_document\.pdf/i }))
+
+    expect(await screen.findByText(/no longer available on the server/i)).toBeInTheDocument()
   })
 
   it('shows a quiet "no new filings" message with a manual check when none are available', async () => {

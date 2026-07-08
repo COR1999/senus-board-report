@@ -32,8 +32,8 @@ report → render it on a dashboard. **46 commits**, 2 July – 6 July 2026.
 
 From this point on, development was streamlined using **Claude Code (Sonnet 5)**, working one
 feature/fix branch at a time with an explicit plan-then-implement-then-verify discipline (see the
-root `README.md`'s "AI-assisted workflow" section for the working pattern itself). **47 branches**,
-PRs #3–#54.
+root `README.md`'s "AI-assisted workflow" section for the working pattern itself). **48 branches**,
+PRs #3–#55.
 
 ### KPI system & financial metrics (PRs #3–#9, #13)
 
@@ -476,9 +476,57 @@ notice, "Memo and Arts", and the Balance Sheet (already correctly rejected once 
 confidence). None are financial statements -- confirmed there is no missing real financial data on
 the assessed investor-relations platform right now.
 
+### Five small, real dashboard bugs found live in production (PR #55)
+
+All five reported directly from a single real screenshot of the live dashboard, right after PR #54's
+merge fix deployed -- a reminder that shipping a fix surfaces the next layer of real usage, not an
+end state:
+
+1. **AI Board Insights showing fallback content with the refresh button disabled.** Confirmed the
+   panel was rendering `FALLBACK_INSIGHTS` verbatim, word-for-word. Root cause: `getAiInsights`
+   returned a bare `Insight[]`, so a fallback result (quota exhausted, no key, or a parse failure) got
+   cached and gated the manual refresh button *identically* to a real successful generation -- once
+   fallback was ever returned for a given data set, refresh stayed permanently disabled for it
+   ("already up to date"), even though nothing real had ever been generated. Fixed by adding
+   `isFallback: boolean` to the `/api/insights` response and every caller: `getAiInsights` now returns
+   `{ insights, isFallback }`, and `ai-insights.tsx` only calls `setCachedInsights` when
+   `!isFallback` -- a fallback result still renders (nothing better to show), but never blocks a
+   future retry. The server-side circuit breaker (rate-limit/billing backoff) still prevents this from
+   actually wasting Gemini quota on repeated retries; this fix only affects the *frontend's own*
+   tracking of "do I already have something real."
+2. **EBITDA at -€613K rendering in plain black text, not red.** `KpiCard`/`KpiStatStrip` colored a
+   value by `trend` alone (`up`/`down`/`neutral`) -- EBITDA has no prior-period comparative in this
+   data set, so its trend is `neutral` (the "no data to compare" case, not "genuinely unchanged"), and
+   neutral always fell back to plain foreground text regardless of the value itself. A deeply negative
+   EBITDA is a warning signal independent of whether it moved. New `getValueTextClass(trend, value)`
+   in `lib/format.ts` (shared by both components, not duplicated) -- when a real trend exists it wins
+   as before; when neutral, it checks whether the *formatted value itself* is negative (the backend's
+   currency/percent formatters always prefix a negative value with "-" before the symbol, e.g.
+   "-€613K", never "€-613K" -- a reliable signal) and renders it in the same rose color used for a
+   real decline.
+3. **Bare "N/A" for every missing metric.** Replaced with a field-specific message (e.g. "No active
+   customers reported in this filing", "ROCE not available (insufficient balance sheet data)") via a
+   new `_MISSING_VALUE_MESSAGES` dict in `metrics.py`, applied across `build()`/`ratio_kpi()`/
+   `bookings_kpi()`. Kept a separate, deliberately generic "No data yet" for `_EMPTY_RATIO` -- the
+   "zero eligible documents exist at all" case, where there's no specific document to attribute a
+   missing field to.
+4. **The merged document's Reports-page entry showing a raw filename as its company name.** A genuine
+   bug in PR #54 itself, not a new incident: `merge_documents` computed a proper
+   `company_name` fallback chain but the `Report(...)` construction underneath it still hardcoded
+   `existing_doc.filename` directly, never actually using the computed value -- caught by the user
+   asking "how do we define reports" after noticing the merged entry didn't read like the other two.
+   Fixed by actually wiring the computed `company_name` through, preferring either source document's
+   real extracted name over a raw filename fallback.
+5. **A dead-looking Download button when the file's gone from Railway's ephemeral disk.** The button
+   was a plain `<a href download>` -- a direct browser navigation gives the browser nothing to render
+   when the backend 404s, so a document uploaded before the last redeploy silently failed with no
+   feedback at all. Replaced with a `fetch`-and-blob flow (new `downloadDocument` in `data-service.ts`,
+   a `useDownloadDocument` hook matching every other mutation hook's shape) that surfaces the backend's
+   real, specific "no longer available" detail message through the page's existing error banner.
+
 ## Working discipline throughout Phase 2
 
-A few rules were established early and enforced consistently across all 47 branches:
+A few rules were established early and enforced consistently across all 48 branches:
 
 - **Never fabricate missing data.** A missing value is `null`/`None`, never a guessed `0` — this
   came up repeatedly (KPI sparkline history, reporting-period extraction, bookings figures, cadence

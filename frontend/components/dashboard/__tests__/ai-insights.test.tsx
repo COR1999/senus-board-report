@@ -33,9 +33,12 @@ describe('AiInsights', () => {
     // leak into the next, since vitest doesn't reset modules between `it()`
     // blocks by default.
     resetInsightsCache()
-    vi.spyOn(dataService, 'getAiInsights').mockResolvedValue([
-      { text: 'ANY_INSIGHT_TEXT', type: 'positive', action: 'ANY_ACTION_TEXT', category: 'Growth & Revenue' },
-    ])
+    vi.spyOn(dataService, 'getAiInsights').mockResolvedValue({
+      insights: [
+        { text: 'ANY_INSIGHT_TEXT', type: 'positive', action: 'ANY_ACTION_TEXT', category: 'Growth & Revenue' },
+      ],
+      isFallback: false,
+    })
   })
 
   // No `clearMocks` in vitest.config.ts, so spy call counts otherwise leak
@@ -105,8 +108,14 @@ describe('AiInsights', () => {
     // is the contract AiInsights must honor: a new object -> a new Gemini
     // call built from the new numbers, not a replay of the old commentary.
     vi.spyOn(dataService, 'getAiInsights')
-      .mockResolvedValueOnce([{ text: 'OLD_INSIGHT_TEXT', type: 'positive', action: 'OLD_ACTION_TEXT' }])
-      .mockResolvedValueOnce([{ text: 'NEW_INSIGHT_TEXT', type: 'opportunity', action: 'NEW_ACTION_TEXT' }])
+      .mockResolvedValueOnce({
+        insights: [{ text: 'OLD_INSIGHT_TEXT', type: 'positive', action: 'OLD_ACTION_TEXT' }],
+        isFallback: false,
+      })
+      .mockResolvedValueOnce({
+        insights: [{ text: 'NEW_INSIGHT_TEXT', type: 'opportunity', action: 'NEW_ACTION_TEXT' }],
+        isFallback: false,
+      })
 
     const { rerender } = render(<AiInsights metrics={mockMetrics} />)
     expect(await screen.findByText('OLD_INSIGHT_TEXT')).toBeInTheDocument()
@@ -125,6 +134,23 @@ describe('AiInsights', () => {
     expect(button).toBeDisabled()
     fireEvent.click(button)
     expect(dataService.getAiInsights).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps the refresh button enabled after a fallback result, instead of treating it as up to date', async () => {
+    // Real production bug: a quota-exhausted/failed Gemini call previously
+    // got cached identically to a real success, permanently disabling
+    // refresh for that data even though nothing real was ever generated --
+    // see getAiInsights' own docstring in data-service.ts.
+    vi.spyOn(dataService, 'getAiInsights').mockResolvedValue({
+      insights: [{ text: 'FALLBACK_TEXT', type: 'positive', action: '' }],
+      isFallback: true,
+    })
+
+    render(<AiInsights metrics={mockMetrics} />)
+    await screen.findByText('FALLBACK_TEXT')
+
+    const button = screen.getByRole('button', { name: 'Refresh AI insights' })
+    expect(button).not.toBeDisabled()
   })
 
   it('does not re-fetch after unmount/remount with unchanged data (e.g. navigating away and back)', async () => {
