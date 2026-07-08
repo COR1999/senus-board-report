@@ -17,7 +17,21 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
     ...options,
     headers: { 'Content-Type': 'application/json', ...(options.headers ?? {}) },
   })
-  if (!res.ok) throw new Error(`Request to ${path} failed: ${res.status} ${res.statusText}`)
+  if (!res.ok) {
+    // FastAPI's HTTPException body is `{"detail": "..."}` -- e.g. the
+    // extraction-confidence gate's specific rejection message ("This
+    // document scored 0% extraction confidence..."). Falling back to
+    // statusText ("Unprocessable Entity") for non-JSON error bodies would
+    // silently drop that detail, same reasoning as uploadPDF's own
+    // detail-parsing below (this used to be a gap only that one call site
+    // had fixed -- every other apiFetch caller, e.g. importExternalFiling,
+    // still showed a raw "422 Unprocessable Entity" instead).
+    const detail = await res
+      .json()
+      .then((body) => (typeof body?.detail === 'string' ? body.detail : null))
+      .catch(() => null)
+    throw new Error(detail ?? `Request to ${path} failed: ${res.status} ${res.statusText}`)
+  }
   return res.json()
 }
 

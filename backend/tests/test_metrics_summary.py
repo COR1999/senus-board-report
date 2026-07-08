@@ -440,6 +440,39 @@ async def test_dashboard_summary_excludes_a_needs_review_row_from_latest(async_c
 
 
 @pytest.mark.anyio
+async def test_dashboard_summary_change_percent_uses_same_cadence_comparative_not_mismatched_row(
+    async_client, async_session,
+):
+    # Real production incident: importing a 12-month (Information Document)
+    # filing more recent than the existing 6-month (half-year) filing made
+    # the revenue KPI card show "+135.9%" (837K vs. the half-year filing's
+    # 355K -- comparing a full year against a half year as if sequential)
+    # instead of the real, honest FY2025-vs-FY2024 comparison the new
+    # filing's own embedded revenue_prior provides (837K vs. 688K, +21.6%).
+    base = datetime(2026, 1, 1)
+    await _add_metrics_row(
+        async_session,
+        revenue=354_813.0,
+        fm_reporting_period_start="Jul 2025", fm_reporting_period_end="Dec 2025",  # 6 months
+        extracted_at=base,
+    )
+    await _add_metrics_row(
+        async_session,
+        revenue=836_991.0, revenue_prior=688_317.0,
+        fm_reporting_period_start="Jul 2024", fm_reporting_period_end="Jun 2025",  # 12 months
+        extracted_at=base + timedelta(days=200),
+    )
+
+    response = await async_client.get("/metrics/dashboard/summary")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["revenue"]["value"] == "€837K"
+    assert body["revenue"]["change"] == pytest.approx(21.6, abs=0.1)
+    assert body["revenue"]["history"] == [688_317.0, 836_991.0]
+
+
+@pytest.mark.anyio
 async def test_dashboard_summary_null_confidence_stays_permissive(async_client, async_session):
     # NULL means "extracted before this feature existed" (the original
     # half-year filing) -- must be treated the same as auto_accept, not
