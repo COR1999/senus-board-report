@@ -107,6 +107,25 @@ response to a real incident — see `docs/roadmap.md`.
 Full backend module-by-module breakdown: `backend/README.md`. Full frontend component breakdown:
 `frontend/AGENTS.md`.
 
+## Architecture decisions
+
+A log of the real decision points during this project — what was chosen, the alternative that was
+on the table, and why. Full narrative detail (including bugs found while building each one) lives in
+`docs/roadmap.md`; this is the scannable "why does it work this way" version.
+
+| Decision | Alternative considered | Why this way |
+|---|---|---|
+| **Deterministic regex/table parsing first, Gemini only fills gaps** | Route every figure through an LLM (simpler code, one extraction path) | A reliable table match on real extractable text is more reproducible and auditable than trusting a vision/language model to re-derive numbers a parser can already get right — see "Architecture" above. Also directly protects against narrative leakage (a forward-looking "EBITDA positive by FY2028" sentence must never be read as a real figure). |
+| **A missing value is `null`, never a guessed `0`** | Default missing fields to `0` for simpler downstream math | Caused a real production incident (`docs/roadmap.md`, PRs #40-42) — a `0` silently overrode genuinely-undisclosed data and looked identical to a real zero-value filing on the dashboard. Enforced everywhere: the extractor, the Gemini fallback's own empty-response shape, and every KPI card's "N/A" rendering. |
+| **A transparent point-based confidence score, not an invented ML probability** | A single LLM-generated "confidence" number | No statistical model exists anywhere in this pipeline; asking an LLM to self-report a probability would itself be a fabrication — the exact failure mode this project avoids everywhere else. Instead: source-aware points (a deterministic table match counts for more than an LLM guess at the same field), tiered `auto_accept`/`needs_review`/`rejected` at thresholds matching standard IDP practice, with the exact point breakdown printed as human-readable `reasons`. |
+| **A rejected document persists nothing at all; a `needs_review` one persists but is hidden from the dashboard, not blocked entirely** | Either accept everything (a rejected/shaky document still becomes "latest"), or reject anything short of perfect | Matches real IDP practice: bad data shouldn't touch executive KPIs, but a borderline document is still real evidence worth keeping visible (Documents/Reports tables, a muted "Pending Review" tag) rather than silently discarded. |
+| **Confidence/cadence-mismatch indicators use neutral badges, never the same red/green language as trend indicators** | Reuse the existing up/down trend color vocabulary for data-quality flags too | A colored badge next to a KPI value reads as *performance*, not *data integrity* — mixing the two vocabularies would make the dashboard harder to read at a glance, the opposite of the goal for an executive tool. |
+| **No migration framework (no Alembic) — an idempotent `_add_missing_columns` step instead** | Alembic migrations | This project's schema evolved incrementally alongside features, on a single production database with no multi-environment migration story to coordinate; an idempotent startup check (safe to run on every deploy, a no-op once a column exists) fit the actual scale better than introducing a full migration framework for a handful of columns added over a few days. |
+| **A cadence-mismatch (e.g. a 6-month filing next to a 12-month one) excludes a row only on a *confirmed* mismatch, never an unknown one** | Exclude any row without an explicitly-matching cadence label | Most filings (including every pre-existing test fixture) don't set explicit period-start/end labels at all — treating "unknown" as "mismatched" would have silently broken every trend chart that already worked. Only a real, positively-detected difference excludes a row. |
+| **Investor-relations sync is approval-gated (an explicit Import click) and checked on demand, never a silent background auto-ingest** | Auto-import any new filing the IR API surfaces | A single-user boardroom tool should never let external, unreviewed data reach the dashboard without a deliberate human action — matches the same "verify before trust" philosophy as the confidence gate itself. |
+| **This is a single-user tool — no accounts, login, or multi-tenant chrome** | Build real authentication/multi-user support | Explicit product direction: the dashboard assumes one fixed presenter identity (a board member giving a live presentation), not a shared product with multiple logins. Building auth for a scope that doesn't need it would be speculative complexity, not a real requirement. |
+| **The sidebar stays a fixed dark palette in both light and dark theme** | Let the sidebar follow the same light/dark toggle as the rest of the UI | A naive theme-follow approach made the whole UI, including the branded sidebar, wash out uniformly in light mode. A dark, branded sidebar next to a theme-following content area is a deliberate, common pattern (Stripe/Linear-style dashboards), not an inconsistency. |
+
 ## Tech stack
 
 | | |
@@ -202,7 +221,7 @@ large change. The working pattern, used consistently:
 
 ## How outputs were validated
 
-- **Automated tests**: 193 backend (pytest) + 138 frontend (Vitest) tests, run before every merge.
+- **Automated tests**: 193 backend (pytest) + 144 frontend (Vitest) tests, run before every merge.
 - **Type safety**: `tsc --noEmit` clean before every merge.
 - **Manual validation against the real filing**: extracted figures (revenue, EBITDA, cash,
   customers, bookings) were cross-checked by hand against the source PDF during
@@ -261,10 +280,16 @@ npm run dev
   currently returning its static fallback content in production rather than real generated
   commentary — confirmed by directly calling the deployed `/api/insights` endpoint with genuinely
   different metrics and observing identical output. This needs `GEMINI_INSIGHTS_API_KEY`/quota
-  checked on Vercel and Google AI Studio directly; it isn't a code bug (the panel's own prompt-
-  building bug that could have caused this was found and fixed, see `docs/roadmap.md`, but the
-  fallback persisted after that fix too, pointing at an API key/quota/billing issue outside this
-  repo's code).
+  checked on Vercel and Google AI Studio directly; it isn't a code bug in the sense of "wrong logic"
+  (the panel's own prompt-building bug that could have caused this was found and fixed, see
+  `docs/roadmap.md`) — but the route previously had no backoff at all, so every genuinely-new dataset
+  kept blindly retrying an already-exhausted quota instead of giving it a chance to recover. Fixed by
+  giving `/api/insights` the same circuit-breaker the backend's own Gemini integration already had
+  (60s backoff on a rate-limit error, 24h on a billing/prepayment-exhausted one), plus persisting the
+  insights cache to `localStorage` so a page reload no longer forces a fresh call for unchanged data.
+  If the underlying cause turns out to be depleted prepayment credits rather than a recoverable rate
+  limit, that part still needs manual billing action at ai.studio — no code change can conjure quota
+  that isn't there — but the wasted-retry problem is fixed regardless.
 
 ## Further reading
 
