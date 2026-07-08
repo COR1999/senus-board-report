@@ -152,6 +152,19 @@ export async function getDocuments(): Promise<DocumentItem[]> {
 }
 
 /**
+ * URL for downloading the original uploaded PDF. Not a `fetch`-based
+ * helper like the others -- callers plug this straight into an `<a href>`,
+ * so the browser handles the download itself (no CORS concern, unlike
+ * `fetch`, since it's a plain navigation/download, not a script-read
+ * response). The backend may 404 with a specific "no longer available"
+ * message if the file wasn't retained across a redeploy -- Railway's
+ * filesystem isn't persistent yet, see backend/README.md.
+ */
+export function getDocumentFileUrl(documentId: number): string {
+  return `${API_URL}/api/documents/${documentId}/file`
+}
+
+/**
  * Deletes a document (and, via backend cascade, its FinancialMetrics,
  * BalanceSheetMetrics, and Report rows). Throws on failure -- unlike the
  * GET helpers above, a delete failing silently would be misleading to the
