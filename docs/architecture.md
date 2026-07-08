@@ -66,6 +66,29 @@ AiInsights component receives `metrics` (already fetched, above)
 This is a **separate Gemini integration** from the backend's extraction usage — different API key,
 different project, so the two features never compete for the same quota.
 
+### 4. Investor relations filing sync
+
+```
+Documents page mounts (or "Check now" clicked)
+  → GET /api/documents/external/available
+    → investor_relations_client.list_available_filings()  (Senus's own
+      undocumented JSON API, see root README's "Investor relations API")
+    → excludes filings already present, matched by BOTH attachment_id and
+      filename (the real API lists some filings under more than one
+      attachment_id across categories)
+  → user clicks Import on one filing
+    → POST /api/documents/external/{attachment_id}/import
+      → investor_relations_client.download_filing(attachment_id)
+      → _ingest_document(...)  — same extraction/dedup/report-generation
+        helper the manual upload route uses, so the two entry points can't
+        drift out of sync
+```
+
+Deliberately **approval-gated** (an explicit Import click, never silent auto-ingest) and **checked
+on demand** (page load / a manual button), not a background poller — see
+`frontend/docs/ai-usage/investor-relations-filing-sync.md` for the design decisions and
+`docs/roadmap.md` for why this existed as an unscoped idea before being built.
+
 ## Why no ORM migration framework
 
 There's no Alembic (or equivalent) in this project. Schema changes to already-deployed tables are

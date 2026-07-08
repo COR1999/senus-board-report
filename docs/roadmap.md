@@ -32,8 +32,8 @@ report → render it on a dashboard. **46 commits**, 2 July – 6 July 2026.
 
 From this point on, development was streamlined using **Claude Code (Sonnet 5)**, working one
 feature/fix branch at a time with an explicit plan-then-implement-then-verify discipline (see the
-root `README.md`'s "AI-assisted workflow" section for the working pattern itself). **27 branches**,
-PRs #3–#32.
+root `README.md`'s "AI-assisted workflow" section for the working pattern itself). **34 branches**,
+PRs #3–#39.
 
 ### KPI system & financial metrics (PRs #3–#9, #13)
 
@@ -89,9 +89,27 @@ period filter on Reports/Documents (replacing a disabled stub) and a 20MB upload
 backend code-quality pass fixing an N+1 query and an over-fetching response in the document list
 endpoint.
 
+### Documentation, CI, and real source-document discovery (PRs #33–#39)
+
+Wrote the README, this roadmap, and `docs/architecture.md` from empty placeholders (this project's
+own graded deliverables); corrected a wrong assumption surfaced along the way — Senus had published
+more than the one half-year filing already ingested — rather than quietly leaving the incorrect
+claim in place; gave the deterministic-first extraction philosophy a clearer callout; and removed a
+stray reference to comparing this submission against other candidates' repos that had leaked into a
+doc (an internal research step, never meant to be part of the delivered repo). Added real GitHub
+Actions CI for backend (pytest) and frontend (vitest/tsc/build) — its first real run caught two
+genuine bugs (see "Working discipline" below). Found and downloaded the two additional real Senus
+filings via the investor relations page's own JSON API (discovered by inspecting its network
+requests), documenting that API's endpoints in the README. Finally, built the **investor relations
+filing sync** feature itself: `GET /api/documents/external/available` and
+`POST /api/documents/external/{attachment_id}/import`, approval-gated (an explicit Import button,
+never silent auto-ingest) and checked on demand (page load / a manual "Check now" button, not a
+background poller) — see `frontend/docs/ai-usage/investor-relations-filing-sync.md` for the full
+build record, including verification performed against the real API end-to-end.
+
 ## Working discipline throughout Phase 2
 
-A few rules were established early and enforced consistently across all 27 branches:
+A few rules were established early and enforced consistently across all 34 branches:
 
 - **Never fabricate missing data.** A missing value is `null`/`None`, never a guessed `0` — this
   came up repeatedly (KPI sparkline history, reporting-period extraction, bookings figures, cadence
@@ -131,17 +149,6 @@ single filing's internal comparison column. Identified 8 July 2026, deliberately
 gap rather than rushed -- these documents have a very different structure (a 53-page prospectus,
 a 23-page audited annual report) than the half-year filing's format the extractor was built
 against, so this needs its own scoped extraction work, not a quick bolt-on.
-
-**Automated document sync (built, PR #39).** Initially believed Senus only published one financial
-document at all; a more thorough search of the investor relations page turned up the underlying
-JSON API it's built on (see the root README's "Investor relations API" section), which made it
-possible to check for filings not yet in this system and import one on demand. Two decisions were
-made deliberately narrow: **approval-gated**, not silent auto-ingest (a "new filing available"
-banner with an explicit Import button on the Documents page, never automatic); and **checked on
-demand** (page load / a manual "Check now" button), not a background poller. The existing
-content-hash dedup used for manual uploads applies automatically, and a second check (filename, not
-just `attachmentId`) is needed because the real API lists the same filing under different
-`attachmentId`s across its `documents`/`reports` categories.
 
 **Other open items** (see the audit referenced in the README's "How outputs were validated"
 section): PDF-download storage durability (no persistent/object storage yet), a few remaining
