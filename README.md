@@ -170,10 +170,16 @@ large change. The working pattern, used consistently:
   annual report; EBITDA and the Solvency/Returns ratios are genuinely undisclosed there and stay
   `null`, never guessed). **ADF Farm Solutions' audited Consolidated Financial Statements (30 June
   2025)** (Senus's predecessor entity, pre-re-registration) turned out to be a **scanned PDF with no
-  text layer at all** — not extractable by this project's text-based pipeline without OCR or a
-  vision-capable model call, a genuinely separate capability; see `docs/roadmap.md` for why this is
-  left as a real, scoped future item rather than backfilled under time pressure or, worse,
-  fabricated. Because the two ingested filings have different reporting cadences (6 months vs. 12
+  text layer at all** — a real Tesseract OCR install would need adding to both this dev environment
+  and the Railway deployment to read it locally/for free, so instead this one document type routes
+  through a Gemini **vision** extraction backup (`GeminiAnalysisService.generate_report_from_images`,
+  `backend/app/services/gemini_service.py`) — used only when the deterministic text pipeline finds
+  literally no text layer at all, never for a document it could already read. Because a scanned
+  document has no independent deterministic cross-check the way a text one does, its result is always
+  capped at the `needs_review` confidence tier regardless of score — visible via the existing "Pending
+  Review" tag, never silently promoted straight to the executive dashboard. See `docs/roadmap.md` for
+  the full design and the free-OCR-vs-vision tradeoff considered. Because the two text-extracted
+  filings have different reporting cadences (6 months vs. 12
   months), an **extraction confidence service**
   (`backend/app/services/extraction_confidence.py`) scores every document before its data is trusted
   (0-100, tiered auto-accept/needs-review/reject) and a separate cadence check keeps them from ever
@@ -196,7 +202,7 @@ large change. The working pattern, used consistently:
 
 ## How outputs were validated
 
-- **Automated tests**: 177 backend (pytest) + 138 frontend (Vitest) tests, run before every merge.
+- **Automated tests**: 193 backend (pytest) + 138 frontend (Vitest) tests, run before every merge.
 - **Type safety**: `tsc --noEmit` clean before every merge.
 - **Manual validation against the real filing**: extracted figures (revenue, EBITDA, cash,
   customers, bookings) were cross-checked by hand against the source PDF during
@@ -241,9 +247,13 @@ npm run dev
 - The Reports table's "PDF export" (of the AI-generated report itself, distinct from downloading the
   source upload) is not yet built.
 - No bulk actions (bulk delete/download) on the Reports or Documents tables.
-- The ADF Farm Solutions statements (Senus's other real historical filing) are a scanned PDF with no
-  text layer — not extractable without OCR or a vision-capable model call, a genuinely separate
-  capability from this project's text-based pipeline. See "Assumptions" above.
+- The ADF Farm Solutions statements can now be extracted via the Gemini vision backup (see
+  "Assumptions" above), but this hasn't been verified against the real live API in this environment
+  — the account's Gemini quota was already exhausted (a billing/prepayment issue, not a rate limit)
+  from earlier testing in this same session, so a live attempt would just hit the same known error
+  rather than proving anything new. Verified instead via a thorough mocked test suite exercising the
+  real 23-page scanned fixture end-to-end (routing, confidence capping, persistence) with a
+  controlled Gemini response. Worth a real live check once billing is topped up.
 - The "Pending Review" extraction-confidence tag is shown on the Documents table but not yet the
   Reports table (same document underneath either way — a quick follow-up, not a gap in the
   underlying confidence gate itself, which applies everywhere already).

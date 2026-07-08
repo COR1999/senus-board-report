@@ -7,11 +7,44 @@ import json
 import hashlib
 import re
 from collections import deque
-from typing import Optional, Dict, Any
+from typing import List, Optional, Dict, Any
 
 from cachetools import TTLCache
 from google import genai
 from google.genai import types
+
+# Matches _build_prompt's JSON contract in report_service.py exactly, so
+# both the text and vision extraction paths feed _generate() the same
+# shape -- scanning across every provided page image (a scanned document
+# has no text layer to isolate a statement section from first, so the
+# model has to locate the relevant table itself) rather than assuming
+# page 1 has what's needed.
+_VISION_EXTRACTION_PROMPT = """
+You are a senior financial analyst reviewing scanned pages of a company's
+financial statements (page images, in order).
+
+Find the profit and loss / income statement, balance sheet, and cash flow
+statement wherever they appear across these pages, and extract the
+figures. If a figure is genuinely not disclosed anywhere in these pages,
+leave it null -- never guess or estimate a value.
+
+Return JSON ONLY, in exactly this shape:
+
+{
+  "company_name": "...",
+  "reporting_period": "...",
+  "financial_metrics": {
+    "revenue": {"value": 0},
+    "customers": {"value": 0},
+    "cash": {"value": 0},
+    "ebitda": {"value": 0},
+    "gross_margin": {"value": 0},
+    "operating_margin": {"value": 0}
+  },
+  "key_findings": [],
+  "ai_commentary": ""
+}
+""".strip()
 
 
 logger = logging.getLogger(__name__)
@@ -130,10 +163,42 @@ class GeminiAnalysisService:
         self._cache[key] = value
 
     # =========================================================
-    # PUBLIC ENTRY POINT
+    # PUBLIC ENTRY POINTS
     # =========================================================
     def generate_report(self, prompt: str) -> Dict[str, Any]:
+        return self._call_gemini(self._cache_key(prompt), prompt)
 
+    def generate_report_from_images(self, images: List[bytes], context: str) -> Dict[str, Any]:
+        """
+        Same contract as generate_report, but for a scanned document with no
+        text layer at all (see PDFExtractionService.render_page_images) --
+        sends every page image in a single request rather than one call per
+        page, so a many-page document still costs exactly one call. Only
+        ever invoked from report_service.py when the deterministic
+        extractor found literally nothing to parse (no text layer at all),
+        never for a document a text-based extraction could already handle
+        -- Gemini vision is a backup for when the other systems can't run
+        at all, not a first resort.
+
+        `context` (the filename) is folded into the cache key alongside the
+        image bytes themselves, so re-processing the exact same scanned PDF
+        (e.g. a regenerate) reuses the cached result instead of spending a
+        second call.
+        """
+        digest = hashlib.sha256(context.encode())
+        for image in images:
+            digest.update(image)
+        cache_key = digest.hexdigest()
+
+        contents = [_VISION_EXTRACTION_PROMPT] + [
+            types.Part.from_bytes(data=image, mime_type="image/jpeg") for image in images
+        ]
+        return self._call_gemini(cache_key, contents)
+
+    # =========================================================
+    # SHARED CALL PATH (used by both entry points above)
+    # =========================================================
+    def _call_gemini(self, cache_key: str, contents: Any) -> Dict[str, Any]:
         # AI unavailable -> safe fallback (EMPTY STRUCTURE, NOT regex here)
         if not self.is_available():
             return self._empty_response()
@@ -142,7 +207,6 @@ class GeminiAnalysisService:
 
         client: genai.Client = self.client
 
-        cache_key = self._cache_key(prompt)
         cached = self._get_cache(cache_key)
         if isinstance(cached, dict):
             return cached
@@ -156,7 +220,7 @@ class GeminiAnalysisService:
             self._record_call()
             response = client.models.generate_content(
                 model=self.MODEL,
-                contents=prompt,
+                contents=contents,
                 config=types.GenerateContentConfig(
                     temperature=0.3,
                     max_output_tokens=1200,

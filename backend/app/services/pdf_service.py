@@ -2,7 +2,7 @@
 import fitz  # PyMuPDF
 from pathlib import Path
 import os
-from typing import Tuple
+from typing import List, Tuple
 
 
 class PDFExtractionService:
@@ -60,3 +60,25 @@ class PDFExtractionService:
         file_path = cls.save_pdf(file_content, filename)
         extracted_text = cls.extract_text(file_path)
         return file_path, extracted_text
+
+    @classmethod
+    def render_page_images(cls, file_path: str, dpi: int = 150) -> List[bytes]:
+        """
+        Renders every page of a PDF to JPEG bytes -- used as input to a
+        Gemini vision extraction call when `extract_text()` found no text
+        layer at all (a scanned document, e.g. ADF Farm Solutions'
+        statements: confirmed via PyMuPDF that every page is a single
+        embedded JPEG image with zero extractable text). Renders via
+        `get_pixmap()` rather than extracting the embedded image directly,
+        so this works the same way regardless of how a given PDF happens to
+        have embedded its scanned pages. 150 DPI balances legibility for a
+        vision model against request size for a many-page document.
+        """
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"PDF file not found: {file_path}")
+
+        pdf_document = fitz.open(file_path)
+        try:
+            return [page.get_pixmap(dpi=dpi).tobytes("jpeg") for page in pdf_document]
+        finally:
+            pdf_document.close()
