@@ -93,6 +93,19 @@ class DashboardSummaryResponse(BaseModel):
     # fresh the figures are, independent of which period they cover. None
     # only when there's no data at all yet.
     data_extracted_at: Optional[datetime] = None
+    # The document backing "latest"/current_period above -- normally the
+    # true most-recently-extracted document, but reflects whichever
+    # document_id the period selector anchored this response on (see
+    # GET /metrics/dashboard/periods and the `document_id` query param on
+    # this endpoint). None only in the no-data-at-all empty state.
+    document_id: Optional[int] = None
+
+
+# ==================== Dashboard Periods ====================
+class DashboardPeriodOption(BaseModel):
+    """One entry in GET /metrics/dashboard/periods, for the period selector."""
+    document_id: int
+    label: str = Field(..., description="Combined bare period + calendar range, e.g. 'HY2026 (Jul 2025 – Dec 2025)'")
 
 
 # ==================== Revenue Trend ====================

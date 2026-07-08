@@ -178,7 +178,10 @@ large change. The working pattern, used consistently:
   (`backend/app/services/extraction_confidence.py`) scores every document before its data is trusted
   (0-100, tiered auto-accept/needs-review/reject) and a separate cadence check keeps them from ever
   being blended into one misleading trend line — both were built directly in response to a real
-  production incident, documented in `docs/roadmap.md`.
+  production incident, documented in `docs/roadmap.md`. A **period selector** on the dashboard
+  (`GET /metrics/dashboard/periods`, a `?document_id=` param on the summary/trend endpoints) lets a
+  board reader deliberately pick which of the two real periods drives the whole page, instead of
+  always showing whichever was extracted most recently.
 - **This is a single-user tool**, not a multi-tenant product. The dashboard assumes one fixed
   presenter identity (a board member/CEO giving a live presentation) — there is no real
   authentication, login, or account system, by design, not as an oversight.
@@ -193,7 +196,7 @@ large change. The working pattern, used consistently:
 
 ## How outputs were validated
 
-- **Automated tests**: 169 backend (pytest) + 131 frontend (Vitest) tests, run before every merge.
+- **Automated tests**: 177 backend (pytest) + 138 frontend (Vitest) tests, run before every merge.
 - **Type safety**: `tsc --noEmit` clean before every merge.
 - **Manual validation against the real filing**: extracted figures (revenue, EBITDA, cash,
   customers, bookings) were cross-checked by hand against the source PDF during
@@ -252,9 +255,6 @@ npm run dev
   building bug that could have caused this was found and fixed, see `docs/roadmap.md`, but the
   fallback persisted after that fix too, pointing at an API key/quota/billing issue outside this
   repo's code).
-- No period selector yet — the dashboard always shows the most-recently-extracted filing, with no
-  way to deliberately view an older one (e.g. "show me HY2026" vs. "show me FY2025") even though
-  both are ingested. See `docs/roadmap.md`'s "Next priorities" for a scoped design.
 
 ## Further reading
 

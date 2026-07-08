@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import { DashboardShell } from './dashboard-shell'
 import { KpiCard } from './kpi-card'
 import { KpiStatStrip, type StatStripItem } from './kpi-stat-strip'
@@ -7,9 +8,10 @@ import { RevenueChart } from './revenue-chart'
 import { AiInsights } from './ai-insights'
 import { ReportsTable } from './reports-table'
 import { ErrorBanner } from '@/components/error-banner'
-import { useMetrics, useChartData, useReports } from '@/lib/hooks/use-dashboard-data'
+import { useMetrics, useChartData, useReports, usePeriods } from '@/lib/hooks/use-dashboard-data'
 import { periodContextLabel } from '@/lib/period'
 import { KPI_CATEGORIES } from '@/lib/kpi-categories'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { DollarSign, Users, Wallet, TrendingUp } from 'lucide-react'
 
 // Background poll interval for the main dashboard's data -- lets the page
@@ -20,10 +22,17 @@ import { DollarSign, Users, Wallet, TrendingUp } from 'lucide-react'
 const DASHBOARD_POLL_INTERVAL_MS = 60_000
 
 export function DashboardContainer() {
-  const { data: metrics, loading: metricsLoading, error: metricsError } = useMetrics({
+  // `null` = latest (today's default behavior, no query param sent) --
+  // set once the user picks a specific reporting period from the selector
+  // below. Not persisted across reloads; a fresh visit always starts on
+  // the true latest period.
+  const [selectedDocumentId, setSelectedDocumentId] = useState<number | null>(null)
+
+  const { data: periods } = usePeriods({ pollIntervalMs: DASHBOARD_POLL_INTERVAL_MS })
+  const { data: metrics, loading: metricsLoading, error: metricsError } = useMetrics(selectedDocumentId, {
     pollIntervalMs: DASHBOARD_POLL_INTERVAL_MS,
   })
-  const { data: chartData, loading: chartLoading, error: chartError } = useChartData({
+  const { data: chartData, loading: chartLoading, error: chartError } = useChartData(selectedDocumentId, {
     pollIntervalMs: DASHBOARD_POLL_INTERVAL_MS,
   })
   const { data: reports, loading: reportsLoading, error: reportsError, refetch: refetchReports } = useReports({
@@ -123,12 +132,37 @@ export function DashboardContainer() {
       })
     : null
 
+  // Nothing to select with zero or one period -- the dropdown would only
+  // ever offer the one period already shown. Periods come back newest
+  // first (see GET /metrics/dashboard/periods), so periods[0] is the true
+  // latest -- the visual default until the user picks something else.
+  const hasPeriodChoice = (periods ?? []).length > 1
+  const selectedPeriodValue = String(selectedDocumentId ?? periods?.[0]?.document_id ?? '')
+
   return (
     <DashboardShell title="Executive Dashboard" description="How the business is performing, at a glance">
-      {dataAsOfLabel && (
-        <p className="-mt-2 text-xs text-muted-foreground">
-          All figures in EUR · Data as of {dataAsOfLabel}
-        </p>
+      {(dataAsOfLabel || hasPeriodChoice) && (
+        <div className="-mt-2 flex flex-wrap items-center justify-between gap-2">
+          {dataAsOfLabel ? (
+            <p className="text-xs text-muted-foreground">All figures in EUR · Data as of {dataAsOfLabel}</p>
+          ) : (
+            <span />
+          )}
+          {hasPeriodChoice && (
+            <Select value={selectedPeriodValue} onValueChange={(value) => setSelectedDocumentId(Number(value))}>
+              <SelectTrigger aria-label="Select reporting period" className="h-8 w-auto whitespace-nowrap text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {periods!.map((period) => (
+                  <SelectItem key={period.document_id} value={String(period.document_id)}>
+                    {period.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        </div>
       )}
       {/* Hero KPI row */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
