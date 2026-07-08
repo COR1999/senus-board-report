@@ -92,5 +92,19 @@ class FinancialMetrics(Base):
     extraction_confidence: Mapped[Optional[float]] = mapped_column(default=None)
     extraction_confidence_tier: Mapped[Optional[str]] = mapped_column(default=None)
 
+    # Set by POST /api/documents/{id}/approve when a human reviews a
+    # `needs_review` document's actual extracted values (against the
+    # confidence gate's own reasons, or the source PDF via the existing
+    # "View source" link) and confirms it's correct. Deliberately does NOT
+    # rewrite `extraction_confidence`/`extraction_confidence_tier` -- the
+    # algorithmic score stays an honest, unaltered record of what the
+    # extractor actually found, while this separate field is what actually
+    # unlocks dashboard eligibility (see metrics.py's
+    # _IS_CONFIDENT_ENOUGH_FOR_DASHBOARD). A timestamp, not a bool, so
+    # "when was this approved" is preserved for free. `None` means not
+    # (yet) approved -- including for every `auto_accept` row, which never
+    # needed approval in the first place.
+    human_approved_at: Mapped[Optional[datetime]] = mapped_column(default=None)
+
     # Relationship back to the source document.
     document: Mapped["Document"] = relationship(back_populates="financial_metrics")

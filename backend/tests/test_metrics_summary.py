@@ -31,6 +31,7 @@ async def _add_metrics_row(
     ai_reporting_period=None,
     extraction_confidence=None,
     extraction_confidence_tier=None,
+    human_approved_at=None,
 ) -> FinancialMetrics:
     doc = Document(
         filename="test.pdf",
@@ -59,6 +60,7 @@ async def _add_metrics_row(
         extracted_at=extracted_at or datetime.utcnow(),
         extraction_confidence=extraction_confidence,
         extraction_confidence_tier=extraction_confidence_tier,
+        human_approved_at=human_approved_at,
     )
     session.add(metrics)
 
@@ -437,6 +439,33 @@ async def test_dashboard_summary_excludes_a_needs_review_row_from_latest(async_c
 
     assert response.status_code == 200
     assert response.json()["revenue"]["value"] == "€355K"
+
+
+@pytest.mark.anyio
+async def test_dashboard_summary_includes_a_needs_review_row_once_human_approved(async_session, async_client):
+    # Companion to the exclusion test above: POST /api/documents/{id}/approve
+    # sets human_approved_at, which is the one thing (besides an
+    # extraction_confidence >= 95) that _IS_CONFIDENT_ENOUGH_FOR_DASHBOARD
+    # accepts -- the row must now count as "latest" despite its raw tier
+    # still literally reading "needs_review".
+    base = datetime(2026, 1, 1)
+    await _add_metrics_row(
+        async_session, revenue=354_813.0, extracted_at=base,
+        extraction_confidence=100.0, extraction_confidence_tier="auto_accept",
+    )
+    await _add_metrics_row(
+        async_session, revenue=999_999.0, extracted_at=base + timedelta(minutes=1),
+        extraction_confidence=88.0, extraction_confidence_tier="needs_review",
+        human_approved_at=datetime.utcnow(),
+    )
+
+    response = await async_client.get("/metrics/dashboard/summary")
+
+    assert response.status_code == 200
+    # The approved (needs_review) row's own revenue, not the auto_accept
+    # row's -- confirms it was actually picked as "latest", not just
+    # tolerated as present.
+    assert response.json()["revenue"]["value"] == "€1000K"
 
 
 @pytest.mark.anyio

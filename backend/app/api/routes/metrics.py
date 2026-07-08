@@ -49,10 +49,16 @@ _HAS_CORE_METRICS = or_(
 # must not silently become "the" board-facing number just because it
 # cleared the (separate, lower) *reject* bar. `NULL` stays permissive so
 # rows extracted before this feature existed (the original half-year
-# filing) keep working exactly as they did before it existed.
+# filing) keep working exactly as they did before it existed. A row a
+# human has explicitly reviewed and approved (POST
+# /api/documents/{id}/approve, see documents.py) also qualifies --
+# `human_approved_at` is a separate column from `extraction_confidence`,
+# so this never rewrites the algorithmic score itself, only adds a second,
+# independent way to earn dashboard eligibility.
 _IS_CONFIDENT_ENOUGH_FOR_DASHBOARD = or_(
     FinancialMetrics.extraction_confidence >= 95,
     FinancialMetrics.extraction_confidence.is_(None),
+    FinancialMetrics.human_approved_at.isnot(None),
 )
 
 _EMPTY_RATIO = KPIMetric(value="N/A", change=0, trend="neutral", history=[])

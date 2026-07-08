@@ -59,6 +59,10 @@ _COLUMNS_ADDED_AFTER_INITIAL_RELEASE = {
         # treated permissively (not excluded) wherever it's read.
         ("extraction_confidence", "FLOAT"),
         ("extraction_confidence_tier", "VARCHAR"),
+        # Set by POST /api/documents/{id}/approve -- see the model's own
+        # docstring for why this is a separate column from
+        # extraction_confidence_tier rather than overwriting it.
+        ("human_approved_at", "TIMESTAMP"),
     ],
     # SHA256 of the uploaded file's bytes, for exact-duplicate-upload
     # detection (see documents.py's upload route). Existing rows get NULL

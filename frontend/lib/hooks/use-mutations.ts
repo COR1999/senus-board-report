@@ -8,6 +8,7 @@ import {
   importExternalFiling,
   hideExternalFiling,
   unhideExternalFiling,
+  approveDocument,
 } from '@/lib/data-service'
 
 function errorMessage(error: unknown): string {
@@ -119,6 +120,26 @@ export function useUnhideExternalFiling(onSuccess?: () => void) {
   }
 
   return { unhideFiling, unhidingId, error }
+}
+
+export function useApproveDocument(onSuccess?: () => void) {
+  const [approvingId, setApprovingId] = useState<number | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const approve = async (documentId: number) => {
+    setApprovingId(documentId)
+    setError(null)
+    try {
+      await approveDocument(documentId)
+      onSuccess?.()
+    } catch (err) {
+      setError(errorMessage(err))
+    } finally {
+      setApprovingId(null)
+    }
+  }
+
+  return { approve, approvingId, error }
 }
 
 export function useRegenerateReport(onSuccess?: () => void) {

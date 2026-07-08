@@ -207,6 +207,43 @@ export async function getDocuments(): Promise<DocumentItem[]> {
   }
 }
 
+export interface DocumentFinancialMetrics {
+  revenue: number | null
+  customers: number | null
+  cash: number | null
+  ebitda: number | null
+  gross_margin: number | null
+  operating_margin: number | null
+  extraction_confidence: number | null
+  extraction_confidence_tier: 'needs_review' | 'auto_accept' | null
+}
+
+export interface DocumentDetail extends DocumentItem {
+  financial_metrics: DocumentFinancialMetrics | null
+}
+
+/**
+ * Full document detail, including the extracted financial values -- powers
+ * the "Review" panel for a `needs_review` document (see approveDocument
+ * below). Throws on failure rather than falling back, unlike getDocuments:
+ * the review panel has nothing sensible to show for a document it can't
+ * actually fetch, so the caller needs to know it failed.
+ */
+export async function getDocument(documentId: number): Promise<DocumentDetail> {
+  return apiFetch<DocumentDetail>(`/api/documents/${documentId}`)
+}
+
+/**
+ * Confirms a human has reviewed a `needs_review` document's extracted
+ * values and they're correct -- promotes it to dashboard-eligible without
+ * rewriting its underlying extraction_confidence/tier (see the backend's
+ * FinancialMetrics.human_approved_at docstring). Throws on failure (same
+ * reasoning as deleteDocument/importExternalFiling).
+ */
+export async function approveDocument(documentId: number): Promise<DocumentDetail> {
+  return apiFetch<DocumentDetail>(`/api/documents/${documentId}/approve`, { method: 'POST' })
+}
+
 /**
  * URL for downloading the original uploaded PDF. Not a `fetch`-based
  * helper like the others -- callers plug this straight into an `<a href>`,

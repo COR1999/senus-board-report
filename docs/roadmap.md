@@ -32,8 +32,8 @@ report → render it on a dashboard. **46 commits**, 2 July – 6 July 2026.
 
 From this point on, development was streamlined using **Claude Code (Sonnet 5)**, working one
 feature/fix branch at a time with an explicit plan-then-implement-then-verify discipline (see the
-root `README.md`'s "AI-assisted workflow" section for the working pattern itself). **44 branches**,
-PRs #3–#51.
+root `README.md`'s "AI-assisted workflow" section for the working pattern itself). **45 branches**,
+PRs #3–#52.
 
 ### KPI system & financial metrics (PRs #3–#9, #13)
 
@@ -318,9 +318,41 @@ local-only verification: SQLite never enforced this constraint the same way, so 
 real Postgres deploy could have caught it — documented honestly in
 `frontend/docs/ai-usage/financial-metrics-nullable-columns.md` rather than claimed as prevented.
 
+### Reviewing and approving a `needs_review` document (PR #52)
+
+Importing the real ADF Farm Solutions filing (PR #48/#50) surfaced a genuine product gap: it landed
+as `needs_review` (55% confidence — a scanned document with no extractable P&L text, so only cash and
+a customer count came back via Gemini vision), and the Documents page could show the "Pending Review"
+tag but gave no way to actually look at what was extracted or promote it onto the dashboard. Fixed
+with a new `human_approved_at` timestamp column on `FinancialMetrics` — deliberately a *separate*
+field from `extraction_confidence`/`extraction_confidence_tier`, so approving a document never
+rewrites the algorithmic score; that stays a permanent, honest record of what the extractor actually
+found, while `human_approved_at` is the independent switch that unlocks dashboard eligibility (see
+`_IS_CONFIDENT_ENOUGH_FOR_DASHBOARD` in `metrics.py` and the `_effective_tier` helper in
+`documents.py`, which both read it). New `POST /api/documents/{id}/approve` endpoint: 404 if the
+document has no extracted metrics, 400 with a specific message if it's not actually `needs_review`
+(nothing to approve), otherwise sets the timestamp and returns the document with its now-`auto_accept`
+*effective* tier. Frontend: a new `DocumentReviewSheet` component (a right-side `Sheet`, reusing the
+primitive already in this codebase but previously only wired up for the sidebar) triggered by a
+"Review" icon button next to the existing "Pending Review" badge — shows every extracted figure
+(missing ones read "Not reported", not a fabricated 0 or a blank, same convention enforced everywhere
+else in this project) plus the confidence score, with an "Approve for dashboard" button. Verified
+end-to-end against a real seeded document and a real running frontend/backend pair (not just the test
+suite): the badge disappeared after approving, and the approved document's own figures immediately
+appeared in `/dashboard/summary`.
+
+Two reuse decisions worth recording, both a direct response to a standing instruction to check for
+duplicate logic before writing new code: `useAsyncData`'s fetch hook gained an `enabled` option
+(default `true`, so every existing caller is unaffected) rather than the review sheet hand-rolling its
+own fetch-on-open `useState`/`useEffect` — it only fetches a document's detail while its sheet is
+actually open, not for every row on the page. And revenue-chart.tsx's private `formatAxisValue`
+helper (`"250000"` → `"€250K"`) was promoted to a shared, exported `formatCurrencyShort` in
+`lib/format.ts` so the review sheet's own currency display uses the exact same formatting rather than
+a second copy of the same magnitude-bucketing logic.
+
 ## Working discipline throughout Phase 2
 
-A few rules were established early and enforced consistently across all 44 branches:
+A few rules were established early and enforced consistently across all 45 branches:
 
 - **Never fabricate missing data.** A missing value is `null`/`None`, never a guessed `0` — this
   came up repeatedly (KPI sparkline history, reporting-period extraction, bookings figures, cadence
@@ -348,7 +380,9 @@ truth for this taxonomy) on one page: a hero row for the headline metrics plus a
 for the rest. The idea is a two-tier structure instead: the existing page stays as a genuinely
 high-level executive overview, and each category gets its own drill-down page/route (e.g.
 `/dashboard/cash-liquidity`) going deeper than a single card can — the ratios/inputs that feed that
-category's numbers, its own longer trend history, and **AI commentary scoped to that one category**
+category's numbers, **its own dedicated charts** (not just a sparkline — a full-size trend chart per
+metric in that category, the same treatment the overview's single Revenue Trend chart gets today),
+and **AI commentary scoped to that one category**
 (a natural extension of `lib/insights.ts`'s existing prompt-builder, which already tags each insight
 with a `KpiCategory` — the drill-down page would generate insights *for* one category specifically,
 not filter the existing whole-dashboard set after the fact). Would reuse the period selector (PR #44)

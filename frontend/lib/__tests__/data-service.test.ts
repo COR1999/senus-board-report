@@ -8,6 +8,8 @@ import {
   getHiddenExternalFilings,
   hideExternalFiling,
   unhideExternalFiling,
+  getDocument,
+  approveDocument,
 } from '@/lib/data-service'
 
 function mockFetchOnce(response: { ok: boolean; statusText: string; json: () => Promise<unknown> }) {
@@ -159,5 +161,63 @@ describe('hide/unhide external filings', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, statusText: 'Not Found' }))
 
     await expect(unhideExternalFiling('unknown-id')).rejects.toThrow('Failed to unhide filing: Not Found')
+  })
+})
+
+describe('needs_review approve workflow', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('getDocument fetches the single-document detail endpoint', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ id: 3, financial_metrics: null }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await getDocument(3)
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringMatching(/\/api\/documents\/3$/),
+      expect.anything()
+    )
+  })
+
+  it('getDocument surfaces the backend\'s specific detail message on failure, not a generic one', async () => {
+    mockFetchOnce({
+      ok: false,
+      statusText: 'Not Found',
+      json: async () => ({ detail: 'Document not found' }),
+    })
+
+    await expect(getDocument(999)).rejects.toThrow('Document not found')
+  })
+
+  it('approveDocument POSTs to the approve endpoint', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ id: 3, financial_metrics: null }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await approveDocument(3)
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringMatching(/\/api\/documents\/3\/approve$/),
+      expect.objectContaining({ method: 'POST' })
+    )
+  })
+
+  it('approveDocument surfaces the backend\'s specific rejection message on failure', async () => {
+    mockFetchOnce({
+      ok: false,
+      statusText: 'Bad Request',
+      json: async () => ({ detail: "This document is not pending review (tier: auto_accept) -- nothing to approve." }),
+    })
+
+    await expect(approveDocument(3)).rejects.toThrow(
+      'This document is not pending review (tier: auto_accept) -- nothing to approve.'
+    )
   })
 })

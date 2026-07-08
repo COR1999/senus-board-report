@@ -210,3 +210,76 @@ async def test_regenerate_with_low_confidence_leaves_existing_report_untouched(a
     metrics_row = metrics_result.first()
     assert metrics_row.revenue == 354_813.0
     assert metrics_row.extraction_confidence_tier == "auto_accept"
+
+
+# ==================== POST /api/documents/{id}/approve ====================
+
+async def _upload_needs_review_document(async_session, monkeypatch, filename: str = "partial.pdf"):
+    """Same scenario as test_upload_with_partial_deterministic_match_persists_as_needs_review
+    above -- reused here rather than re-deriving a fresh needs_review fixture."""
+    partial_baseline = {**_GOVERNANCE_DOC_BASELINE, "revenue": 100_000.0, "cash": 50_000.0}
+    _mock_extraction(monkeypatch, format_recognized=True, baseline=partial_baseline)
+    upload_file = UploadFile(filename=filename, file=BytesIO(b"%PDF-1.4 fake"))
+    return await documents_routes.upload_document(upload_file, async_session)
+
+
+@pytest.mark.anyio
+async def test_approve_promotes_a_needs_review_document_without_rewriting_its_score(async_session, monkeypatch):
+    uploaded = await _upload_needs_review_document(async_session, monkeypatch)
+    assert uploaded.financial_metrics.extraction_confidence_tier == "needs_review"
+
+    approved = await documents_routes.approve_document(uploaded.id, async_session)
+
+    # The API-facing tier now reads as auto_accept (no more "Pending
+    # Review" tag anywhere it's shown)...
+    assert approved.financial_metrics.extraction_confidence_tier == "auto_accept"
+    # ...but the raw score is the same honest 85% the extractor actually
+    # found -- approval doesn't fabricate a better score, only unlocks
+    # dashboard eligibility via a separate column.
+    assert approved.financial_metrics.extraction_confidence == 85.0
+
+    metrics_row = (
+        await async_session.execute(
+            FinancialMetrics.__table__.select().where(FinancialMetrics.document_id == uploaded.id)
+        )
+    ).first()
+    # The *raw* DB column is untouched -- still literally "needs_review",
+    # a permanent, honest record of the algorithmic result. Only
+    # human_approved_at changes.
+    assert metrics_row.extraction_confidence_tier == "needs_review"
+    assert metrics_row.human_approved_at is not None
+
+
+@pytest.mark.anyio
+async def test_approve_rejects_an_already_auto_accept_document_with_400(async_session, monkeypatch):
+    _mock_extraction(monkeypatch, format_recognized=True, baseline=_REAL_FILING_BASELINE)
+    upload_file = UploadFile(filename="half-year.pdf", file=BytesIO(b"%PDF-1.4 fake"))
+    uploaded = await documents_routes.upload_document(upload_file, async_session)
+    assert uploaded.financial_metrics.extraction_confidence_tier == "auto_accept"
+
+    with pytest.raises(Exception) as exc_info:
+        await documents_routes.approve_document(uploaded.id, async_session)
+
+    assert getattr(exc_info.value, "status_code", None) == 400
+
+
+@pytest.mark.anyio
+async def test_approve_404s_for_a_document_with_no_extracted_metrics(async_session):
+    with pytest.raises(Exception) as exc_info:
+        await documents_routes.approve_document(999_999, async_session)
+
+    assert getattr(exc_info.value, "status_code", None) == 404
+
+
+@pytest.mark.anyio
+async def test_approve_is_not_silently_idempotent_on_a_second_call(async_session, monkeypatch):
+    # Once approved, the raw tier is still "needs_review" (by design -- see
+    # the promotion test above), so a second approve call must succeed
+    # again rather than 400 -- a double-click shouldn't error just because
+    # the *effective* tier already reads as auto_accept.
+    uploaded = await _upload_needs_review_document(async_session, monkeypatch)
+    await documents_routes.approve_document(uploaded.id, async_session)
+
+    approved_again = await documents_routes.approve_document(uploaded.id, async_session)
+
+    assert approved_again.financial_metrics.extraction_confidence_tier == "auto_accept"

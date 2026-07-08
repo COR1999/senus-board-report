@@ -108,6 +108,38 @@ async def test_list_documents_includes_extraction_confidence_tier_via_one_batche
 
 
 @pytest.mark.anyio
+async def test_list_documents_shows_auto_accept_for_an_approved_needs_review_document(async_session):
+    # Same effective-tier promotion the /approve endpoint relies on (see
+    # documents.py's _effective_tier), exercised here through the list
+    # endpoint's separate batched-query path rather than build_document_response,
+    # since the list uses its own dict comprehension over the same column.
+    approved_doc = await _add_document(async_session, filename="approved.pdf")
+    async_session.add(
+        FinancialMetrics(
+            document_id=approved_doc.id, revenue=100_000.0,
+            extraction_confidence=85.0, extraction_confidence_tier="needs_review",
+            human_approved_at=datetime.utcnow(),
+        )
+    )
+    still_pending_doc = await _add_document(async_session, filename="still-pending.pdf")
+    async_session.add(
+        FinancialMetrics(
+            document_id=still_pending_doc.id, revenue=100_000.0,
+            extraction_confidence=85.0, extraction_confidence_tier="needs_review",
+        )
+    )
+    await async_session.commit()
+
+    responses = await list_documents(db=async_session)
+
+    by_filename = {r.filename: r for r in responses}
+    # Approved: list no longer shows "Pending Review" for it...
+    assert by_filename["approved.pdf"].extraction_confidence_tier == "auto_accept"
+    # ...but an unapproved needs_review row is unaffected.
+    assert by_filename["still-pending.pdf"].extraction_confidence_tier == "needs_review"
+
+
+@pytest.mark.anyio
 async def test_list_documents_orders_newest_first(async_session):
     older = await _add_document(async_session, filename="older.pdf", created_at=datetime.utcnow() - timedelta(days=1))
     newer = await _add_document(async_session, filename="newer.pdf", created_at=datetime.utcnow())

@@ -7,6 +7,7 @@ import type { TooltipContentProps } from 'recharts'
 import type { ValueType, NameType } from 'recharts/types/component/DefaultTooltipContent'
 import { type ChartDataPoint } from '@/lib/data-service'
 import { projectSeries } from '@/lib/forecast'
+import { formatCurrencyShort } from '@/lib/format'
 import { Card, CardHeader, CardTitle, CardDescription, CardAction, CardContent } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
@@ -63,16 +64,6 @@ function ForecastAwareTick({ x = 0, y = 0, payload }: ForecastAwareTickProps) {
   )
 }
 
-// Round-number, currency-short axis labels (e.g. "€250K") -- easier to scan
-// at a glance than raw values like "250000".
-function formatAxisValue(value: number): string {
-  const magnitude = Math.abs(value)
-  const sign = value < 0 ? '-' : ''
-  if (magnitude >= 1_000_000) return `${sign}€${(magnitude / 1_000_000).toFixed(1)}M`
-  if (magnitude >= 1_000) return `${sign}€${Math.round(magnitude / 1_000)}K`
-  return `${sign}€${magnitude}`
-}
-
 /**
  * Custom tooltip, for three reasons the default `<Tooltip>` props couldn't
  * fix: (1) Recharts renders one row per *series*, even where that series
@@ -107,7 +98,7 @@ function RevenueTooltip({ active, payload, label }: TooltipContentProps<ValueTyp
           <span className="h-2 w-2 rounded-full" style={{ backgroundColor: entry.color }} />
           <span className="text-muted-foreground">{entry.name}:</span>
           <span className="font-semibold text-foreground">
-            {typeof entry.value === 'number' ? formatAxisValue(entry.value) : entry.value}
+            {typeof entry.value === 'number' ? formatCurrencyShort(entry.value) : entry.value}
           </span>
         </div>
       ))}
@@ -229,7 +220,7 @@ export function RevenueChart({ data, periodLabel }: RevenueChartProps) {
               tickMargin={8}
               tick={{ fill: 'currentColor', fontSize: 12 }}
               className="text-muted-foreground"
-              tickFormatter={formatAxisValue}
+              tickFormatter={formatCurrencyShort}
               tickCount={5}
               // Wide enough for the longest label this chart ever shows --
               // negative EBITDA (e.g. "-€473.7K") is longer than any

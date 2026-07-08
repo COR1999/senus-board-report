@@ -51,6 +51,22 @@ MAX_UPLOAD_SIZE_BYTES = 20 * 1024 * 1024
 # Helper
 # ============================================================
 
+def _effective_tier(tier: Optional[str], human_approved_at) -> Optional[str]:
+    """
+    The tier as shown to API consumers -- distinct from the raw, permanent
+    `extraction_confidence_tier` column. A human-approved `needs_review` row
+    reads as `auto_accept` everywhere it's *displayed* (no more "Pending
+    Review" tag, since a human has confirmed it) without the underlying
+    algorithmic score/tier ever being rewritten -- that stays an honest,
+    unaltered record of what the extractor actually found. See
+    FinancialMetrics.human_approved_at's own docstring for the full
+    reasoning.
+    """
+    if human_approved_at is not None and tier == "needs_review":
+        return "auto_accept"
+    return tier
+
+
 def build_document_response(
     doc: Document,
     report: Optional[Report] = None,
@@ -71,7 +87,7 @@ def build_document_response(
             operating_margin=metrics.operating_margin,
             extracted_at=metrics.extracted_at or doc.extracted_at,
             extraction_confidence=metrics.extraction_confidence,
-            extraction_confidence_tier=metrics.extraction_confidence_tier,
+            extraction_confidence_tier=_effective_tier(metrics.extraction_confidence_tier, metrics.human_approved_at),
         )
 
     return DocumentWithText(
@@ -421,6 +437,55 @@ async def download_document_file(document_id: int, db: AsyncSession = Depends(ge
 
 
 # ============================================================
+# Human review (needs_review -> dashboard-eligible)
+# ============================================================
+
+@router.post("/{document_id}/approve", response_model=DocumentWithText)
+async def approve_document(document_id: int, db: AsyncSession = Depends(get_db)):
+    """
+    A human has reviewed a `needs_review` document's actual extracted
+    values (the confidence gate's own reasons, or the source PDF via the
+    existing "View source" link) and confirmed it's correct -- lets it
+    start driving the executive dashboard's headline KPIs, the same as an
+    `auto_accept` document, without silently rewriting the algorithmic
+    score/tier that got it here (see FinancialMetrics.human_approved_at).
+
+    Only meaningful for a `needs_review` document -- `auto_accept` never
+    needed approval, and `rejected` was never persisted at all (nothing to
+    approve). Both are a 400, not a silent no-op, so a stale UI state
+    (e.g. a double-click) surfaces clearly rather than pretending to
+    succeed at nothing.
+    """
+    result = await db.execute(
+        select(FinancialMetrics).where(FinancialMetrics.document_id == document_id)
+    )
+    metrics = result.scalars().first()
+
+    if metrics is None:
+        raise HTTPException(status_code=404, detail="Document not found or has no extracted metrics")
+
+    if metrics.extraction_confidence_tier != "needs_review":
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"This document is not pending review (tier: "
+                f"{metrics.extraction_confidence_tier or 'auto_accept'}) -- nothing to approve."
+            ),
+        )
+
+    metrics.human_approved_at = datetime.utcnow()
+    await db.commit()
+
+    doc_result = await db.execute(
+        select(Document).where(Document.id == document_id).options(selectinload(Document.reports))
+    )
+    doc = doc_result.scalars().first()
+    report = doc.reports[0] if doc and doc.reports else None
+
+    return build_document_response(doc, report, metrics)
+
+
+# ============================================================
 # List documents
 # ============================================================
 
@@ -456,11 +521,17 @@ async def list_documents(
     tiers: dict[int, str] = {}
     if docs:
         tier_result = await db.execute(
-            select(FinancialMetrics.document_id, FinancialMetrics.extraction_confidence_tier).where(
-                FinancialMetrics.document_id.in_([doc.id for doc in docs])
-            )
+            select(
+                FinancialMetrics.document_id,
+                FinancialMetrics.extraction_confidence_tier,
+                FinancialMetrics.human_approved_at,
+            ).where(FinancialMetrics.document_id.in_([doc.id for doc in docs]))
         )
-        tiers = {document_id: tier for document_id, tier in tier_result.all() if tier is not None}
+        tiers = {
+            document_id: effective
+            for document_id, tier, human_approved_at in tier_result.all()
+            if (effective := _effective_tier(tier, human_approved_at)) is not None
+        }
 
     # Built explicitly (not left to FastAPI's automatic response_model
     # filtering) so the shape is real and testable by calling this function

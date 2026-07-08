@@ -37,6 +37,30 @@ describe('useAsyncData', () => {
     expect(fetcher).toHaveBeenCalledTimes(2)
   })
 
+  describe('enabled', () => {
+    it('skips fetching entirely and never enters a loading state when false', async () => {
+      const fetcher = vi.fn().mockResolvedValue('ANY_VALUE')
+      const { result } = renderHook(() => useAsyncData(fetcher, { enabled: false }))
+
+      expect(result.current.loading).toBe(false)
+      expect(result.current.data).toBeNull()
+      expect(fetcher).not.toHaveBeenCalled()
+    })
+
+    it('starts fetching once enabled flips from false to true', async () => {
+      const fetcher = vi.fn().mockResolvedValue('ANY_VALUE')
+      const { result, rerender } = renderHook(({ enabled }) => useAsyncData(fetcher, { enabled }), {
+        initialProps: { enabled: false },
+      })
+      expect(fetcher).not.toHaveBeenCalled()
+
+      rerender({ enabled: true })
+
+      await waitFor(() => expect(result.current.data).toBe('ANY_VALUE'))
+      expect(fetcher).toHaveBeenCalledTimes(1)
+    })
+  })
+
   describe('pollIntervalMs', () => {
     afterEach(() => {
       vi.useRealTimers()
