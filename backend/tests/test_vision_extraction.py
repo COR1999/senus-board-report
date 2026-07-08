@@ -20,6 +20,7 @@ from sqlalchemy.pool import StaticPool
 from app.core.database import Base
 from app.models.document import Document
 from app.models.report import Report
+from app.services.pdf_service import PDFExtractionService
 from app.services.report_service import ReportService
 import app.models  # noqa: F401 -- registers all models on Base.metadata
 
@@ -131,6 +132,55 @@ async def test_a_scanned_document_never_reaches_the_deterministic_extractor(asyn
     # instead of this expected LowConfidenceExtractionError).
     with pytest.raises(LowConfidenceExtractionError):
         await service._generate(doc, report)
+
+
+@pytest.mark.anyio
+async def test_a_document_with_only_page_markers_still_takes_the_vision_path(async_session, monkeypatch):
+    # Real bug, found by running the vision path against the real fixture
+    # end-to-end -- every other test in this file uses extracted_text=""
+    # directly, which never exercised this. PDFExtractionService.
+    # extract_text() prepends a "--- Page N ---" marker for *every* page
+    # regardless of content, so a genuinely scanned document's real
+    # extracted_text is never a truly empty string. A naive
+    # `not extracted_text.strip()` check saw those markers as "real
+    # content" and silently routed the document down the text path
+    # (finding nothing) instead of vision -- this test uses the real
+    # extract_text() output (not a hand-written "") to lock that in.
+    real_extracted_text = PDFExtractionService.extract_text(str(FIXTURE))
+    assert "Page" in real_extracted_text  # sanity: confirms markers are present
+
+    doc = Document(
+        filename="ADF Farm Solutions.pdf", file_path=str(FIXTURE),
+        extracted_text=real_extracted_text, status="completed",
+    )
+    async_session.add(doc)
+    await async_session.flush()
+    report = Report(document_id=doc.id, status="generating")
+    async_session.add(report)
+    await async_session.flush()
+
+    service = ReportService(async_session)
+    calls = []
+    monkeypatch.setattr(
+        service.gemini, "generate_report_from_images",
+        lambda images, context: calls.append((images, context)) or {
+            "reporting_period": "FY2025",
+            "financial_metrics": {"revenue": {"value": 500_000}, "cash": {"value": 100_000}},
+        },
+    )
+
+    import app.services.financial_metrics_extractor as extractor_module
+    monkeypatch.setattr(
+        extractor_module.FinancialMetricsExtractor, "extract",
+        staticmethod(lambda *a, **k: (_ for _ in ()).throw(
+            AssertionError("must not reach the deterministic extractor for a marker-only scanned document")
+        )),
+    )
+
+    result = await service._generate(doc, report)
+
+    assert len(calls) == 1
+    assert result.generation_source == "vision"
 
 
 @pytest.mark.anyio

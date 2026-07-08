@@ -28,16 +28,21 @@ class Settings(BaseSettings):
     )
 
     # Which Gemini model to call -- not hardcoded, since a pinned version
-    # (e.g. "gemini-2.0-flash") can lose free-tier quota eligibility on
-    # Google's side without any code change on ours (confirmed directly
-    # against the real API while debugging the frontend's own Gemini
-    # integration -- see frontend's GEMINI_INSIGHTS_MODEL for the same
-    # reasoning). Swapping models is then just an env var change, not a
-    # redeploy. Read directly via os.getenv in GeminiAnalysisService,
-    # declared here too so it's documented and so setting it never fails
-    # validation, matching the pattern below.
+    # can lose free-tier quota eligibility on Google's side without any
+    # code change on ours. Not hypothetical: a freshly issued backend key
+    # was confirmed, directly against the real API, to have a
+    # `generate_content_free_tier_requests` quota of `limit: 0` for the
+    # previous default "gemini-2.0-flash". The "-latest" alias (the
+    # frontend's own GEMINI_INSIGHTS_MODEL's fix for this same problem) was
+    # ruled out too -- confirmed hitting a transient "high demand" 503
+    # repeatedly against this same key, unrelated to quota but not reliable
+    # right now. "gemini-2.5-flash" (specific, current, non-preview, not an
+    # alias) was confirmed working cleanly instead. Swapping models is then
+    # just an env var change, not a redeploy. Read directly via os.getenv in
+    # GeminiAnalysisService, declared here too so it's documented and so
+    # setting it never fails validation, matching the pattern below.
     GEMINI_MODEL: str = Field(
-        default="gemini-2.0-flash",
+        default="gemini-2.5-flash",
         description="Gemini model used for financial document analysis"
     )
 

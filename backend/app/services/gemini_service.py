@@ -81,8 +81,19 @@ class GeminiAnalysisService:
 
     # Not hardcoded -- a pinned model version can lose free-tier quota
     # eligibility on Google's side with no code change on ours. Overriding
-    # via env var means swapping models doesn't need a redeploy.
-    MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+    # via env var means swapping models doesn't need a redeploy. Confirmed
+    # directly, not hypothetical: a freshly-issued key was granted a real
+    # `generate_content_free_tier_requests` quota of `limit: 0` specifically
+    # for the previous default "gemini-2.0-flash". The "-latest" alias
+    # (Google's usual escape hatch for this, and what the frontend's own
+    # GEMINI_INSIGHTS_MODEL already uses) was ruled out too -- it hit a
+    # transient "high demand" 503 repeatedly against this same key when
+    # checked directly, unrelated to quota/billing but not reliable right
+    # now either. "gemini-2.5-flash" (a specific, current, non-preview
+    # release, not an alias) was confirmed to work cleanly against the real
+    # key instead -- still overridable via env var with no redeploy if it
+    # ever loses eligibility the same way.
+    MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 
     _call_timestamps: "deque[float]" = deque()
     _daily_call_count: int = 0
@@ -223,7 +234,16 @@ class GeminiAnalysisService:
                 contents=contents,
                 config=types.GenerateContentConfig(
                     temperature=0.3,
-                    max_output_tokens=1200,
+                    # 1200 was tuned for the shorter text-extraction prompt
+                    # and silently truncated the vision path's fuller JSON
+                    # response mid-string (confirmed directly against the
+                    # real API: finish_reason=MAX_TOKENS, cut off partway
+                    # through "revenue") -- _parse() then correctly failed
+                    # on the incomplete JSON, which read as "format not
+                    # recognized" even though the model had already found
+                    # real data. Raised for both paths, not just vision --
+                    # no reason for the text path to stay this tight either.
+                    max_output_tokens=4096,
                 ),
             )
 
