@@ -112,8 +112,12 @@ and how each branch was verified.
 ## Next priorities (not yet started)
 
 **Extract additional real historical filings.** Only the HY2026 half-year results have been
-ingested so far. Senus's investor relations page (`app.assiduous.tech/investor-relations/senus`)
-also lists real financial documents that haven't been extracted yet:
+ingested into the extraction pipeline so far. Initially believed that was Senus's only real
+financial document; a more thorough look at the investor relations page turned up more, and
+finding the plain JSON API the page's SPA is built on (see the root README's "Investor relations
+API" section) made it possible to download them directly rather than only knowing they existed.
+Both are now sitting in `backend/docs/source-documents/`, not yet wired into
+`financial_metrics_extractor.py`:
 
 - **Senus PLC Information Document (December 2025)** — the Euronext listing prospectus, which
   includes FY2024/FY2025 annual figures (P&L, balance sheet, cash flow, customer/KPI metrics).
@@ -124,7 +128,18 @@ also lists real financial documents that haven't been extracted yet:
 Extracting either would give genuine additional historical comparatives for Growth & Revenue YoY
 analysis, strengthening the assignment's own required metric category rather than relying on a
 single filing's internal comparison column. Identified 8 July 2026, deliberately left as a flagged
-gap rather than rushed.
+gap rather than rushed -- these documents have a very different structure (a 53-page prospectus,
+a 23-page audited annual report) than the half-year filing's format the extractor was built
+against, so this needs its own scoped extraction work, not a quick bolt-on.
+
+**Automated document sync (idea, not scoped).** Now that the investor relations API is known, a
+natural next step is polling `.../reports/all-documents` (and the other document-list endpoints)
+for `attachmentId`s not yet in this project's database, and automatically downloading + running
+new filings through the existing extraction pipeline when Senus publishes one -- rather than
+requiring a manual PDF upload every time. Not designed or built yet: needs decisions on polling
+cadence, how a newly-detected document should surface to the user (auto-ingest vs. a review step
+before it hits the dashboard), and whether the same content-hash dedup already used for manual
+uploads is sufficient. Flagged as an idea worth a real design pass, not started this session.
 
 **Other open items** (see the audit referenced in the README's "How outputs were validated"
 section): PDF-download storage durability (no persistent/object storage yet), a few remaining
