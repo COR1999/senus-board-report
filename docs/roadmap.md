@@ -32,7 +32,7 @@ report → render it on a dashboard. **46 commits**, 2 July – 6 July 2026.
 
 From this point on, development was streamlined using **Claude Code (Sonnet 5)**, working one
 feature/fix branch at a time with an explicit plan-then-implement-then-verify discipline (see the
-root `README.md`'s "AI-assisted workflow" section for the working pattern itself). **40 branches**,
+root `README.md`'s "AI-assisted workflow" section for the working pattern itself). **41 branches**,
 PRs #3–#46.
 
 ### KPI system & financial metrics (PRs #3–#9, #13)
@@ -188,6 +188,29 @@ all" empty-dashboard branch returned `200` instead of `404` for an explicit, non
 `document_id`, since the empty-check ran before the anchor-resolution logic — fixed by ordering the
 check the other way, with a regression test for both orderings.
 
+### AI Board Insights quota resilience (PR #45)
+
+The frontend's AI Board Insights panel (a separate Gemini integration/API key from the backend's own
+extraction service) had been silently returning static fallback content in production — diagnosed
+back in PR #43 as *not* the prompt-builder bug found there. Revisiting it: the backend's own Gemini
+integration (`backend/app/services/gemini_service.py`) already had a real circuit breaker — a 60s
+backoff after a transient rate-limit error, a 24h backoff after a "prepayment credits depleted"
+billing error (distinguished by message content, since the SDK doesn't expose a distinct error type),
+plus proactive per-minute/per-day call caps and a response cache — but `/api/insights` had none of
+this at all. Every dashboard poll that produced genuinely new metrics content kept blindly retrying
+Gemini even when it was already known to be exhausted, both wasting calls that were guaranteed to
+fail and never giving a recoverable per-minute/per-day quota window a chance to actually clear.
+Ported the same backoff design (module-level, best-effort across a warm serverless instance — same
+reasoning already used for `lib/insights-cache.ts`'s own module-level cache). Separately, that
+cache itself only lived in memory, so a hard page reload wiped it and forced a fresh Gemini call for
+identical data — for a single-user tool where the underlying report data changes at most a few times
+a year, that's pure waste. Persisted it to `localStorage` instead, seeded once at module load and
+guarded against non-browser evaluation (this module is imported by a `'use client'` component, but
+Next.js still evaluates client-component modules during the server-rendering pass). If the root cause
+turns out to be genuinely depleted prepayment credits rather than a recoverable rate limit, that part
+still needs manual billing action at ai.studio — this fix can't conjure quota that isn't there — but
+the wasted-retry problem, which is real and code-fixable, is now fixed regardless.
+
 ### "Out of scope" filings, so a rejected import stops re-appearing forever (PR #46)
 
 A rejected external-filing import (the confidence gate scoring a governance document, e.g. an AGM
@@ -206,7 +229,7 @@ dismissed filings move out of the way without disappearing for good.
 
 ## Working discipline throughout Phase 2
 
-A few rules were established early and enforced consistently across all 40 branches:
+A few rules were established early and enforced consistently across all 41 branches:
 
 - **Never fabricate missing data.** A missing value is `null`/`None`, never a guessed `0` — this
   came up repeatedly (KPI sparkline history, reporting-period extraction, bookings figures, cadence
@@ -240,6 +263,25 @@ with a `KpiCategory` — the drill-down page would generate insights *for* one c
 not filter the existing whole-dashboard set after the fact). Would reuse the period selector (PR #44)
 directly — a category drill-down page should respect whichever period is selected on the overview,
 not default back to "latest." Not yet scoped in detail (routing structure, whether drill-down pages
+share the existing `getAiInsights`/`insights-cache.ts` machinery or need their own cache key per
+category) — a real next feature, not started.
+
+**Sector/competitor benchmarking in the AI insights prompt (idea, not built).** Right now
+`buildInsightsPrompt` (`frontend/lib/insights.ts`) only ever gives Gemini this company's own KPI
+values — an insight like "Bookings grew X%" has no external reference point for whether that's a
+strong or weak result for a natural-capital SaaS company. The idea: for metrics where a genuine
+comparison is meaningful (Bookings/Growth & Revenue was the example raised, though the same reasoning
+would extend to any category), feed the prompt real sector or named-competitor figures alongside
+Senus's own, so an insight can say something like "bookings grew X% vs. a sector median of Y%"
+instead of a number in isolation. **The real blocker, consistent with this project's "never fabricate
+data" rule enforced everywhere else** (see "Working discipline" above): there is currently no ingested
+source of sector/competitor financial data anywhere in this pipeline — no second company's filings,
+no industry-benchmark dataset. Before this is buildable, a real source would need to be found and
+extracted the same way the two real Senus filings were (see PR #38's investor-relations API
+discovery) — inventing plausible-sounding "sector average" numbers to make an insight sound more
+authoritative would be exactly the kind of fabrication this project has actively avoided at every
+other turn. Scoped here as a real idea worth pursuing once a real data source exists, not as
+something to fake in the meantime.
 share the existing `getAiInsights`/`insights-cache.ts` machinery or need their own cache key per
 category) — a real next feature, not started.
 
