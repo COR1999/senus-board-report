@@ -32,6 +32,12 @@ router = APIRouter(prefix="/api/documents", tags=["documents"])
 # Shared PDF extraction service for upload and document processing flows.
 pdf_service = PDFExtractionService()
 
+# 20MB matches the only existing precedent in this repo
+# (DELIVERY_READINESS_REPORT.md's original upload spec), which was never
+# actually enforced anywhere until now -- FastAPI/Starlette impose no
+# default request-body size limit on their own.
+MAX_UPLOAD_SIZE_BYTES = 20 * 1024 * 1024
+
 
 # ============================================================
 # Helper
@@ -89,6 +95,11 @@ async def upload_document(
         content = await file.read()
         if not content:
             raise HTTPException(status_code=400, detail="File is empty")
+        if len(content) > MAX_UPLOAD_SIZE_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"File exceeds the {MAX_UPLOAD_SIZE_BYTES // (1024 * 1024)}MB upload limit",
+            )
 
         # Exact-duplicate detection: hash the raw bytes (not the filename --
         # a renamed copy of the same PDF should still match, and two

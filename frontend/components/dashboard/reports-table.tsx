@@ -14,11 +14,12 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Download, RefreshCw, CalendarRange } from 'lucide-react'
+import { Download, RefreshCw } from 'lucide-react'
 import { type Report } from '@/lib/data-service'
 import { exportReportsToCsv } from '@/lib/export-csv'
 import { capitalize } from '@/lib/utils'
 import { useRegenerateReport } from '@/lib/hooks/use-mutations'
+import { buildPeriodOptions, matchesPeriod } from '@/lib/period-filter'
 
 interface ReportsTableProps {
   reports?: Report[]
@@ -43,17 +44,25 @@ function reportDisplayName(report: Report): string {
 export function ReportsTable({ reports = [], onRegenerated }: ReportsTableProps) {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<Report['status'] | 'all'>('all')
+  const [periodFilter, setPeriodFilter] = useState('all')
   const { regenerate, regeneratingId, error } = useRegenerateReport(onRegenerated)
+
+  // Filtered by created_at (structured, always present), not
+  // summary.reporting_period -- that field is free-text/AI-extracted and
+  // not guaranteed to follow any fixed format, so it isn't safe to filter
+  // on even though it's searchable above.
+  const periodOptions = useMemo(() => buildPeriodOptions(reports.map((r) => r.created_at)), [reports])
 
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase()
     return reports.filter((report) => {
       if (statusFilter !== 'all' && report.status !== statusFilter) return false
+      if (periodFilter !== 'all' && !matchesPeriod(report.created_at, periodFilter)) return false
       if (!query) return true
       const haystack = `${reportDisplayName(report)} ${report.summary?.reporting_period ?? ''}`.toLowerCase()
       return haystack.includes(query)
     })
-  }, [reports, search, statusFilter])
+  }, [reports, search, statusFilter, periodFilter])
 
   return (
     <Card className="col-span-full">
@@ -89,16 +98,19 @@ export function ReportsTable({ reports = [], onRegenerated }: ReportsTableProps)
             </Select>
           </div>
           <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled
-              title="Filter by year/month coming soon"
-            >
-              <CalendarRange className="h-5 w-5" />
-              <span className="sr-only">Filter by year/month (coming soon)</span>
-              Filter by period
-            </Button>
+            <Select value={periodFilter} onValueChange={setPeriodFilter}>
+              <SelectTrigger aria-label="Filter by period" className="whitespace-nowrap">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All periods</SelectItem>
+                {periodOptions.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <Button
               variant="outline"
               size="sm"

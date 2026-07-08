@@ -14,13 +14,16 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { Trash2, Upload, CalendarRange, Download } from 'lucide-react'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Trash2, Upload, Download } from 'lucide-react'
 import { type DocumentItem, getDocumentFileUrl } from '@/lib/data-service'
 import { formatFileSize } from '@/lib/format'
 import { capitalize } from '@/lib/utils'
 import { useDocuments } from '@/lib/hooks/use-dashboard-data'
 import { useUploadDocument, useDeleteDocument } from '@/lib/hooks/use-mutations'
 import { ErrorBanner } from '@/components/error-banner'
+import { buildPeriodOptions, matchesPeriod } from '@/lib/period-filter'
+import { MAX_UPLOAD_SIZE_BYTES, MAX_UPLOAD_SIZE_LABEL } from '@/lib/upload-constraints'
 
 // Same status-color convention as reports-table.tsx's STATUS_STYLES.
 // DocumentItem.status is a plain string (not a fixed union like Report's),
@@ -37,18 +40,35 @@ export default function DocumentsPage() {
   const { remove, deletingId, error: deleteError } = useDeleteDocument(refetch)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [search, setSearch] = useState('')
+  const [periodFilter, setPeriodFilter] = useState('all')
+  const [sizeError, setSizeError] = useState<string | null>(null)
 
-  const error = loadError || uploadError || deleteError
+  const error = loadError || uploadError || deleteError || sizeError
+
+  // Only created_at (upload date) exists on a document -- there's no
+  // reporting-period concept at this level (that only exists on the
+  // generated Report, a separate entity), so this is an upload-date filter.
+  const periodOptions = useMemo(() => buildPeriodOptions((documents ?? []).map((d) => d.created_at)), [documents])
 
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase()
-    if (!query) return documents ?? []
-    return (documents ?? []).filter((doc) => doc.filename.toLowerCase().includes(query))
-  }, [documents, search])
+    return (documents ?? []).filter((doc) => {
+      if (periodFilter !== 'all' && !matchesPeriod(doc.created_at, periodFilter)) return false
+      if (!query) return true
+      return doc.filename.toLowerCase().includes(query)
+    })
+  }, [documents, search, periodFilter])
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
+
+    if (file.size > MAX_UPLOAD_SIZE_BYTES) {
+      setSizeError(`"${file.name}" is ${formatFileSize(file.size)}, which is over the ${MAX_UPLOAD_SIZE_LABEL} upload limit.`)
+      if (fileInputRef.current) fileInputRef.current.value = ''
+      return
+    }
+    setSizeError(null)
 
     await upload(file)
     if (fileInputRef.current) fileInputRef.current.value = ''
@@ -103,16 +123,19 @@ export default function DocumentsPage() {
                   aria-label="Search documents"
                   className="sm:max-w-sm"
                 />
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled
-                  title="Filter by year/month coming soon"
-                >
-                  <CalendarRange className="h-4 w-4" />
-                  <span className="sr-only">Filter by year/month (coming soon)</span>
-                  Filter by period
-                </Button>
+                <Select value={periodFilter} onValueChange={setPeriodFilter}>
+                  <SelectTrigger aria-label="Filter by period" className="whitespace-nowrap">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All periods</SelectItem>
+                    {periodOptions.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <Table>
                 <TableHeader>

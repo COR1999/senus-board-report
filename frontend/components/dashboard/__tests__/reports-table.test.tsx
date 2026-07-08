@@ -80,9 +80,15 @@ describe('ReportsTable', () => {
     expect(screen.getByText('Failed')).toBeInTheDocument()
   })
 
-  it('shows a disabled year/month filter button noting it is coming soon', () => {
+  it('filters by period (year/month of created_at), not the free-text reporting_period', async () => {
     render(<ReportsTable reports={reports} />)
-    expect(screen.getByRole('button', { name: /filter by period/i })).toBeDisabled()
+
+    fireEvent.click(screen.getByRole('combobox', { name: 'Filter by period' }))
+    fireEvent.click(await screen.findByRole('option', { name: 'December 2025' }))
+
+    expect(await screen.findByText('Senus PLC')).toBeInTheDocument()
+    expect(screen.queryByText('Acme Corp')).not.toBeInTheDocument()
+    expect(screen.queryByText('Document #103')).not.toBeInTheDocument()
   })
 
   it('calls regenerateReport and onRegenerated when the regenerate button is clicked', async () => {
