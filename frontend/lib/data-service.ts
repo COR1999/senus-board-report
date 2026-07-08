@@ -306,3 +306,40 @@ export async function getAvailableExternalFilings(): Promise<ExternalFiling[]> {
 export async function importExternalFiling(attachmentId: string): Promise<DocumentItem> {
   return apiFetch<DocumentItem>(`/api/documents/external/${attachmentId}/import`, { method: 'POST' })
 }
+
+/**
+ * Filings explicitly marked out of scope (see hideExternalFiling below) --
+ * a secondary list so a dismissed non-financial filing (an AGM notice,
+ * Memo & Articles) can still be reviewed/restored later, not just gone for
+ * good. Same empty-list-on-failure fallback as getAvailableExternalFilings.
+ */
+export async function getHiddenExternalFilings(): Promise<ExternalFiling[]> {
+  try {
+    return await apiFetch<ExternalFiling[]>('/api/documents/external/hidden')
+  } catch (error) {
+    console.warn('Failed to fetch hidden filings:', error)
+    return []
+  }
+}
+
+/**
+ * Marks a filing as out of scope so it stops showing up in the "available"
+ * list -- for a filing with no extractable financial data (a governance
+ * document, or one that failed the confidence gate) that the user has
+ * already reviewed and doesn't want cluttering the space. Throws on
+ * failure (same reasoning as deleteDocument/importExternalFiling).
+ */
+export async function hideExternalFiling(attachmentId: string): Promise<void> {
+  await apiFetch(`/api/documents/external/${attachmentId}/hide`, { method: 'POST' })
+}
+
+/**
+ * Restores a hidden filing back to the "available" list. Not routed through
+ * apiFetch -- the backend returns a bodyless 204, and apiFetch's `res.json()`
+ * would throw on the empty body (same reasoning as deleteDocument below,
+ * which has the same 204-response shape).
+ */
+export async function unhideExternalFiling(attachmentId: string): Promise<void> {
+  const res = await fetch(`${API_URL}/api/documents/external/${attachmentId}/unhide`, { method: 'POST' })
+  if (!res.ok) throw new Error(`Failed to unhide filing: ${res.statusText}`)
+}

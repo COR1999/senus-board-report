@@ -15,12 +15,18 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Trash2, Upload, Download, DownloadCloud, RefreshCw } from 'lucide-react'
+import { Trash2, Upload, Download, DownloadCloud, RefreshCw, EyeOff, RotateCcw } from 'lucide-react'
 import { type DocumentItem, getDocumentFileUrl } from '@/lib/data-service'
 import { formatFileSize } from '@/lib/format'
 import { capitalize } from '@/lib/utils'
-import { useDocuments, useAvailableExternalFilings } from '@/lib/hooks/use-dashboard-data'
-import { useUploadDocument, useDeleteDocument, useImportExternalFiling } from '@/lib/hooks/use-mutations'
+import { useDocuments, useAvailableExternalFilings, useHiddenExternalFilings } from '@/lib/hooks/use-dashboard-data'
+import {
+  useUploadDocument,
+  useDeleteDocument,
+  useImportExternalFiling,
+  useHideExternalFiling,
+  useUnhideExternalFiling,
+} from '@/lib/hooks/use-mutations'
 import { ErrorBanner } from '@/components/error-banner'
 import { buildPeriodOptions, matchesPeriod } from '@/lib/period-filter'
 import { MAX_UPLOAD_SIZE_BYTES, MAX_UPLOAD_SIZE_LABEL } from '@/lib/upload-constraints'
@@ -48,12 +54,25 @@ export default function DocumentsPage() {
     refetch()
     refetchAvailableFilings()
   })
+  const {
+    data: hiddenFilings,
+    loading: loadingHiddenFilings,
+    refetch: refetchHiddenFilings,
+  } = useHiddenExternalFilings()
+  const { hideFiling, hidingId, error: hideError } = useHideExternalFiling(() => {
+    refetchAvailableFilings()
+    refetchHiddenFilings()
+  })
+  const { unhideFiling, unhidingId, error: unhideError } = useUnhideExternalFiling(() => {
+    refetchAvailableFilings()
+    refetchHiddenFilings()
+  })
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [search, setSearch] = useState('')
   const [periodFilter, setPeriodFilter] = useState('all')
   const [sizeError, setSizeError] = useState<string | null>(null)
 
-  const error = loadError || uploadError || deleteError || sizeError || importError
+  const error = loadError || uploadError || deleteError || sizeError || importError || hideError || unhideError
 
   // Only created_at (upload date) exists on a document -- there's no
   // reporting-period concept at this level (that only exists on the
@@ -133,20 +152,33 @@ export default function DocumentsPage() {
                       })}`}
                   </p>
                 </div>
-                <Button
-                  size="sm"
-                  onClick={() => importFiling(filing.attachment_id)}
-                  // Disabled whenever *any* import is in flight, not just
-                  // this row's own -- `useImportExternalFiling` tracks a
-                  // single `importingId`, so triggering a second import
-                  // before the first resolves would let one request's
-                  // result silently overwrite the other's error/success
-                  // state. One import at a time avoids the race entirely.
-                  disabled={importingId !== null}
-                >
-                  <DownloadCloud className="h-4 w-4" />
-                  {importingId === filing.attachment_id ? 'Importing...' : 'Import'}
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    onClick={() => importFiling(filing.attachment_id)}
+                    // Disabled whenever *any* import is in flight, not just
+                    // this row's own -- `useImportExternalFiling` tracks a
+                    // single `importingId`, so triggering a second import
+                    // before the first resolves would let one request's
+                    // result silently overwrite the other's error/success
+                    // state. One import at a time avoids the race entirely.
+                    disabled={importingId !== null}
+                  >
+                    <DownloadCloud className="h-4 w-4" />
+                    {importingId === filing.attachment_id ? 'Importing...' : 'Import'}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-9 w-9 p-0 text-muted-foreground"
+                    onClick={() => hideFiling(filing.attachment_id)}
+                    disabled={hidingId !== null}
+                    title="Mark as out of scope -- no financial data in this filing"
+                  >
+                    <EyeOff className="h-4 w-4" />
+                    <span className="sr-only">Mark {filing.file_name} as out of scope</span>
+                  </Button>
+                </div>
               </div>
             ))}
           </CardContent>
@@ -160,6 +192,39 @@ export default function DocumentsPage() {
             Check now
           </Button>
         </div>
+      )}
+      {!loadingHiddenFilings && (hiddenFilings ?? []).length > 0 && (
+        <Card className="border-border/40">
+          <CardHeader>
+            <CardTitle className="text-base">Out of scope ({hiddenFilings!.length})</CardTitle>
+            <CardDescription>
+              Filings marked as not applicable (no extractable financial data) -- restore one if you
+              change your mind.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-2">
+            {hiddenFilings!.map((filing) => (
+              <div
+                key={filing.attachment_id}
+                className="flex items-center justify-between gap-3 rounded-md border border-border/40 bg-background px-4 py-3"
+              >
+                <div className="min-w-0">
+                  <p className="truncate font-medium text-muted-foreground">{filing.file_name}</p>
+                  <p className="text-sm text-muted-foreground">{formatFileSize(filing.file_size)}</p>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => unhideFiling(filing.attachment_id)}
+                  disabled={unhidingId !== null}
+                >
+                  <RotateCcw className="h-4 w-4" />
+                  {unhidingId === filing.attachment_id ? 'Restoring...' : 'Restore'}
+                </Button>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
       )}
       <Card>
         <CardHeader>

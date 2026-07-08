@@ -7,6 +7,7 @@ import {
   getReports,
   getDocuments,
   getAvailableExternalFilings,
+  getHiddenExternalFilings,
   getDashboardPeriods,
   type Metrics,
   type ChartDataPoint,
@@ -55,4 +56,10 @@ export function useDocuments(options?: UseAsyncDataOptions): AsyncDataState<Docu
 // button (`refetch`), not a background poller, per product direction.
 export function useAvailableExternalFilings(options?: UseAsyncDataOptions): AsyncDataState<ExternalFiling[]> {
   return useAsyncData(getAvailableExternalFilings, options)
+}
+
+// Same no-poll reasoning as useAvailableExternalFilings -- the hidden list
+// only changes via this session's own hide/unhide actions.
+export function useHiddenExternalFilings(options?: UseAsyncDataOptions): AsyncDataState<ExternalFiling[]> {
+  return useAsyncData(getHiddenExternalFilings, options)
 }

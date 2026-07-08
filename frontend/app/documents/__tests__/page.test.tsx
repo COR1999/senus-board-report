@@ -21,6 +21,7 @@ describe('DocumentsPage', () => {
     // "nothing new" so only the tests below that care about the banner
     // override this.
     vi.spyOn(dataService, 'getAvailableExternalFilings').mockResolvedValue([])
+    vi.spyOn(dataService, 'getHiddenExternalFilings').mockResolvedValue([])
   })
 
   it('fetches and renders documents', async () => {
@@ -183,5 +184,54 @@ describe('DocumentsPage', () => {
     fireEvent.click(checkNowButton)
 
     await waitFor(() => expect(dataService.getAvailableExternalFilings).toHaveBeenCalledTimes(2))
+  })
+
+  it('hides a filing and refreshes both the available and hidden lists', async () => {
+    vi.spyOn(dataService, 'getAvailableExternalFilings').mockResolvedValue([
+      { attachment_id: 'agm-notice-id', file_name: 'Senus_Circular_Notice of AGM 2026', file_size: 239_000, published_date: '2026-06-05' },
+    ])
+    const hideSpy = vi.spyOn(dataService, 'hideExternalFiling').mockResolvedValue(undefined)
+
+    render(<DocumentsPage />)
+    const hideButton = await screen.findByRole('button', { name: /mark senus_circular_notice of agm 2026 as out of scope/i })
+    fireEvent.click(hideButton)
+
+    await waitFor(() => expect(hideSpy).toHaveBeenCalledWith('agm-notice-id'))
+    // onSuccess refetches both lists -- once on mount, once after hiding.
+    await waitFor(() => expect(dataService.getAvailableExternalFilings).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(dataService.getHiddenExternalFilings).toHaveBeenCalledTimes(2))
+  })
+
+  it('shows an "Out of scope" section listing hidden filings', async () => {
+    vi.spyOn(dataService, 'getHiddenExternalFilings').mockResolvedValue([
+      { attachment_id: 'agm-notice-id', file_name: 'Senus_Circular_Notice of AGM 2026', file_size: 239_000, published_date: '2026-06-05' },
+    ])
+
+    render(<DocumentsPage />)
+
+    expect(await screen.findByText('Out of scope (1)')).toBeInTheDocument()
+    expect(screen.getByText('Senus_Circular_Notice of AGM 2026')).toBeInTheDocument()
+  })
+
+  it('does not show the "Out of scope" section when nothing is hidden', async () => {
+    render(<DocumentsPage />)
+    await screen.findByText('ANY_DOCUMENT.pdf')
+
+    expect(screen.queryByText(/Out of scope/)).not.toBeInTheDocument()
+  })
+
+  it('restores a hidden filing and refreshes both lists', async () => {
+    vi.spyOn(dataService, 'getHiddenExternalFilings').mockResolvedValue([
+      { attachment_id: 'agm-notice-id', file_name: 'Senus_Circular_Notice of AGM 2026', file_size: 239_000, published_date: '2026-06-05' },
+    ])
+    const unhideSpy = vi.spyOn(dataService, 'unhideExternalFiling').mockResolvedValue(undefined)
+
+    render(<DocumentsPage />)
+    const restoreButton = await screen.findByRole('button', { name: /restore/i })
+    fireEvent.click(restoreButton)
+
+    await waitFor(() => expect(unhideSpy).toHaveBeenCalledWith('agm-notice-id'))
+    await waitFor(() => expect(dataService.getAvailableExternalFilings).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(dataService.getHiddenExternalFilings).toHaveBeenCalledTimes(2))
   })
 })
