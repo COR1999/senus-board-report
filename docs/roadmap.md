@@ -123,11 +123,10 @@ also lists real financial documents that haven't been extracted yet:
 
 Extracting either would give genuine additional historical comparatives for Growth & Revenue YoY
 analysis, strengthening the assignment's own required metric category rather than relying on a
-single filing's internal comparison column. This was identified late (8 July 2026) via a comparison
-against other candidates' public repos for the same assessment — not investigated further this
-session, deliberately left as a flagged gap rather than rushed.
+single filing's internal comparison column. Identified 8 July 2026, deliberately left as a flagged
+gap rather than rushed.
 
 **Other open items** (see the audit referenced in the README's "How outputs were validated"
 section): PDF-download storage durability (no persistent/object storage yet), a few remaining
 Documents/Reports-area gaps (bulk actions, document preview, the separate AI-generated-report PDF
-export), and a demo video recording — not yet done, unlike several other candidates' submissions.
+export), and a demo video recording.
