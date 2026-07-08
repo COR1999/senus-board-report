@@ -16,6 +16,11 @@ describe('DocumentsPage', () => {
     vi.spyOn(dataService, 'getDocuments').mockResolvedValue([
       { id: 1, filename: 'ANY_DOCUMENT.pdf', file_size: 1024, status: 'completed', created_at: '2025-12-31T00:00:00Z' },
     ])
+    // Otherwise every test in this file makes a real network call (the
+    // hook has no mock/fallback data path like getDocuments) -- default to
+    // "nothing new" so only the tests below that care about the banner
+    // override this.
+    vi.spyOn(dataService, 'getAvailableExternalFilings').mockResolvedValue([])
   })
 
   it('fetches and renders documents', async () => {
@@ -113,5 +118,52 @@ describe('DocumentsPage', () => {
 
     const downloadLink = screen.getByRole('link', { name: /download any_document\.pdf/i })
     expect(downloadLink).toHaveAttribute('href', dataService.getDocumentFileUrl(1))
+  })
+
+  it('shows a quiet "no new filings" message with a manual check when none are available', async () => {
+    render(<DocumentsPage />)
+    expect(await screen.findByText(/No new filings from Senus/i)).toBeInTheDocument()
+  })
+
+  it('shows a banner listing filings available from the investor relations API', async () => {
+    vi.spyOn(dataService, 'getAvailableExternalFilings').mockResolvedValue([
+      { attachment_id: 'info-doc-id', file_name: 'Senus PLC Information Document', file_size: 1_056_649, published_date: '2025-12-01' },
+    ])
+
+    render(<DocumentsPage />)
+
+    expect(await screen.findByText("1 new filing available from Senus's investor relations page")).toBeInTheDocument()
+    expect(screen.getByText('Senus PLC Information Document')).toBeInTheDocument()
+  })
+
+  it('imports a filing and refreshes both the documents and available-filings lists', async () => {
+    vi.spyOn(dataService, 'getAvailableExternalFilings').mockResolvedValue([
+      { attachment_id: 'info-doc-id', file_name: 'Senus PLC Information Document', file_size: 1_056_649, published_date: '2025-12-01' },
+    ])
+    const importSpy = vi.spyOn(dataService, 'importExternalFiling').mockResolvedValue({
+      id: 2,
+      filename: 'Senus PLC Information Document.pdf',
+      file_size: 1_056_649,
+      status: 'completed',
+      created_at: '2026-07-08T00:00:00Z',
+    })
+
+    render(<DocumentsPage />)
+    const importButton = await screen.findByRole('button', { name: /^import$/i })
+    fireEvent.click(importButton)
+
+    await waitFor(() => expect(importSpy).toHaveBeenCalledWith('info-doc-id'))
+    // onSuccess refetches both lists -- once on mount, once after import.
+    await waitFor(() => expect(dataService.getDocuments).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(dataService.getAvailableExternalFilings).toHaveBeenCalledTimes(2))
+  })
+
+  it('re-checks the investor relations API when "Check now" is clicked', async () => {
+    render(<DocumentsPage />)
+    const checkNowButton = await screen.findByRole('button', { name: /check now/i })
+
+    fireEvent.click(checkNowButton)
+
+    await waitFor(() => expect(dataService.getAvailableExternalFilings).toHaveBeenCalledTimes(2))
   })
 })

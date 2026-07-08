@@ -132,14 +132,16 @@ gap rather than rushed -- these documents have a very different structure (a 53-
 a 23-page audited annual report) than the half-year filing's format the extractor was built
 against, so this needs its own scoped extraction work, not a quick bolt-on.
 
-**Automated document sync (idea, not scoped).** Now that the investor relations API is known, a
-natural next step is polling `.../reports/all-documents` (and the other document-list endpoints)
-for `attachmentId`s not yet in this project's database, and automatically downloading + running
-new filings through the existing extraction pipeline when Senus publishes one -- rather than
-requiring a manual PDF upload every time. Not designed or built yet: needs decisions on polling
-cadence, how a newly-detected document should surface to the user (auto-ingest vs. a review step
-before it hits the dashboard), and whether the same content-hash dedup already used for manual
-uploads is sufficient. Flagged as an idea worth a real design pass, not started this session.
+**Automated document sync (built, PR #39).** Initially believed Senus only published one financial
+document at all; a more thorough search of the investor relations page turned up the underlying
+JSON API it's built on (see the root README's "Investor relations API" section), which made it
+possible to check for filings not yet in this system and import one on demand. Two decisions were
+made deliberately narrow: **approval-gated**, not silent auto-ingest (a "new filing available"
+banner with an explicit Import button on the Documents page, never automatic); and **checked on
+demand** (page load / a manual "Check now" button), not a background poller. The existing
+content-hash dedup used for manual uploads applies automatically, and a second check (filename, not
+just `attachmentId`) is needed because the real API lists the same filing under different
+`attachmentId`s across its `documents`/`reports` categories.
 
 **Other open items** (see the audit referenced in the README's "How outputs were validated"
 section): PDF-download storage durability (no persistent/object storage yet), a few remaining

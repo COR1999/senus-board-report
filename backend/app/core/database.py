@@ -66,6 +66,7 @@ _COLUMNS_ADDED_AFTER_INITIAL_RELEASE = {
     # to stay portable across both engines.
     "documents": [
         ("content_hash", "VARCHAR(64)"),
+        ("external_attachment_id", "VARCHAR(64)"),
     ],
 }
 
@@ -75,6 +76,7 @@ _COLUMNS_ADDED_AFTER_INITIAL_RELEASE = {
 # which has to check first.
 _UNIQUE_INDEXES_ADDED_AFTER_INITIAL_RELEASE = [
     ("documents", "content_hash", "ix_documents_content_hash_unique"),
+    ("documents", "external_attachment_id", "ix_documents_external_attachment_id_unique"),
 ]
 
 

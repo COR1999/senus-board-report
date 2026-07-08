@@ -15,12 +15,12 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Trash2, Upload, Download } from 'lucide-react'
+import { Trash2, Upload, Download, DownloadCloud, RefreshCw } from 'lucide-react'
 import { type DocumentItem, getDocumentFileUrl } from '@/lib/data-service'
 import { formatFileSize } from '@/lib/format'
 import { capitalize } from '@/lib/utils'
-import { useDocuments } from '@/lib/hooks/use-dashboard-data'
-import { useUploadDocument, useDeleteDocument } from '@/lib/hooks/use-mutations'
+import { useDocuments, useAvailableExternalFilings } from '@/lib/hooks/use-dashboard-data'
+import { useUploadDocument, useDeleteDocument, useImportExternalFiling } from '@/lib/hooks/use-mutations'
 import { ErrorBanner } from '@/components/error-banner'
 import { buildPeriodOptions, matchesPeriod } from '@/lib/period-filter'
 import { MAX_UPLOAD_SIZE_BYTES, MAX_UPLOAD_SIZE_LABEL } from '@/lib/upload-constraints'
@@ -38,12 +38,22 @@ export default function DocumentsPage() {
   const { data: documents, loading, error: loadError, refetch } = useDocuments()
   const { upload, uploading, error: uploadError } = useUploadDocument(refetch)
   const { remove, deletingId, error: deleteError } = useDeleteDocument(refetch)
+  const {
+    data: availableFilings,
+    loading: loadingAvailableFilings,
+    error: availableFilingsError,
+    refetch: refetchAvailableFilings,
+  } = useAvailableExternalFilings()
+  const { importFiling, importingId, error: importError } = useImportExternalFiling(() => {
+    refetch()
+    refetchAvailableFilings()
+  })
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [search, setSearch] = useState('')
   const [periodFilter, setPeriodFilter] = useState('all')
   const [sizeError, setSizeError] = useState<string | null>(null)
 
-  const error = loadError || uploadError || deleteError || sizeError
+  const error = loadError || uploadError || deleteError || sizeError || importError
 
   // Only created_at (upload date) exists on a document -- there's no
   // reporting-period concept at this level (that only exists on the
@@ -85,6 +95,63 @@ export default function DocumentsPage() {
   return (
     <DashboardShell title="Documents" description="Uploaded financial reports and filings">
       {error && <ErrorBanner error={error} />}
+      {!loadingAvailableFilings && (availableFilings ?? []).length > 0 && (
+        <Card className="border-emerald-500/30 bg-emerald-500/5">
+          <CardHeader>
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <CardTitle className="text-base">
+                  {availableFilings!.length} new filing{availableFilings!.length === 1 ? '' : 's'} available from
+                  Senus&apos;s investor relations page
+                </CardTitle>
+                <CardDescription>Found via Senus&apos;s investor relations API -- import to add it to this dashboard.</CardDescription>
+              </div>
+              <Button variant="outline" size="sm" onClick={refetchAvailableFilings}>
+                <RefreshCw className="h-4 w-4" />
+                Check now
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-2">
+            {availableFilings!.map((filing) => (
+              <div
+                key={filing.attachment_id}
+                className="flex items-center justify-between gap-3 rounded-md border border-border/40 bg-background px-4 py-3"
+              >
+                <div className="min-w-0">
+                  <p className="truncate font-medium">{filing.file_name}</p>
+                  <p className="text-sm text-muted-foreground">
+                    {formatFileSize(filing.file_size)}
+                    {filing.published_date &&
+                      ` · Published ${new Date(filing.published_date).toLocaleDateString('en-US', {
+                        year: 'numeric',
+                        month: 'short',
+                        day: 'numeric',
+                      })}`}
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  onClick={() => importFiling(filing.attachment_id)}
+                  disabled={importingId === filing.attachment_id}
+                >
+                  <DownloadCloud className="h-4 w-4" />
+                  {importingId === filing.attachment_id ? 'Importing...' : 'Import'}
+                </Button>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+      {!loadingAvailableFilings && (availableFilings ?? []).length === 0 && (
+        <div className="flex items-center justify-between gap-3 px-1 text-sm text-muted-foreground">
+          <span>No new filings from Senus&apos;s investor relations page.</span>
+          <Button variant="ghost" size="sm" onClick={refetchAvailableFilings}>
+            <RefreshCw className="h-4 w-4" />
+            Check now
+          </Button>
+        </div>
+      )}
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">

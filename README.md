@@ -43,8 +43,15 @@ requests. Useful for anyone extending this project (see `docs/roadmap.md`'s "Nex
 | `GET https://api.app.assiduous.tech/v1/investor-relations/senus/documents/documents/{attachmentId}` | The actual PDF for a given `attachmentId` from any of the above lists |
 
 Every document currently in `backend/docs/source-documents/` was fetched via this last endpoint.
-This is the same API a future automated sync (poll for new `attachmentId`s, download and run them
-through the existing extraction pipeline) would use — not built yet, see `docs/roadmap.md`.
+
+This project also wraps that API with two of its own endpoints so new filings can be pulled in
+without a manual download/re-upload round-trip: `GET /api/documents/external/available` lists
+filings not yet in this system (matched against already-ingested documents by both
+`attachmentId` and filename — some filings appear under more than one `attachmentId` across
+categories), and `POST /api/documents/external/{attachmentId}/import` downloads and runs one
+through the same extraction pipeline as a manual upload. Checked on page load / a manual
+"Check now" button on the Documents page — not polled in the background — and always
+approval-gated: importing is a deliberate click, never automatic.
 
 ## Architecture
 
