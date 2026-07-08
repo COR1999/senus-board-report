@@ -32,8 +32,8 @@ report → render it on a dashboard. **46 commits**, 2 July – 6 July 2026.
 
 From this point on, development was streamlined using **Claude Code (Sonnet 5)**, working one
 feature/fix branch at a time with an explicit plan-then-implement-then-verify discipline (see the
-root `README.md`'s "AI-assisted workflow" section for the working pattern itself). **43 branches**,
-PRs #3–#50.
+root `README.md`'s "AI-assisted workflow" section for the working pattern itself). **44 branches**,
+PRs #3–#51.
 
 ### KPI system & financial metrics (PRs #3–#9, #13)
 
@@ -290,16 +290,37 @@ actually returns for a real scanned PDF. Fixed with a new `PDFExtractionService.
 that strips the page markers before checking for real content, plus a regression test that uses the
 real `extract_text()` output specifically to close the gap that let this through the first time.
 
-**End-to-end confirmed working, for real**: importing ADF Farm Solutions now returns revenue €836,991
-and cash €140,135 — both matching the Information Document's own figures *exactly*, strong evidence
-this genuinely is the source data Senus's own summary table was built from — plus EBITDA -€613,313, a
-real figure never available from any other ingested filing, correctly tagged `needs_review` per PR
-#48's design. See `frontend/docs/ai-usage/backend-gemini-model-and-empty-text-fix.md` for the full
-diagnostic trail.
+**Confirmed working against a throwaway local database**: importing ADF Farm Solutions returned
+revenue €836,991 and cash €140,135 — both matching the Information Document's own figures *exactly*,
+strong evidence this genuinely is the source data Senus's own summary table was built from — plus
+EBITDA -€613,313, a real figure never available from any other ingested filing, correctly tagged
+`needs_review` per PR #48's design. See
+`frontend/docs/ai-usage/backend-gemini-model-and-empty-text-fix.md` for the full diagnostic trail.
+Production itself surfaced one more real gap this local verification couldn't have caught — see the
+next section.
+
+### A production-only schema gap the local database couldn't surface (PR #51)
+
+The user's own real import attempt, immediately after PR #50 deployed, hit a *third* bug — Postgres
+this time, not Gemini: `NotNullViolationError: null value in column "customers"`. `FinancialMetrics.
+customers` had been `Optional[int]` in the SQLAlchemy model for a long time, but `Base.metadata.
+create_all` (this project's only schema-creation mechanism) never alters an *existing* table's column
+constraints — production's `financial_metrics` table has existed since very early in the project, and
+its `customers` column still carried a leftover `NOT NULL` from whenever it was first created. Every
+document successfully ingested until now had happened to report a real customer count, so this never
+triggered. Fixed proactively for all six of `financial_metrics`' original-release columns (`revenue`,
+`customers`, `cash`, `ebitda`, `gross_margin`, `operating_margin`), not just the one that broke — none
+of the other five have ever been proven NULL-safe in production either, for the same reason.
+Extended the existing idempotent column-migration pattern in `database.py` with a parallel,
+Postgres-only `ALTER COLUMN ... DROP NOT NULL` step (skipped entirely on SQLite, where every
+test/local run already accepts these as nullable with no constraint to drop). A genuine limit of
+local-only verification: SQLite never enforced this constraint the same way, so nothing short of a
+real Postgres deploy could have caught it — documented honestly in
+`frontend/docs/ai-usage/financial-metrics-nullable-columns.md` rather than claimed as prevented.
 
 ## Working discipline throughout Phase 2
 
-A few rules were established early and enforced consistently across all 43 branches:
+A few rules were established early and enforced consistently across all 44 branches:
 
 - **Never fabricate missing data.** A missing value is `null`/`None`, never a guessed `0` — this
   came up repeatedly (KPI sparkline history, reporting-period extraction, bookings figures, cadence

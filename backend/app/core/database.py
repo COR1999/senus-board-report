@@ -75,6 +75,29 @@ _COLUMNS_ADDED_AFTER_INITIAL_RELEASE = {
     ],
 }
 
+# (table, column_name) for columns that were part of financial_metrics'
+# *original* schema (before the project-wide "missing value is None, never
+# a fabricated 0/required value" convention was established) and so may
+# still carry a leftover NOT NULL constraint in a long-lived production
+# database, even though the SQLAlchemy model has declared them
+# `Optional[...]` for a long time. `Base.metadata.create_all` never alters
+# an existing table's column constraints, so a model-level nullability
+# change alone doesn't reach a table that already exists in production.
+#
+# Confirmed as a real, not hypothetical, gap: importing ADF Farm Solutions
+# (a document that genuinely doesn't disclose a customer count) was the
+# first production insert to ever attempt a NULL `customers` value, and hit
+# `NotNullViolationError` -- the model said Optional[int], the live Postgres
+# column still said NOT NULL from whenever the table was first created.
+# `revenue`/`cash`/`ebitda` are included too since they're the same
+# "original release" columns and have never been proven NULL-safe in
+# production either (every document ingested so far happened to report a
+# value for those three) -- fixed proactively rather than waiting for each
+# one to independently break the same way.
+_COLUMNS_MADE_NULLABLE_AFTER_INITIAL_RELEASE = {
+    "financial_metrics": ["revenue", "customers", "cash", "ebitda", "gross_margin", "operating_margin"],
+}
+
 # (table, column, index_name) for unique indexes backing the columns above.
 # `CREATE UNIQUE INDEX IF NOT EXISTS` is supported by both SQLite and
 # Postgres and is naturally idempotent, unlike the column-add loop above
@@ -112,6 +135,23 @@ async def _add_missing_columns(conn: AsyncConnection) -> None:
         await conn.execute(
             text(f'CREATE UNIQUE INDEX IF NOT EXISTS {index_name} ON {table_name} ({column_name})')
         )
+
+    # `ALTER COLUMN ... DROP NOT NULL` is Postgres-specific syntax (SQLite's
+    # ALTER TABLE doesn't support altering a column's constraints at all) --
+    # skip entirely on SQLite, where every test/local run already accepts
+    # NULL for these columns with no constraint to drop in the first place.
+    if conn.dialect.name == "postgresql":
+        for table_name, columns in _COLUMNS_MADE_NULLABLE_AFTER_INITIAL_RELEASE.items():
+            if not await conn.run_sync(table_exists, table_name):
+                continue
+            for column_name in columns:
+                # Idempotent by nature -- dropping a constraint that's
+                # already absent is a harmless no-op in Postgres, so this
+                # doesn't need an existence check first the way ADD COLUMN
+                # above does.
+                await conn.execute(
+                    text(f'ALTER TABLE {table_name} ALTER COLUMN {column_name} DROP NOT NULL')
+                )
 
 
 async def init_db():
