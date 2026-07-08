@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import { DashboardContainer } from '@/components/dashboard/dashboard-container'
 import * as dataService from '@/lib/data-service'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -9,6 +9,7 @@ vi.mock('next/navigation', () => ({
 
 describe('DashboardContainer', () => {
   beforeEach(() => {
+    vi.spyOn(dataService, 'getDashboardPeriods').mockResolvedValue([])
     vi.spyOn(dataService, 'getMetrics').mockResolvedValue({
       revenue: { value: 'ANY_REVENUE', change: 10, trend: 'up', history: [1, 2, 3] },
       customers: { value: 'ANY_CUSTOMERS', change: 5, trend: 'up', history: [1, 2, 3] },
@@ -116,5 +117,50 @@ describe('DashboardContainer', () => {
 
     await screen.findByText('ANY_REVENUE')
     expect(screen.queryByText(/Data as of/)).not.toBeInTheDocument()
+  })
+
+  describe('period selector', () => {
+    it('renders no selector when only one (or zero) reporting periods are available', async () => {
+      vi.spyOn(dataService, 'getDashboardPeriods').mockResolvedValue([
+        { document_id: 1, label: 'HY2026 (Jul 2025 – Dec 2025)' },
+      ])
+
+      render(<DashboardContainer />)
+
+      await screen.findByText('ANY_REVENUE')
+      expect(screen.queryByRole('combobox', { name: 'Select reporting period' })).not.toBeInTheDocument()
+    })
+
+    it('renders a selector with real period labels when multiple periods are available', async () => {
+      vi.spyOn(dataService, 'getDashboardPeriods').mockResolvedValue([
+        { document_id: 2, label: 'HY2026 (Jul 2025 – Dec 2025)' },
+        { document_id: 1, label: 'FY2025 (Jul 2024 – Jun 2025)' },
+      ])
+
+      render(<DashboardContainer />)
+
+      await screen.findByText('ANY_REVENUE')
+      expect(screen.getByRole('combobox', { name: 'Select reporting period' })).toBeInTheDocument()
+      expect(screen.getByText('HY2026 (Jul 2025 – Dec 2025)')).toBeInTheDocument()
+    })
+
+    it('refetches metrics and chart data with the selected document_id when a period is chosen', async () => {
+      vi.spyOn(dataService, 'getDashboardPeriods').mockResolvedValue([
+        { document_id: 2, label: 'HY2026 (Jul 2025 – Dec 2025)' },
+        { document_id: 1, label: 'FY2025 (Jul 2024 – Jun 2025)' },
+      ])
+      const getMetricsSpy = vi.mocked(dataService.getMetrics)
+      const getChartDataSpy = vi.mocked(dataService.getChartData)
+
+      render(<DashboardContainer />)
+
+      await screen.findByText('ANY_REVENUE')
+      fireEvent.click(screen.getByRole('combobox', { name: 'Select reporting period' }))
+      fireEvent.click(await screen.findByRole('option', { name: 'FY2025 (Jul 2024 – Jun 2025)' }))
+
+      await screen.findByText('ANY_REVENUE')
+      expect(getMetricsSpy).toHaveBeenCalledWith(1)
+      expect(getChartDataSpy).toHaveBeenCalledWith(1)
+    })
   })
 })

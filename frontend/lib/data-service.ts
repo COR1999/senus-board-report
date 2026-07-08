@@ -105,21 +105,50 @@ export interface Report {
 
 export type ExtractedPdfData = Record<string, unknown>
 
-export async function getMetrics(): Promise<Metrics> {
+/**
+ * `documentId` anchors the dashboard on a specific reporting period (see
+ * the period selector, `getDashboardPeriods` below) instead of the true
+ * latest -- omitted/null means "latest", today's exact default behavior.
+ */
+export async function getMetrics(documentId?: number | null): Promise<Metrics> {
   try {
-    return await apiFetch<Metrics>('/metrics/dashboard/summary')
+    const query = documentId != null ? `?document_id=${documentId}` : ''
+    return await apiFetch<Metrics>(`/metrics/dashboard/summary${query}`)
   } catch (error) {
     console.warn('Failed to fetch from backend, using mock metrics:', error)
     return mockMetrics
   }
 }
 
-export async function getChartData(): Promise<ChartDataPoint[]> {
+export async function getChartData(documentId?: number | null): Promise<ChartDataPoint[]> {
   try {
-    return await apiFetch<ChartDataPoint[]>('/metrics/dashboard/revenue-trend')
+    const query = documentId != null ? `?document_id=${documentId}` : ''
+    return await apiFetch<ChartDataPoint[]>(`/metrics/dashboard/revenue-trend${query}`)
   } catch (error) {
     console.warn('Failed to fetch from backend, using mock chart data:', error)
     return mockChartData
+  }
+}
+
+export interface DashboardPeriod {
+  document_id: number
+  /** Combined bare period + calendar range, e.g. "HY2026 (Jul 2025 – Dec 2025)". */
+  label: string
+}
+
+/**
+ * Reporting periods available for the dashboard's period selector -- only
+ * periods eligible to ever be "latest" (see backend's _HAS_CORE_METRICS/
+ * _IS_CONFIDENT_ENOUGH_FOR_DASHBOARD), newest first. Same empty-list-on-
+ * failure fallback as getAvailableExternalFilings -- an unreachable backend
+ * should just mean no selector renders, not break the dashboard.
+ */
+export async function getDashboardPeriods(): Promise<DashboardPeriod[]> {
+  try {
+    return await apiFetch<DashboardPeriod[]>('/metrics/dashboard/periods')
+  } catch (error) {
+    console.warn('Failed to fetch dashboard periods:', error)
+    return []
   }
 }
 

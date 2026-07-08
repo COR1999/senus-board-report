@@ -543,3 +543,170 @@ async def test_revenue_trend_excludes_a_needs_review_row(async_client, async_ses
 
     assert response.status_code == 200
     assert response.json() == []
+
+
+# ==================== Period selector (/dashboard/periods, ?document_id=) ====================
+
+@pytest.mark.anyio
+async def test_dashboard_periods_lists_eligible_rows_newest_first_with_combined_labels(async_client, async_session):
+    base = datetime(2026, 1, 1)
+    await _add_metrics_row(
+        async_session,
+        revenue=836_991.0,
+        fm_reporting_period="FY2025",
+        fm_reporting_period_start="Jul 2024", fm_reporting_period_end="Jun 2025",
+        extracted_at=base,
+    )
+    await _add_metrics_row(
+        async_session,
+        revenue=354_813.0,
+        fm_reporting_period="HY2026",
+        fm_reporting_period_start="Jul 2025", fm_reporting_period_end="Dec 2025",
+        extracted_at=base + timedelta(days=200),
+    )
+
+    response = await async_client.get("/metrics/dashboard/periods")
+
+    assert response.status_code == 200
+    options = response.json()
+    assert len(options) == 2
+    # Newest first.
+    assert options[0]["label"] == "HY2026 (Jul 2025 – Dec 2025)"
+    assert options[1]["label"] == "FY2025 (Jul 2024 – Jun 2025)"
+
+
+@pytest.mark.anyio
+async def test_dashboard_periods_excludes_needs_review_and_empty_rows(async_client, async_session):
+    await _add_metrics_row(
+        async_session, revenue=354_813.0, fm_reporting_period="HY2026",
+        extraction_confidence=100.0, extraction_confidence_tier="auto_accept",
+    )
+    await _add_metrics_row(
+        async_session, revenue=999_999.0, fm_reporting_period="HY9999",
+        extraction_confidence=88.0, extraction_confidence_tier="needs_review",
+    )
+    await _add_metrics_row(async_session, revenue=None, customers=None, cash=None, ebitda=None)
+
+    response = await async_client.get("/metrics/dashboard/periods")
+
+    assert response.status_code == 200
+    options = response.json()
+    assert len(options) == 1
+    assert options[0]["label"] == "HY2026"
+
+
+@pytest.mark.anyio
+async def test_dashboard_summary_anchored_on_older_document_id_shows_its_own_period(async_client, async_session):
+    # Three real-shaped rows: an older FY, a HY of a different cadence, and
+    # the true-latest FY. Anchoring on the older FY's document_id must show
+    # *that* period's own data -- not silently fall through to the newer
+    # HY row (different cadence) or the true-latest FY row.
+    base = datetime(2026, 1, 1)
+    older_fy = await _add_metrics_row(
+        async_session,
+        revenue=688_317.0,
+        fm_reporting_period="FY2024",
+        fm_reporting_period_start="Jul 2023", fm_reporting_period_end="Jun 2024",
+        extracted_at=base,
+    )
+    await _add_metrics_row(
+        async_session,
+        revenue=354_813.0,
+        fm_reporting_period="HY2026",
+        fm_reporting_period_start="Jul 2025", fm_reporting_period_end="Dec 2025",
+        extracted_at=base + timedelta(days=100),
+    )
+    await _add_metrics_row(
+        async_session,
+        revenue=836_991.0,
+        fm_reporting_period="FY2025",
+        fm_reporting_period_start="Jul 2024", fm_reporting_period_end="Jun 2025",
+        extracted_at=base + timedelta(days=200),
+    )
+
+    response = await async_client.get(f"/metrics/dashboard/summary?document_id={older_fy.document_id}")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["revenue"]["value"] == "€688K"
+    assert body["current_period"] == "Jul 2023 – Jun 2024"
+    assert body["document_id"] == older_fy.document_id
+
+
+@pytest.mark.anyio
+async def test_dashboard_summary_document_id_not_found_returns_404(async_client, async_session):
+    await _add_metrics_row(async_session, revenue=100_000.0)
+
+    response = await async_client.get("/metrics/dashboard/summary?document_id=999999")
+
+    assert response.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_dashboard_summary_document_id_for_needs_review_row_returns_404(async_client, async_session):
+    # A needs_review row was never eligible to be "latest" -- selecting it
+    # explicitly via document_id must be rejected the same way, not treated
+    # as a valid anchor just because a client asked for it by id.
+    row = await _add_metrics_row(
+        async_session, revenue=100_000.0,
+        extraction_confidence=88.0, extraction_confidence_tier="needs_review",
+    )
+
+    response = await async_client.get(f"/metrics/dashboard/summary?document_id={row.document_id}")
+
+    assert response.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_dashboard_summary_without_document_id_matches_default_latest_behavior(async_client, async_session):
+    # Regression guard: omitting document_id entirely must behave exactly
+    # like before this feature existed.
+    base = datetime(2026, 1, 1)
+    await _add_metrics_row(async_session, revenue=100_000.0, extracted_at=base)
+    await _add_metrics_row(async_session, revenue=200_000.0, extracted_at=base + timedelta(days=1))
+
+    response = await async_client.get("/metrics/dashboard/summary")
+
+    assert response.status_code == 200
+    assert response.json()["revenue"]["value"] == "€200K"
+
+
+@pytest.mark.anyio
+async def test_revenue_trend_anchored_on_older_document_id_excludes_newer_rows(async_client, async_session):
+    base = datetime(2026, 1, 1)
+    older_fy = await _add_metrics_row(
+        async_session,
+        revenue=688_317.0,
+        fm_reporting_period_start="Jul 2023", fm_reporting_period_end="Jun 2024",  # 12 months
+        extracted_at=base,
+    )
+    await _add_metrics_row(
+        async_session,
+        revenue=354_813.0,
+        fm_reporting_period_start="Jul 2025", fm_reporting_period_end="Dec 2025",  # 6 months
+        extracted_at=base + timedelta(days=100),
+    )
+    await _add_metrics_row(
+        async_session,
+        revenue=836_991.0,
+        fm_reporting_period_start="Jul 2024", fm_reporting_period_end="Jun 2025",  # 12 months
+        extracted_at=base + timedelta(days=200),
+    )
+
+    response = await async_client.get(f"/metrics/dashboard/revenue-trend?document_id={older_fy.document_id}")
+
+    assert response.status_code == 200
+    points = response.json()
+    # Only the anchor row itself -- the newer FY row (extracted after it)
+    # and the mismatched-cadence HY row are both excluded.
+    assert len(points) == 1
+    assert points[0]["revenue"] == 688_317.0
+
+
+@pytest.mark.anyio
+async def test_revenue_trend_document_id_not_found_returns_404(async_client, async_session):
+    await _add_metrics_row(async_session, revenue=100_000.0)
+
+    response = await async_client.get("/metrics/dashboard/revenue-trend?document_id=999999")
+
+    assert response.status_code == 404

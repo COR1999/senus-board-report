@@ -1,7 +1,7 @@
 """Financial metrics endpoints."""
 from typing import Callable, List, Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_
 
@@ -10,7 +10,7 @@ from app.models.financial_metrics import FinancialMetrics
 from app.models.balance_sheet_metrics import BalanceSheetMetrics
 from app.models.report import Report
 from app.services.metrics_service import MetricsService
-from app.schemas import DashboardSummaryResponse, KPIMetric, RevenueTrendPoint
+from app.schemas import DashboardPeriodOption, DashboardSummaryResponse, KPIMetric, RevenueTrendPoint
 
 router = APIRouter(prefix="/metrics", tags=["metrics"])
 
@@ -93,6 +93,34 @@ def _cadence_months(row: FinancialMetrics) -> Optional[int]:
     return (end_year - start_year) * 12 + (end_month - start_month) + 1
 
 
+def _range_or_bare(start: Optional[str], end: Optional[str], bare: Optional[str]) -> Optional[str]:
+    """
+    Prefer a real calendar-month range (e.g. "Jul 2025 - Dec 2025") over
+    the bare "HY2026" label wherever both start and end months were
+    extracted -- "HY" alone doesn't say which calendar months a half-year
+    covers (Senus's fiscal year runs Jul-Jun), so the range is strictly
+    more informative when it's available. Shared by get_dashboard_metrics
+    (current_period/prior_period) and _combined_period_label below.
+    """
+    return f"{start} – {end}" if start and end else bare
+
+
+def _combined_period_label(bare: Optional[str], start: Optional[str], end: Optional[str], extracted_at) -> str:
+    """
+    Bare period + its calendar range together, e.g.
+    "HY2026 (Jul 2025 – Dec 2025)" -- used by /dashboard/periods to label
+    the period-selector dropdown's options, where showing both pieces at
+    once (not preferring one over the other, unlike _range_or_bare) is
+    what actually distinguishes two periods to someone scanning a list.
+    Falls back to whichever piece is available, then to the extraction
+    month/year when neither the bare label nor the range was extracted.
+    """
+    range_label = _range_or_bare(start, end, None)
+    if bare and range_label:
+        return f"{bare} ({range_label})"
+    return bare or range_label or extracted_at.strftime("%b %Y")
+
+
 async def _ai_reporting_periods_by_document(
     db: AsyncSession, document_ids: List[int]
 ) -> dict[int, str]:
@@ -121,26 +149,79 @@ async def _ai_reporting_periods_by_document(
     return periods
 
 
+@router.get("/dashboard/periods", response_model=List[DashboardPeriodOption])
+async def get_dashboard_periods(db: AsyncSession = Depends(get_db)):
+    """
+    Available reporting periods for the dashboard's period selector --
+    exactly the set of rows eligible to ever become "latest" on
+    /dashboard/summary (same _HAS_CORE_METRICS/_IS_CONFIDENT_ENOUGH_FOR_
+    DASHBOARD filters), newest first. Each label combines the bare period
+    (e.g. "HY2026") with its real calendar range when known, e.g.
+    "HY2026 (Jul 2025 – Dec 2025)".
+    """
+    stmt = (
+        select(FinancialMetrics)
+        .where(_HAS_CORE_METRICS, _IS_CONFIDENT_ENOUGH_FOR_DASHBOARD)
+        .order_by(FinancialMetrics.extracted_at.desc())
+    )
+    result = await db.execute(stmt)
+    rows = result.scalars().all()
+
+    ai_periods = await _ai_reporting_periods_by_document(db, [r.document_id for r in rows])
+
+    return [
+        DashboardPeriodOption(
+            document_id=row.document_id,
+            label=_combined_period_label(
+                row.reporting_period or ai_periods.get(row.document_id),
+                row.reporting_period_start,
+                row.reporting_period_end,
+                row.extracted_at,
+            ),
+        )
+        for row in rows
+    ]
+
+
 @router.get("/dashboard/summary", response_model=DashboardSummaryResponse)
-async def get_dashboard_metrics(db: AsyncSession = Depends(get_db)):
+async def get_dashboard_metrics(
+    document_id: Optional[int] = Query(
+        None,
+        description="Anchor the dashboard on a specific document's reporting period instead of "
+        "the true latest -- see GET /dashboard/periods for the available options.",
+    ),
+    db: AsyncSession = Depends(get_db),
+):
     """
     Dashboard KPIs from FinancialMetrics table (latest + previous),
     plus up to HISTORY_WINDOW historical points per KPI for sparklines,
     plus Cash & Liquidity / Solvency & Leverage / Returns / Profitability
     ratios computed from BalanceSheetMetrics (see metrics-expansion-plan.md).
+
+    `document_id` lets the period selector anchor the dashboard on an
+    older period instead of the true latest -- "latest"/"previous"/history
+    then mean "as of that period", i.e. that period plus its own
+    same-cadence history, never anything extracted after it.
     """
 
     stmt = (
         select(FinancialMetrics)
         .where(_HAS_CORE_METRICS, _IS_CONFIDENT_ENOUGH_FOR_DASHBOARD)
         .order_by(FinancialMetrics.extracted_at.desc())
-        .limit(HISTORY_WINDOW)
     )
 
     result = await db.execute(stmt)
     rows = result.scalars().all()
 
     if not rows:
+        if document_id is not None:
+            # An explicitly requested period doesn't exist among the (zero)
+            # eligible rows -- a 404, not a silent fall-through to the
+            # generic empty-dashboard state below.
+            raise HTTPException(
+                status_code=404,
+                detail="Requested period is not available on the dashboard.",
+            )
         # No data at all -- either nothing has ever been uploaded, or every
         # uploaded document's extraction found nothing usable (a non-
         # financial document, filtered out by _HAS_CORE_METRICS above). "N/A"
@@ -149,10 +230,18 @@ async def get_dashboard_metrics(db: AsyncSession = Depends(get_db)):
             revenue=_EMPTY_RATIO, customers=_EMPTY_RATIO, cash=_EMPTY_RATIO, ebitda=_EMPTY_RATIO,
             ebitda_margin=_EMPTY_RATIO, cash_runway=_EMPTY_RATIO,
             interest_cover=_EMPTY_RATIO, roce=_EMPTY_RATIO, bookings=_EMPTY_RATIO,
-            current_period=None, prior_period=None,
+            current_period=None, prior_period=None, document_id=None,
         )
 
-    latest = rows[0]
+    if document_id is None:
+        anchor = rows[0]
+    else:
+        anchor = next((r for r in rows if r.document_id == document_id), None)
+        if anchor is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Requested period is not available on the dashboard.",
+            )
 
     # Same cadence-safety principle as get_revenue_trend below, applied
     # here too -- a real incident found live in production, not
@@ -164,12 +253,19 @@ async def get_dashboard_metrics(db: AsyncSession = Depends(get_db)):
     # is excluded from `previous`/`history` only on a *confirmed* cadence
     # mismatch (both known and different) -- an unknown cadence is never
     # treated as evidence of a mismatch.
-    latest_cadence = _cadence_months(latest)
-    if latest_cadence is not None:
+    anchor_cadence = _cadence_months(anchor)
+    if anchor_cadence is not None:
         rows = [
             r for r in rows
-            if (row_cadence := _cadence_months(r)) is None or row_cadence == latest_cadence
+            if (row_cadence := _cadence_months(r)) is None or row_cadence == anchor_cadence
         ]
+
+    # Selecting an older period should show the dashboard as it looked "as
+    # of" that period -- that period plus its own same-cadence history --
+    # not leak in data from a document extracted after it.
+    rows = [r for r in rows if r.extracted_at <= anchor.extracted_at][:HISTORY_WINDOW]
+
+    latest = rows[0]  # == anchor, by construction of the filters above
 
     previous = rows[1] if len(rows) > 1 else None
 
@@ -181,14 +277,6 @@ async def get_dashboard_metrics(db: AsyncSession = Depends(get_db)):
     ai_periods = await _ai_reporting_periods_by_document(db, [latest.document_id])
     current_bare = latest.reporting_period or ai_periods.get(latest.document_id)
     prior_bare = latest.reporting_period_prior or MetricsService.derive_prior_period(current_bare)
-
-    # Prefer a real calendar-month range (e.g. "Jul 2025 - Dec 2025") over
-    # the bare "HY2026" label wherever both start and end months were
-    # extracted -- "HY" alone doesn't say which calendar months a half-year
-    # covers (Senus's fiscal year runs Jul-Jun), so the range is strictly
-    # more informative when it's available.
-    def _range_or_bare(start: Optional[str], end: Optional[str], bare: Optional[str]) -> Optional[str]:
-        return f"{start} – {end}" if start and end else bare
 
     current_period = _range_or_bare(latest.reporting_period_start, latest.reporting_period_end, current_bare)
     prior_period = _range_or_bare(latest.reporting_period_start_prior, latest.reporting_period_end_prior, prior_bare)
@@ -341,16 +429,27 @@ async def get_dashboard_metrics(db: AsyncSession = Depends(get_db)):
         current_period=current_period,
         prior_period=prior_period,
         data_extracted_at=latest.extracted_at,
+        document_id=latest.document_id,
     )
 
 
 @router.get("/dashboard/revenue-trend", response_model=List[RevenueTrendPoint])
-async def get_revenue_trend(db: AsyncSession = Depends(get_db)):
+async def get_revenue_trend(
+    document_id: Optional[int] = Query(
+        None,
+        description="Anchor the trend on a specific document's reporting period instead of the "
+        "true latest -- see GET /dashboard/periods for the available options.",
+    ),
+    db: AsyncSession = Depends(get_db),
+):
     """
     Revenue by period (oldest -> newest) for the revenue trend chart, from the
     last REVENUE_TREND_WINDOW FinancialMetrics rows. `revenue` is null (not 0)
     for a document that didn't report it -- same missing-vs-zero convention as
     the sparkline history on /dashboard/summary.
+
+    `document_id` anchors the trend the same way it anchors
+    /dashboard/summary -- see that endpoint's docstring.
     """
     # Unlike /dashboard/summary above, this endpoint plots every document's
     # data independently per field (a document missing revenue specifically
@@ -365,10 +464,19 @@ async def get_revenue_trend(db: AsyncSession = Depends(get_db)):
         select(FinancialMetrics)
         .where(_IS_CONFIDENT_ENOUGH_FOR_DASHBOARD)
         .order_by(FinancialMetrics.extracted_at.desc())
-        .limit(REVENUE_TREND_WINDOW)
     )
     result = await db.execute(stmt)
     rows = result.scalars().all()
+
+    if document_id is None:
+        anchor = rows[0] if rows else None
+    else:
+        anchor = next((r for r in rows if r.document_id == document_id), None)
+        if anchor is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Requested period is not available on the dashboard.",
+            )
 
     # Documents of different reporting cadence (e.g. this project's
     # half-year filing alongside a full-year "Information Document") must
@@ -379,18 +487,24 @@ async def get_revenue_trend(db: AsyncSession = Depends(get_db)):
     # produces an actively misleading forecast (see `forecast.ts`'s
     # `projectSeries`, which has no notion of how much calendar time each
     # point covers). A row is excluded only when a *confirmed* mismatch
-    # exists (both its own cadence and the latest row's are known and
+    # exists (both its own cadence and the anchor row's are known and
     # differ) -- most filings (including every existing test fixture)
     # don't set `reporting_period_start`/`_end` at all, and an unknown
     # cadence must not be treated as evidence of a mismatch, only a real,
     # positively-detected one.
-    if rows:
-        latest_cadence = _cadence_months(rows[0])
-        if latest_cadence is not None:
+    if anchor is not None:
+        anchor_cadence = _cadence_months(anchor)
+        if anchor_cadence is not None:
             rows = [
                 r for r in rows
-                if (row_cadence := _cadence_months(r)) is None or row_cadence == latest_cadence
+                if (row_cadence := _cadence_months(r)) is None or row_cadence == anchor_cadence
             ]
+        # Same "as of that period" truncation as /dashboard/summary -- an
+        # older selected period must not pull in a document extracted
+        # after it.
+        rows = [r for r in rows if r.extracted_at <= anchor.extracted_at]
+
+    rows = rows[:REVENUE_TREND_WINDOW]
 
     ai_periods = await _ai_reporting_periods_by_document(db, [r.document_id for r in rows])
 

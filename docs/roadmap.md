@@ -32,8 +32,8 @@ report → render it on a dashboard. **46 commits**, 2 July – 6 July 2026.
 
 From this point on, development was streamlined using **Claude Code (Sonnet 5)**, working one
 feature/fix branch at a time with an explicit plan-then-implement-then-verify discipline (see the
-root `README.md`'s "AI-assisted workflow" section for the working pattern itself). **38 branches**,
-PRs #3–#43.
+root `README.md`'s "AI-assisted workflow" section for the working pattern itself). **39 branches**,
+PRs #3–#44.
 
 ### KPI system & financial metrics (PRs #3–#9, #13)
 
@@ -162,9 +162,35 @@ context fields (`current_period`/`prior_period`/`data_extracted_at`), silently f
 static placeholder text in production even for genuinely new data. See
 `frontend/docs/ai-usage/mixed-cadence-kpi-comparison-and-report-naming.md` for the full record.
 
+### A real reporting-period selector (PR #44)
+
+Directly addresses the gap flagged in the "Next priorities" section below: once two real filings of
+different cadence existed (the HY2026 half-year filing and the FY2025 Information Document, PR #42),
+the dashboard could only ever show whichever one was extracted most recently — there was no way for
+a board reader to deliberately pick "show me HY2026" vs. "show me FY2025." A new `GET
+/metrics/dashboard/periods` endpoint lists every period eligible to appear on the dashboard (same
+`auto_accept`-tier, core-metrics-present eligibility as "latest" itself), with a label combining the
+bare period and its real calendar range exactly as scoped, e.g. "FY2025 (Jul 2024 – Jun 2025)". Both
+`/dashboard/summary` and `/dashboard/revenue-trend` gained an optional `?document_id=` parameter that
+anchors "latest" on a specific document instead of the true most recent one — selecting an older
+period shows the dashboard *as it looked* for that period (that period plus its own same-cadence
+history, same cadence-mismatch protection as PR #42/#43, never blended with a newer, different-
+cadence filing). Omitting the parameter is byte-identical to today's behavior, verified by leaving
+every pre-existing test for both endpoints unmodified. The frontend adds a `Select` next to the
+existing "Data as of" banner (reusing the same shadcn/ui pattern as the Documents page's period
+filter), hidden entirely when fewer than two periods exist. Verified against both real filings
+end-to-end, including a real-browser screenshot check: selecting "FY2025" correctly shows €837K
+revenue (+21.6%, the filing's own embedded prior-period comparative), N/A for EBITDA and every
+BalanceSheetMetrics-derived ratio (genuinely undisclosed by that document type, not fabricated), and
+a revenue-trend chart showing only the two real FY-cadence points — never blended with the HY2026
+row. A real, previously-undiagnosed gap was found and fixed along the way: the "no eligible rows at
+all" empty-dashboard branch returned `200` instead of `404` for an explicit, nonexistent
+`document_id`, since the empty-check ran before the anchor-resolution logic — fixed by ordering the
+check the other way, with a regression test for both orderings.
+
 ## Working discipline throughout Phase 2
 
-A few rules were established early and enforced consistently across all 38 branches:
+A few rules were established early and enforced consistently across all 39 branches:
 
 - **Never fabricate missing data.** A missing value is `null`/`None`, never a guessed `0` — this
   came up repeatedly (KPI sparkline history, reporting-period extraction, bookings figures, cadence
@@ -205,25 +231,10 @@ page/coordinate data captured at all. Doing this properly needs a different extr
 viewer on the frontend — a real, separate feature, not a quick add. What exists today instead: a
 "View source" link on each document opens the original PDF directly (already built, PR #30).
 
-**A real reporting-period selector, not just "latest by extraction time" (idea, not built).**
-Prompted by a real, live-confirmed gap: once a second real filing (the FY2025 Information Document,
-PR #42) existed alongside the half-year filing, the dashboard had no way to show *both* except by
-switching which one counted as "latest" -- there's no way for a board reader to deliberately pick
-"show me HY2026" vs. "show me FY2025." The fix isn't just a UI dropdown; it needs the backend's
-"latest" selection (currently `ORDER BY extracted_at DESC`) to become a `?period=` parameter instead,
-defaulting to the true latest when unset. Two concrete pieces worth building, based directly on user
-notes:
-- **Period selector labels should combine the bare label with its real calendar range**, e.g.
-  "HY2026 (1 Jul 2025 – 31 Dec 2025)" in one dropdown option -- self-explanatory for anyone viewing
-  the dashboard without prior context on Senus's fiscal calendar (which runs Jul–Jun, not
-  calendar-year), rather than assuming "HY2026" alone is legible outside the company. The underlying
-  calendar-range data already exists (`reporting_period_start`/`_end`, built for the KPI card
-  subtitles) -- this is a presentation change, not new extraction work.
-- **YoY comparisons should read from whichever *same-cadence* prior period exists**, not just
-  "whatever the second-most-recent upload happens to be" -- already fixed for the *current* single
-  "latest" view in the mixed-cadence KPI bug (see the section above), but a real period selector
-  would extend this naturally: selecting "FY2025" should compare against FY2024 (from that filing's
-  own embedded comparative), selecting "HY2026" against HY2025, never HY vs. FY.
+**~~A real reporting-period selector~~ — done, PR #44.** See the section above. Both concrete pieces
+from the original notes shipped as scoped: combined bare-label + calendar-range dropdown options, and
+YoY comparisons anchored to the selected period's own same-cadence history rather than always "the
+second-most-recent upload."
 
 Deliberately **not** picking up the rest of a general executive-dashboard template (a monthly
 revenue bar chart, a segment/product-line donut breakdown, budget-vs-actual variance columns) --

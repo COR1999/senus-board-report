@@ -7,19 +7,40 @@ import {
   getReports,
   getDocuments,
   getAvailableExternalFilings,
+  getDashboardPeriods,
   type Metrics,
   type ChartDataPoint,
   type Report,
   type DocumentItem,
   type ExternalFiling,
+  type DashboardPeriod,
 } from '@/lib/data-service'
 
-export function useMetrics(options?: UseAsyncDataOptions): AsyncDataState<Metrics> {
-  return useAsyncData(getMetrics, options)
+/**
+ * `documentId` anchors both hooks on a specific reporting period (see the
+ * period selector) instead of the true latest -- `null` means "latest".
+ * Added to `useAsyncData`'s `deps` so switching periods triggers a refetch.
+ */
+export function useMetrics(documentId: number | null, options?: UseAsyncDataOptions): AsyncDataState<Metrics> {
+  return useAsyncData(() => getMetrics(documentId), {
+    ...options,
+    deps: [documentId, ...(options?.deps ?? [])],
+  })
 }
 
-export function useChartData(options?: UseAsyncDataOptions): AsyncDataState<ChartDataPoint[]> {
-  return useAsyncData(getChartData, options)
+export function useChartData(documentId: number | null, options?: UseAsyncDataOptions): AsyncDataState<ChartDataPoint[]> {
+  return useAsyncData(() => getChartData(documentId), {
+    ...options,
+    deps: [documentId, ...(options?.deps ?? [])],
+  })
+}
+
+// No `pollIntervalMs` -- the period list rarely changes within a session
+// (only after a new document is imported/generated elsewhere), and the
+// dashboard container's own metrics/chart polling already refreshes what's
+// shown for whichever period is selected.
+export function usePeriods(options?: UseAsyncDataOptions): AsyncDataState<DashboardPeriod[]> {
+  return useAsyncData(getDashboardPeriods, options)
 }
 
 export function useReports(options?: UseAsyncDataOptions): AsyncDataState<Report[]> {

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { uploadPDF, getAvailableExternalFilings } from '@/lib/data-service'
+import { uploadPDF, getAvailableExternalFilings, getMetrics, getChartData, getDashboardPeriods } from '@/lib/data-service'
 
 function mockFetchOnce(response: { ok: boolean; statusText: string; json: () => Promise<unknown> }) {
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response))
@@ -58,5 +58,53 @@ describe('getAvailableExternalFilings', () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network down')))
 
     await expect(getAvailableExternalFilings()).resolves.toEqual([])
+  })
+})
+
+describe('period selector fetchers', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('getMetrics omits the document_id query param when not given (today\'s default "latest" behavior)', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await getMetrics()
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringMatching(/\/metrics\/dashboard\/summary$/),
+      expect.anything()
+    )
+  })
+
+  it('getMetrics appends ?document_id= when a period is selected', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await getMetrics(42)
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringMatching(/\/metrics\/dashboard\/summary\?document_id=42$/),
+      expect.anything()
+    )
+  })
+
+  it('getChartData appends ?document_id= when a period is selected', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => [] })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await getChartData(7)
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringMatching(/\/metrics\/dashboard\/revenue-trend\?document_id=7$/),
+      expect.anything()
+    )
+  })
+
+  it('getDashboardPeriods resolves to an empty list instead of throwing when the backend is unreachable', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network down')))
+
+    await expect(getDashboardPeriods()).resolves.toEqual([])
   })
 })
