@@ -182,20 +182,26 @@ export async function getReports(): Promise<Report[]> {
   }
 }
 
+/**
+ * See app/services/extraction_confidence.py. `'needs_review'` (85-94%
+ * extraction confidence) shows a "Pending Review" tag -- that data is real
+ * and persisted, but deliberately excluded from the dashboard's headline
+ * KPIs until it clears the 95% auto-accept threshold. `'rejected'` (<85%)
+ * is also persisted (reviewable, but can never reach the dashboard, and
+ * has no approve path -- see the backend's `approve_document`). `null`
+ * covers both "not yet scored" (no report generated) and "auto_accept"
+ * (>=95%) -- no tag needed for either, so the two are never distinguished
+ * on the list view.
+ */
+export type ExtractionConfidenceTier = 'needs_review' | 'rejected' | 'auto_accept' | null
+
 export interface DocumentItem {
   id: number
   filename: string
   file_size: number | null
   status: string
   created_at: string
-  /** See app/services/extraction_confidence.py. `'needs_review'` (85-94%
-   * extraction confidence) shows a "Pending Review" tag -- that data is
-   * real and persisted, but deliberately excluded from the dashboard's
-   * headline KPIs until it clears the 95% auto-accept threshold. `null`
-   * covers both "not yet scored" (no report generated) and "auto_accept"
-   * (>=95%) -- no tag needed for either, so the two are never
-   * distinguished on this list view. */
-  extraction_confidence_tier: 'needs_review' | 'auto_accept' | null
+  extraction_confidence_tier: ExtractionConfidenceTier
 }
 
 export async function getDocuments(): Promise<DocumentItem[]> {
@@ -215,7 +221,12 @@ export interface DocumentFinancialMetrics {
   gross_margin: number | null
   operating_margin: number | null
   extraction_confidence: number | null
-  extraction_confidence_tier: 'needs_review' | 'auto_accept' | null
+  extraction_confidence_tier: ExtractionConfidenceTier
+  /** The confidence score's own human-readable point breakdown (e.g.
+   * "Revenue not found (0/30)."), shown in the review panel so a rejected
+   * or pending-review document's "why" is visible, not just its raw
+   * values. `null` for any row scored before this field existed. */
+  extraction_confidence_reasons: string[] | null
 }
 
 export interface DocumentDetail extends DocumentItem {

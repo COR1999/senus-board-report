@@ -350,6 +350,41 @@ helper (`"250000"` → `"€250K"`) was promoted to a shared, exported `formatCu
 `lib/format.ts` so the review sheet's own currency display uses the exact same formatting rather than
 a second copy of the same magnitude-bucketing logic.
 
+### Extending review to `rejected` documents too (PR #52, same branch)
+
+Directly after PR #52's review-and-approve workflow shipped, a related but distinct gap was raised:
+a `rejected` (<85% confidence) document was never persisted at all -- the entire `Document`/`Report`/
+`FinancialMetrics` row was deleted outright the moment the confidence gate rejected it (PR #42's
+original policy, from before any UI existed that could show a human *why*). That meant the only
+signal a rejection ever produced was a one-time 422 error message, gone the moment the upload request
+finished -- there was no way to come back later and actually see what the extractor found, or why it
+scored so low.
+
+Decided scope, deliberately narrow: **view-only**. A rejected document is now kept, with a
+destructive "Rejected" tag and the same `DocumentReviewSheet` panel (in a view-only mode -- no
+Approve button, since a `rejected` row is never offered an approve path at all) showing the actual
+attempted values and a new `extraction_confidence_reasons` column -- the confidence score's own
+point-by-point breakdown (e.g. "Revenue not found (0/30)."), which existed as data on
+`ExtractionConfidence.reasons` since PR #42 but was never actually persisted anywhere before now.
+Manual correction (letting a human type in the real figures by hand when automated extraction
+genuinely can't parse a document) was explicitly considered and deferred -- a real, separate feature
+(a third data-entry path alongside deterministic + AI extraction, with its own validation/audit-trail
+questions), not a quick add to this one.
+
+The real risk in reversing PR #42's "delete everything" policy: a `force=True` regenerate of a
+document that already has *good* data must never let a worse retry overwrite it -- exactly the
+incident this project has guarded against everywhere else. Fixed by threading a `persist_on_reject`
+flag through `ReportService._generate` (`generate_report` passes `persist_on_reject=not force`) --
+true for a first-time extraction (upload, IR import, or `generate_or_get_report`'s first call,
+where nothing exists yet to protect), false for a regenerate. Locked in by three tests: a first-time
+rejection actually persists (`extraction_confidence_tier="rejected"`, `Report.status="rejected"`,
+reasons present), the existing regenerate-protection test extended to also assert the Report's own
+status is properly restored (not left stuck), and a real vision-extraction rejection test corrected
+-- its own name previously claimed "persists nothing", which was simply never actually asserted, and
+would have been silently wrong the moment this branch landed if left unchecked. Also removed: two
+now-redundant "delete the stuck row" cleanup blocks in `documents.py`/`reports.py`, both no longer
+reachable now that `_generate` itself finalizes the row cleanly before raising.
+
 ## Working discipline throughout Phase 2
 
 A few rules were established early and enforced consistently across all 45 branches:

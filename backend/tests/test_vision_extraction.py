@@ -184,7 +184,7 @@ async def test_a_document_with_only_page_markers_still_takes_the_vision_path(asy
 
 
 @pytest.mark.anyio
-async def test_a_failed_vision_extraction_is_rejected_and_persists_nothing(async_session, monkeypatch):
+async def test_a_failed_vision_extraction_is_rejected_but_kept_for_review(async_session, monkeypatch):
     doc, report = await _make_scanned_document_and_report(async_session)
     service = ReportService(async_session)
 
@@ -201,6 +201,22 @@ async def test_a_failed_vision_extraction_is_rejected_and_persists_nothing(async
     )
 
     from app.services.extraction_confidence import LowConfidenceExtractionError
+    from app.models.financial_metrics import FinancialMetrics
+    from sqlalchemy import select
 
+    # Default persist_on_reject=True (this is a first-time generation, not
+    # a force=True regenerate) -- the rejected attempt is kept for review,
+    # not deleted (see documents.py's _ingest_document for the same policy
+    # at the route level).
     with pytest.raises(LowConfidenceExtractionError):
         await service._generate(doc, report)
+
+    assert report.status == "rejected"
+
+    metrics = (
+        await async_session.execute(
+            select(FinancialMetrics).where(FinancialMetrics.document_id == doc.id)
+        )
+    ).scalars().first()
+    assert metrics is not None
+    assert metrics.extraction_confidence_tier == "rejected"

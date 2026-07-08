@@ -6,6 +6,7 @@ the actual confidence-scoring wiring is exercised, with only
 FinancialMetricsExtractor and GeminiAnalysisService mocked (no real PDF
 parsing or network calls).
 """
+from datetime import datetime
 from typing import AsyncGenerator
 
 import pytest
@@ -96,7 +97,7 @@ def _fake_pdf_parsing(monkeypatch):
 
 
 @pytest.mark.anyio
-async def test_upload_rejects_a_governance_document_with_422_and_persists_nothing(async_session, monkeypatch):
+async def test_upload_rejects_a_governance_document_with_422_but_keeps_it_for_review(async_session, monkeypatch):
     _mock_extraction(monkeypatch, format_recognized=False, baseline=_GOVERNANCE_DOC_BASELINE)
 
     upload_file = UploadFile(filename="agm-notice.pdf", file=BytesIO(b"%PDF-1.4 fake"))
@@ -106,12 +107,31 @@ async def test_upload_rejects_a_governance_document_with_422_and_persists_nothin
     assert getattr(exc_info.value, "status_code", None) == 422
     assert "confidence" in exc_info.value.detail.lower()
 
+    # The document is kept (reversed from this project's original PR #42
+    # "persist nothing" policy) -- a human reviewing why an extraction
+    # failed needs the attempted values and reasons on hand, not just this
+    # one-time 422. Confirmed via a real route call, not just the model.
     documents = (await async_session.execute(Document.__table__.select())).all()
-    assert documents == []
+    assert len(documents) == 1
+
+    metrics_row = (
+        await async_session.execute(
+            FinancialMetrics.__table__.select().where(FinancialMetrics.document_id == documents[0].id)
+        )
+    ).first()
+    assert metrics_row.extraction_confidence_tier == "rejected"
+    assert metrics_row.extraction_confidence_reasons  # non-empty -- the actual point breakdown
+
+    report_row = (
+        await async_session.execute(
+            Report.__table__.select().where(Report.document_id == documents[0].id)
+        )
+    ).first()
+    assert report_row.status == "rejected"
 
 
 @pytest.mark.anyio
-async def test_import_external_filing_rejects_a_governance_document_with_422(async_session, monkeypatch):
+async def test_import_external_filing_rejects_a_governance_document_with_422_but_keeps_it_for_review(async_session, monkeypatch):
     _mock_extraction(monkeypatch, format_recognized=False, baseline=_GOVERNANCE_DOC_BASELINE)
 
     async def _find_filing(attachment_id):
@@ -129,7 +149,7 @@ async def test_import_external_filing_rejects_a_governance_document_with_422(asy
     assert getattr(exc_info.value, "status_code", None) == 422
 
     documents = (await async_session.execute(Document.__table__.select())).all()
-    assert documents == []
+    assert len(documents) == 1
 
 
 @pytest.mark.anyio
@@ -210,6 +230,50 @@ async def test_regenerate_with_low_confidence_leaves_existing_report_untouched(a
     metrics_row = metrics_result.first()
     assert metrics_row.revenue == 354_813.0
     assert metrics_row.extraction_confidence_tier == "auto_accept"
+
+    # The Report itself must also be restored, not left stuck at
+    # "generating" or newly stamped "rejected" -- see
+    # ReportService._generate's `persist_on_reject` (False for a
+    # force=True regenerate specifically so this can't happen) and
+    # reports.py's own previous_status restore.
+    report_row = (
+        await async_session.execute(Report.__table__.select().where(Report.id == first_response.report_id))
+    ).first()
+    assert report_row.status == "completed"
+
+
+@pytest.mark.anyio
+async def test_first_time_rejected_generation_via_generate_or_get_report_persists_for_review(async_session, monkeypatch):
+    # Distinct from the upload-route test above -- exercises
+    # generate_or_get_report/reports.py directly (a document that already
+    # exists with completed text extraction, but has no Report yet), the
+    # other first-time (force=False) caller of ReportService._generate.
+    document = Document(
+        filename="agm-notice.pdf", status="completed", created_at=datetime.utcnow(),
+        extracted_at=datetime.utcnow(), extracted_text="some extracted text",
+    )
+    async_session.add(document)
+    await async_session.flush()
+    await async_session.commit()
+
+    _mock_extraction(monkeypatch, format_recognized=False, baseline=_GOVERNANCE_DOC_BASELINE)
+
+    with pytest.raises(Exception) as exc_info:
+        await reports_routes.generate_or_get_report(document.id, async_session)
+    assert getattr(exc_info.value, "status_code", None) == 422
+
+    report_row = (
+        await async_session.execute(Report.__table__.select().where(Report.document_id == document.id))
+    ).first()
+    assert report_row is not None
+    assert report_row.status == "rejected"
+
+    metrics_row = (
+        await async_session.execute(
+            FinancialMetrics.__table__.select().where(FinancialMetrics.document_id == document.id)
+        )
+    ).first()
+    assert metrics_row.extraction_confidence_tier == "rejected"
 
 
 # ==================== POST /api/documents/{id}/approve ====================

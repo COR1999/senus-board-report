@@ -311,6 +311,17 @@ export default function DocumentsPage() {
                                 <DocumentReviewSheet document={doc} onApproved={refetch} />
                               </>
                             )}
+                            {doc.extraction_confidence_tier === 'rejected' && (
+                              <>
+                                <Badge
+                                  variant="destructive"
+                                  title="This document's extraction scored below the confidence threshold -- kept for review, but it can never drive the dashboard's headline KPIs."
+                                >
+                                  Rejected
+                                </Badge>
+                                <DocumentReviewSheet document={doc} onApproved={refetch} />
+                              </>
+                            )}
                           </div>
                         </TableCell>
                         <TableCell className="text-muted-foreground">{formatFileSize(doc.file_size)}</TableCell>

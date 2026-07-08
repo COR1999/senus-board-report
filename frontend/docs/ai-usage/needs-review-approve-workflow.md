@@ -75,3 +75,34 @@ dashboard" button.
   showing the seeded Cash/Customers values with "Not reported" for the rest, clicking Approve, the
   badge disappearing afterward, and (via a direct API call) the approved document's own cash figure
   appearing in `/dashboard/summary` immediately after.
+
+## Addendum — extending review to `rejected` documents
+
+Same branch, added directly after the above shipped: a `rejected` (<85%) document was never
+persisted at all (PR #42's original policy), so there was no way to look back and see *why* an
+extraction failed — only a one-time 422 at upload time. See `docs/roadmap.md`'s own addendum section
+for the full design (deliberately view-only; manual correction considered and deferred as a separate,
+larger feature). Key implementation points not covered above:
+
+- New `FinancialMetrics.extraction_confidence_reasons` (JSON list) persists the confidence score's
+  own point-by-point breakdown (`ExtractionConfidence.reasons`), which existed as data since PR #42
+  but was never actually saved anywhere — now shown in the review panel for both `needs_review` and
+  `rejected` documents, not just used for a one-time error message.
+- `ReportService._generate` gained a `persist_on_reject` parameter (`generate_report` passes
+  `persist_on_reject=not force`) — true for a first-time extraction, false for a `force=True`
+  regenerate, so a worse retry against a document that already has good data still can never
+  overwrite it. This was the one real risk in reversing PR #42's delete-everything policy, and is
+  the one piece of this addendum that genuinely needed a design decision, not just plumbing.
+- `DocumentReviewSheet` (built above) was extended, not duplicated, for the `rejected` case — same
+  component, gated on `document.extraction_confidence_tier === 'rejected'` for the description text,
+  badge color, and whether the Approve footer renders at all.
+
+### Verification performed (addendum)
+
+- `pytest tests/` — 214 passed (1 new: a first-time rejection via `generate_or_get_report` persists
+  correctly; 2 existing tests corrected to assert the new behavior instead of the old "persists
+  nothing" claim — including a real vision-extraction test whose name asserted something it had
+  never actually checked, caught while updating it, not before).
+- `npx vitest run` — 165 passed (2 new: the "Rejected" tag renders, and the review sheet opens
+  view-only with the rejection reasons visible and no Approve button reachable).
+- `npx tsc --noEmit` and `npx next build` — both clean.

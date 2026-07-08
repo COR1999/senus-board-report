@@ -117,6 +117,7 @@ describe('useApproveDocument', () => {
         operating_margin: null,
         extraction_confidence: 55,
         extraction_confidence_tier: 'auto_accept',
+        extraction_confidence_reasons: null,
       },
     })
     const onSuccess = vi.fn()

@@ -256,6 +256,7 @@ describe('DocumentsPage', () => {
         revenue: null, customers: null, cash: 120_000, ebitda: null,
         gross_margin: null, operating_margin: null,
         extraction_confidence: 55, extraction_confidence_tier: 'needs_review',
+        extraction_confidence_reasons: null,
       },
     })
 
@@ -282,6 +283,7 @@ describe('DocumentsPage', () => {
         revenue: null, customers: null, cash: 120_000, ebitda: null,
         gross_margin: null, operating_margin: null,
         extraction_confidence: 55, extraction_confidence_tier: 'needs_review',
+        extraction_confidence_reasons: null,
       },
     })
     const approveSpy = vi.spyOn(dataService, 'approveDocument').mockResolvedValue({
@@ -299,5 +301,43 @@ describe('DocumentsPage', () => {
     await waitFor(() => expect(approveSpy).toHaveBeenCalledWith(5))
     // onApproved refetches the document list -- once on mount, once after approve.
     await waitFor(() => expect(dataService.getDocuments).toHaveBeenCalledTimes(2))
+  })
+
+  it('shows a destructive "Rejected" tag for a rejected document', async () => {
+    vi.spyOn(dataService, 'getDocuments').mockResolvedValue([
+      {
+        id: 6, filename: 'agm-notice.pdf', file_size: 1024, status: 'completed',
+        created_at: '2025-12-31T00:00:00Z', extraction_confidence_tier: 'rejected',
+      },
+    ])
+    render(<DocumentsPage />)
+    expect(await screen.findByText('Rejected')).toBeInTheDocument()
+  })
+
+  it('opens the review sheet for a rejected document view-only, with no Approve button', async () => {
+    vi.spyOn(dataService, 'getDocuments').mockResolvedValue([
+      {
+        id: 6, filename: 'agm-notice.pdf', file_size: 1024, status: 'completed',
+        created_at: '2025-12-31T00:00:00Z', extraction_confidence_tier: 'rejected',
+      },
+    ])
+    vi.spyOn(dataService, 'getDocument').mockResolvedValue({
+      id: 6, filename: 'agm-notice.pdf', file_size: 1024, status: 'completed',
+      created_at: '2025-12-31T00:00:00Z', extraction_confidence_tier: 'rejected',
+      financial_metrics: {
+        revenue: null, customers: null, cash: null, ebitda: null,
+        gross_margin: null, operating_margin: null,
+        extraction_confidence: 0, extraction_confidence_tier: 'rejected',
+        extraction_confidence_reasons: ['No recognized financial-statement section was found in this document.'],
+      },
+    })
+    const approveSpy = vi.spyOn(dataService, 'approveDocument')
+
+    render(<DocumentsPage />)
+    fireEvent.click(await screen.findByRole('button', { name: /review agm-notice\.pdf/i }))
+
+    expect(await screen.findByText('No recognized financial-statement section was found in this document.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /approve for dashboard/i })).not.toBeInTheDocument()
+    expect(approveSpy).not.toHaveBeenCalled()
   })
 })

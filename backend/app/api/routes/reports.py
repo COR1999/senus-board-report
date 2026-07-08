@@ -57,20 +57,13 @@ async def generate_or_get_report(document_id: int, db: AsyncSession = Depends(ge
         service = ReportService(db)
         return await service.get_or_create_report(document_id)
     except LowConfidenceExtractionError as exc:
-        # `ReportService.generate_report` already commits a "generating"-
-        # status Report row *before* the confidence check runs (to claim
-        # the generation atomically against concurrent requests, see
-        # report_service.py) -- a plain `db.rollback()` here has nothing
-        # left to undo, that commit already happened. This document never
-        # had a report before this call, so the newly (and now
-        # permanently-"generating") created Report row is deleted outright
-        # rather than left stuck -- confirmed by testing, not assumed.
-        stmt = select(Report).where(Report.document_id == document_id)
-        result = await db.execute(stmt)
-        stuck_report = result.scalars().first()
-        if stuck_report is not None:
-            await db.delete(stuck_report)
-            await db.commit()
+        # `get_or_create_report` only ever reaches `_generate` for a
+        # document with no prior report (`generate_report`'s default
+        # `force=False`), so `persist_on_reject` is True -- `_generate`
+        # itself already moved the Report from "generating" to a properly
+        # finalized "rejected" (with the attempted FinancialMetrics/reasons
+        # saved for review) before raising this, nothing left stuck to
+        # clean up here.
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception as exc:
         logger.error("Error generating report: %s", exc, exc_info=True)

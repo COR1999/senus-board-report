@@ -63,6 +63,10 @@ _COLUMNS_ADDED_AFTER_INITIAL_RELEASE = {
         # docstring for why this is a separate column from
         # extraction_confidence_tier rather than overwriting it.
         ("human_approved_at", "TIMESTAMP"),
+        # The confidence score's own point-by-point breakdown -- see the
+        # model's own docstring. Plain "JSON" (not "JSONB") works
+        # identically for this raw ALTER TABLE statement on both engines.
+        ("extraction_confidence_reasons", "JSON"),
     ],
     # SHA256 of the uploaded file's bytes, for exact-duplicate-upload
     # detection (see documents.py's upload route). Existing rows get NULL

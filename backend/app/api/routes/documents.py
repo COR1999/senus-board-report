@@ -88,6 +88,7 @@ def build_document_response(
             extracted_at=metrics.extracted_at or doc.extracted_at,
             extraction_confidence=metrics.extraction_confidence,
             extraction_confidence_tier=_effective_tier(metrics.extraction_confidence_tier, metrics.human_approved_at),
+            extraction_confidence_reasons=metrics.extraction_confidence_reasons,
         )
 
     return DocumentWithText(
@@ -177,20 +178,20 @@ async def _ingest_document(
         service = ReportService(db)
         report = await service.generate_report(document.id)
     except LowConfidenceExtractionError as e:
-        # Nothing about this document is trustworthy enough to keep. A
-        # plain `db.rollback()` here is NOT enough: `generate_report`
-        # already committed the initial "pending" Report row (and, via
-        # that same commit, the Document row flushed above) before
-        # `_generate` ever reaches the confidence check -- both are
-        # already durable by this point, confirmed by testing, not
-        # assumed. Deleting the Document explicitly cascades to its
-        # Report/FinancialMetrics/BalanceSheetMetrics rows (see the
-        # `cascade="all, delete-orphan"` relationships on Document), so a
-        # rejected document leaves no trace at all (see
-        # extraction_confidence.py's module docstring for the incident
-        # this closes).
-        await db.delete(document)
-        await db.commit()
+        # The Document/Report/FinancialMetrics rows are already durable at
+        # this point -- `_generate` persists them (tier="rejected",
+        # Report.status="rejected") before ever raising this, specifically
+        # so a human can review *why* an extraction failed (the actual
+        # attempted values, the confidence gate's own reasons) rather than
+        # only ever seeing this one-time 422 message. Still 422s here for
+        # the upload's own immediate feedback. Deliberately reverses this
+        # project's original PR #42 policy of deleting a rejected
+        # document's data outright -- that policy predates any UI capable
+        # of showing a human the rejection reasons at all, which no longer
+        # applies now that one exists (see the Documents page's "Rejected"
+        # badge/review panel). It can never reach the dashboard either way
+        # -- see `_generate`'s own comment on `_IS_CONFIDENT_ENOUGH_FOR_
+        # DASHBOARD`.
         raise HTTPException(status_code=422, detail=str(e))
     except Exception as e:
         logger.warning(f"Report generation failed: {e}")

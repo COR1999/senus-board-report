@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional, TYPE_CHECKING
 
-from sqlalchemy import ForeignKey, Index
+from sqlalchemy import ForeignKey, Index, JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -91,6 +91,14 @@ class FinancialMetrics(Base):
     # is read, not as a missing/broken value.
     extraction_confidence: Mapped[Optional[float]] = mapped_column(default=None)
     extraction_confidence_tier: Mapped[Optional[str]] = mapped_column(default=None)
+
+    # The confidence score's own human-readable point breakdown (see
+    # score_extraction's `reasons`), e.g. "Revenue not found (0/30).". Plain
+    # `JSON`, not Postgres `JSONB` -- this list is only ever read whole, on
+    # a single document's review panel, never queried/filtered by its
+    # contents, so JSONB's indexing/containment features would be unused
+    # complexity. `None` for any row extracted before this field existed.
+    extraction_confidence_reasons: Mapped[Optional[list]] = mapped_column(JSON, default=None)
 
     # Set by POST /api/documents/{id}/approve when a human reviews a
     # `needs_review` document's actual extracted values (against the
