@@ -211,6 +211,22 @@ and how each branch was verified.
 
 ## Next priorities (not yet started)
 
+**Executive overview with per-category drill-down pages (idea, not built).** The current dashboard
+puts all 5 of the assignment's required categories (Growth & Revenue, Profitability, Cash &
+Liquidity, Solvency & Leverage, Returns — see `frontend/lib/kpi-categories.ts`, the single source of
+truth for this taxonomy) on one page: a hero row for the headline metrics plus a compact stat strip
+for the rest. The idea is a two-tier structure instead: the existing page stays as a genuinely
+high-level executive overview, and each category gets its own drill-down page/route (e.g.
+`/dashboard/cash-liquidity`) going deeper than a single card can — the ratios/inputs that feed that
+category's numbers, its own longer trend history, and **AI commentary scoped to that one category**
+(a natural extension of `lib/insights.ts`'s existing prompt-builder, which already tags each insight
+with a `KpiCategory` — the drill-down page would generate insights *for* one category specifically,
+not filter the existing whole-dashboard set after the fact). Would reuse the period selector (PR #44)
+directly — a category drill-down page should respect whichever period is selected on the overview,
+not default back to "latest." Not yet scoped in detail (routing structure, whether drill-down pages
+share the existing `getAiInsights`/`insights-cache.ts` machinery or need their own cache key per
+category) — a real next feature, not started.
+
 **Extract the ADF Farm Solutions statements — genuinely blocked, not just unscoped.** The Senus PLC
 Information Document (the Euronext listing prospectus, FY2024/FY2025 annual figures) was extracted
 in PR #42 — see the section above. Its sibling, **ADF Farm Solutions Consolidated Financial
