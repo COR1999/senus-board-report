@@ -32,8 +32,8 @@ report → render it on a dashboard. **46 commits**, 2 July – 6 July 2026.
 
 From this point on, development was streamlined using **Claude Code (Sonnet 5)**, working one
 feature/fix branch at a time with an explicit plan-then-implement-then-verify discipline (see the
-root `README.md`'s "AI-assisted workflow" section for the working pattern itself). **42 branches**,
-PRs #3–#48.
+root `README.md`'s "AI-assisted workflow" section for the working pattern itself). **43 branches**,
+PRs #3–#50.
 
 ### KPI system & financial metrics (PRs #3–#9, #13)
 
@@ -261,9 +261,45 @@ live Gemini API, since this same session's earlier testing had already exhausted
 quota (a billing/prepayment issue, confirmed via the actual API error), so a live attempt would just
 hit the same known error rather than prove anything new.
 
+### A new Gemini key surfaced two real bugs the mocked tests couldn't catch (PR #50)
+
+Dropping a fresh key into Railway's `GEMINI_API_KEY` should have unblocked PR #48's vision path
+immediately — instead it surfaced two genuinely separate, real bugs, both found only by actually
+importing ADF Farm Solutions into production and following the failure, not by reasoning about it.
+
+**First**: the pinned `gemini-2.0-flash` model had a real `generate_content_free_tier_requests` quota
+of `limit: 0` on this specific key's project — not a billing/prepayment problem this time, just never
+granted free-tier access to that pinned model at all. The frontend's `GEMINI_INSIGHTS_MODEL` had
+already hit and fixed this exact failure class by defaulting to the `-latest` alias, but the backend
+still defaulted to the pinned string, with only a comment warning it could happen. Tried the alias
+first (matching the frontend's own fix exactly) — it hit a *different*, transient `503 UNAVAILABLE:
+high demand` error against this same key. Listed the key's actually-available models directly and
+confirmed `gemini-2.5-flash` (specific, current, non-preview, not an alias) works cleanly instead —
+now the default in both `gemini_service.py` and `core/config.py`, still overridable via `GEMINI_MODEL`
+with no redeploy if it ever needs to change again.
+
+**Second, and more interesting**: with the model fixed, the real import *still* failed the same way —
+but direct diagnosis (calling the raw Gemini client outside the app) showed the vision extraction
+genuinely worked, returning real revenue/cash/EBITDA/margins. The bug was in `_generate`'s own
+routing: `PDFExtractionService.extract_text()` prepends a `"--- Page N ---"` marker for *every* page
+regardless of content, so a fully scanned document's `extracted_text` is never a truly empty string —
+`not extracted_text.strip()` saw those markers as "real content" and silently routed the document
+down the text path instead of vision, finding nothing. This slipped past every PR #48 test because
+they all set `extracted_text=""` directly on a mock `Document`, never exercising what `extract_text()`
+actually returns for a real scanned PDF. Fixed with a new `PDFExtractionService.has_extractable_text()`
+that strips the page markers before checking for real content, plus a regression test that uses the
+real `extract_text()` output specifically to close the gap that let this through the first time.
+
+**End-to-end confirmed working, for real**: importing ADF Farm Solutions now returns revenue €836,991
+and cash €140,135 — both matching the Information Document's own figures *exactly*, strong evidence
+this genuinely is the source data Senus's own summary table was built from — plus EBITDA -€613,313, a
+real figure never available from any other ingested filing, correctly tagged `needs_review` per PR
+#48's design. See `frontend/docs/ai-usage/backend-gemini-model-and-empty-text-fix.md` for the full
+diagnostic trail.
+
 ## Working discipline throughout Phase 2
 
-A few rules were established early and enforced consistently across all 42 branches:
+A few rules were established early and enforced consistently across all 43 branches:
 
 - **Never fabricate missing data.** A missing value is `null`/`None`, never a guessed `0` — this
   came up repeatedly (KPI sparkline history, reporting-period extraction, bookings figures, cadence
@@ -317,9 +353,11 @@ authoritative would be exactly the kind of fabrication this project has actively
 other turn. Scoped here as a real idea worth pursuing once a real data source exists, not as
 something to fake in the meantime.
 
-**~~Extract the ADF Farm Solutions statements~~ — done, PR #48.** See the section above: a gated
-Gemini vision backup, used only when the deterministic text pipeline finds no text layer at all,
-always capped at the `needs_review` confidence tier.
+**~~Extract the ADF Farm Solutions statements~~ — done, PRs #48/#50.** See the sections above: a
+gated Gemini vision backup, used only when the deterministic text pipeline finds no text layer at
+all, always capped at the `needs_review` confidence tier — confirmed genuinely working end-to-end
+against the real fixture and a real key in PR #50, after finding and fixing two real bugs that had
+kept it from actually working despite passing every mocked test.
 
 **Hover-to-source with bounding-box highlighting.** A natural extension of the extraction confidence
 work (PR #42) — clicking a KPI or flagged figure would show exactly where on the source PDF page it

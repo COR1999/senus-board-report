@@ -193,11 +193,16 @@ large change. The working pattern, used consistently:
   and the Railway deployment to read it locally/for free, so instead this one document type routes
   through a Gemini **vision** extraction backup (`GeminiAnalysisService.generate_report_from_images`,
   `backend/app/services/gemini_service.py`) — used only when the deterministic text pipeline finds
-  literally no text layer at all, never for a document it could already read. Because a scanned
-  document has no independent deterministic cross-check the way a text one does, its result is always
-  capped at the `needs_review` confidence tier regardless of score — visible via the existing "Pending
-  Review" tag, never silently promoted straight to the executive dashboard. See `docs/roadmap.md` for
-  the full design and the free-OCR-vs-vision tradeoff considered. Because the two text-extracted
+  literally no text layer at all, never for a document it could already read. Confirmed working
+  end-to-end against the real fixture and a real API key: revenue €836,991 and cash €140,135, both
+  matching the Information Document's own figures exactly, plus EBITDA -€613,313 — a real number not
+  available from either other filing. Because a scanned document has no independent deterministic
+  cross-check the way a text one does, its result is always capped at the `needs_review` confidence
+  tier regardless of score — visible via the existing "Pending Review" tag, never silently promoted
+  straight to the executive dashboard. See `docs/roadmap.md` for the full design, the free-OCR-vs-
+  vision tradeoff considered, and two real bugs found and fixed while getting this working end-to-end
+  (a pinned model with zero free-tier quota on a fresh key, and a text-detection check fooled by
+  PDF page markers). Because the two text-extracted
   filings have different reporting cadences (6 months vs. 12
   months), an **extraction confidence service**
   (`backend/app/services/extraction_confidence.py`) scores every document before its data is trusted
@@ -221,7 +226,7 @@ large change. The working pattern, used consistently:
 
 ## How outputs were validated
 
-- **Automated tests**: 200 backend (pytest) + 152 frontend (Vitest) tests, run before every merge.
+- **Automated tests**: 205 backend (pytest) + 152 frontend (Vitest) tests, run before every merge.
 - **Type safety**: `tsc --noEmit` clean before every merge.
 - **Manual validation against the real filing**: extracted figures (revenue, EBITDA, cash,
   customers, bookings) were cross-checked by hand against the source PDF during
@@ -266,13 +271,6 @@ npm run dev
 - The Reports table's "PDF export" (of the AI-generated report itself, distinct from downloading the
   source upload) is not yet built.
 - No bulk actions (bulk delete/download) on the Reports or Documents tables.
-- The ADF Farm Solutions statements can now be extracted via the Gemini vision backup (see
-  "Assumptions" above), but this hasn't been verified against the real live API in this environment
-  — the account's Gemini quota was already exhausted (a billing/prepayment issue, not a rate limit)
-  from earlier testing in this same session, so a live attempt would just hit the same known error
-  rather than proving anything new. Verified instead via a thorough mocked test suite exercising the
-  real 23-page scanned fixture end-to-end (routing, confidence capping, persistence) with a
-  controlled Gemini response. Worth a real live check once billing is topped up.
 - The "Pending Review" extraction-confidence tag is shown on the Documents table but not yet the
   Reports table (same document underneath either way — a quick follow-up, not a gap in the
   underlying confidence gate itself, which applies everywhere already).

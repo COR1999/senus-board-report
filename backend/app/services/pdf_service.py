@@ -2,7 +2,16 @@
 import fitz  # PyMuPDF
 from pathlib import Path
 import os
+import re
 from typing import List, Tuple
+
+# Matches extract_text()'s own "--- Page N ---" markers, prepended for
+# *every* page regardless of whether that page had any real text -- so a
+# fully scanned PDF's extracted_text is never a truly empty string, just
+# these markers with nothing real between them. Shared here (not duplicated
+# ad hoc by callers) so "does this document have real text" is answered the
+# same way everywhere it matters.
+_PAGE_MARKER_RE = re.compile(r"---\s*Page\s*\d+\s*---")
 
 
 class PDFExtractionService:
@@ -54,6 +63,22 @@ class PDFExtractionService:
         except Exception as e:
             raise Exception(f"Error extracting PDF text: {str(e)}")
     
+    @classmethod
+    def has_extractable_text(cls, extracted_text: str) -> bool:
+        """
+        True if `extracted_text` (as returned by extract_text()) contains
+        any real content beyond the page markers extract_text() always
+        prepends. A naive `bool(extracted_text.strip())` is NOT enough for
+        this -- confirmed as a real bug, not hypothetical: for a fully
+        scanned PDF (e.g. ADF Farm Solutions' statements, every page a
+        single embedded image with zero real text), extract_text() still
+        returns a non-empty string of nothing but "--- Page N ---" markers,
+        so `.strip()` alone reports it as "has text" and a scanned document
+        silently took the wrong (deterministic-text) extraction path
+        instead of the Gemini vision one meant for exactly this case.
+        """
+        return bool(_PAGE_MARKER_RE.sub("", extracted_text).strip())
+
     @classmethod
     def extract_text_from_upload(cls, file_content: bytes, filename: str) -> Tuple[str, str]:
         """Upload PDF and extract text. Returns (file_path, extracted_text)."""

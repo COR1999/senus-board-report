@@ -230,7 +230,19 @@ class ReportService:
             # text pipeline structurally cannot handle at all, never for
             # one a text-based extraction could already read (that always
             # takes the branch below instead, at zero extra Gemini cost).
-            vision_extracted = not extracted_text.strip()
+            #
+            # NOT `not extracted_text.strip()` -- a real bug found by
+            # actually running this against the real ADF fixture, not
+            # caught by any mocked test (every mock set extracted_text=""
+            # directly, skipping the real extractor entirely).
+            # PDFExtractionService.extract_text() prepends a
+            # "--- Page N ---" marker for *every* page regardless of
+            # whether that page had real text, so a fully scanned document's
+            # extracted_text is never a truly empty string -- plain
+            # `.strip()` saw those markers as "real content" and silently
+            # routed a scanned document down the text path (with nothing
+            # for the deterministic extractor to find) instead of vision.
+            vision_extracted = not PDFExtractionService.has_extractable_text(extracted_text)
 
             if vision_extracted:
                 # =====================================================
@@ -339,7 +351,7 @@ class ReportService:
             report.ai_commentary = content.get("ai_commentary", "")
             report.key_findings = content.get("key_findings") or []
             report.model_version = content.get(
-                "model_version", "gemini-vision" if vision_extracted else "gemini-2.0-flash"
+                "model_version", "gemini-vision" if vision_extracted else "gemini-2.5-flash"
             )
             # Distinct from "hybrid" (deterministic baseline + optional text
             # Gemini enrichment) -- a scanned document has no baseline at
