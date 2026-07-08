@@ -1,4 +1,7 @@
 """Financial metrics endpoints."""
+import hashlib
+import json
+from datetime import datetime
 from typing import Callable, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -9,8 +12,16 @@ from app.core.database import get_db
 from app.models.financial_metrics import FinancialMetrics
 from app.models.balance_sheet_metrics import BalanceSheetMetrics
 from app.models.report import Report
+from app.models.historical_insight import HistoricalInsight
 from app.services.metrics_service import MetricsService
-from app.schemas import DashboardPeriodOption, DashboardSummaryResponse, KPIMetric, RevenueTrendPoint
+from app.schemas import (
+    DashboardPeriodOption,
+    DashboardSummaryResponse,
+    KPIMetric,
+    RevenueTrendPoint,
+    HistoricalInsightUpsert,
+    HistoricalInsightResponse,
+)
 
 router = APIRouter(prefix="/metrics", tags=["metrics"])
 
@@ -620,3 +631,86 @@ async def get_revenue_trend(db: AsyncSession = Depends(get_db)):
                 ] + points
 
     return points
+
+
+def _chart_data_fingerprint(points: List[RevenueTrendPoint]) -> str:
+    """
+    A stable hash of the exact revenue-trend data set (same points
+    `GET /dashboard/revenue-trend` returns) -- lets the historical-insight
+    endpoints below detect whether the underlying all-reports data has
+    changed since an insight was last generated, without storing/diffing the
+    full point list itself. Field order is fixed explicitly (not relying on
+    Pydantic's own key order) so the hash is stable across schema reorderings.
+    """
+    payload = [
+        {
+            "period": p.period,
+            "revenue": p.revenue,
+            "ebitda": p.ebitda,
+            "cash": p.cash,
+            "document_id": p.document_id,
+            "cadence_months": p.cadence_months,
+        }
+        for p in points
+    ]
+    canonical = json.dumps(payload, sort_keys=True)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+@router.get("/dashboard/historical-insight", response_model=HistoricalInsightResponse)
+async def get_historical_insight(db: AsyncSession = Depends(get_db)):
+    """
+    The stored AI insight describing the trend across every report on file,
+    if one has been generated for the CURRENT all-reports data set -- 404
+    both when nothing's ever been generated, and when the underlying chart
+    data has changed since the stored insight was generated (its
+    `data_fingerprint` no longer matches), so the frontend knows to
+    regenerate either way rather than showing a stale trend description.
+    """
+    current_points = await get_revenue_trend(db)
+    current_fingerprint = _chart_data_fingerprint(current_points)
+
+    stmt = select(HistoricalInsight).order_by(HistoricalInsight.generated_at.desc())
+    result = await db.execute(stmt)
+    row = result.scalars().first()
+
+    if not row or row.data_fingerprint != current_fingerprint:
+        raise HTTPException(status_code=404, detail="No up-to-date historical insight stored yet")
+    return row
+
+
+@router.put("/dashboard/historical-insight", response_model=HistoricalInsightResponse)
+async def save_historical_insight(body: HistoricalInsightUpsert, db: AsyncSession = Depends(get_db)):
+    """
+    Upsert (create or replace) the stored historical-trend insight, stamped
+    with a fingerprint of the CURRENT all-reports chart data -- computed
+    server-side, never trusted from the client, so a stale/mismatched
+    fingerprint can never be persisted as if it were current. The Gemini call
+    itself stays entirely frontend-side, same as the per-report insights --
+    this endpoint only ever persists what the frontend already generated.
+    """
+    current_points = await get_revenue_trend(db)
+    current_fingerprint = _chart_data_fingerprint(current_points)
+
+    stmt = select(HistoricalInsight).order_by(HistoricalInsight.generated_at.desc())
+    result = await db.execute(stmt)
+    row = result.scalars().first()
+
+    insight_data = body.insight.model_dump()
+    if row:
+        row.insight = insight_data
+        row.data_fingerprint = current_fingerprint
+        row.model_version = body.model_version
+        row.generated_at = datetime.utcnow()
+    else:
+        row = HistoricalInsight(
+            insight=insight_data,
+            data_fingerprint=current_fingerprint,
+            model_version=body.model_version,
+            generated_at=datetime.utcnow(),
+        )
+        db.add(row)
+
+    await db.commit()
+    await db.refresh(row)
+    return row

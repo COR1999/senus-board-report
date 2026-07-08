@@ -1,7 +1,14 @@
 import { NextResponse } from 'next/server'
 import { GoogleGenAI } from '@google/genai'
-import type { Metrics } from '@/lib/data-service'
-import { buildInsightsPrompt, parseInsightsResponse, FALLBACK_INSIGHTS, type Insight } from '@/lib/insights'
+import type { Metrics, ChartDataPoint } from '@/lib/data-service'
+import {
+  buildInsightsPrompt,
+  buildHistoricalInsightPrompt,
+  parseInsightsResponse,
+  FALLBACK_INSIGHTS,
+  FALLBACK_TREND_INSIGHT,
+  type Insight,
+} from '@/lib/insights'
 
 // Overridable via env var, not hardcoded -- verified directly against the
 // real API that a pinned version (e.g. "gemini-2.0-flash") can lose
@@ -26,12 +33,14 @@ const MODEL = process.env.GEMINI_INSIGHTS_MODEL || 'gemini-flash-latest'
 const RATE_LIMIT_BACKOFF_MS = 60_000
 const BILLING_EXHAUSTED_BACKOFF_MS = 24 * 60 * 60 * 1000
 
-// Module-level, not per-request -- same reasoning as lib/insights-cache.ts's
-// module-level cache: a serverless function instance can be reused ("warm")
+// Module-level, not per-request -- same reasoning as the old localStorage
+// insights cache: a serverless function instance can be reused ("warm")
 // across multiple invocations, and this state should persist across those,
 // not reset every request. Best-effort only (a cold start resets it, and
 // multiple concurrent instances don't share it) -- strictly better than no
-// circuit breaker at all, not a guarantee.
+// circuit breaker at all, not a guarantee. Shared across both the per-report
+// and historical-trend insight modes below -- they're the same Gemini
+// key/project, so a quota exhaustion from one must back off the other too.
 let disabledUntil = 0
 
 function isGeminiAvailable(): boolean {
@@ -57,20 +66,34 @@ function backoffForError(error: unknown): void {
   }
 }
 
+type InsightsRequestBody = { metrics: Metrics } | { chartData: ChartDataPoint[] }
+
+function isTrendRequest(body: InsightsRequestBody): body is { chartData: ChartDataPoint[] } {
+  return 'chartData' in body
+}
+
 /**
- * POST /api/insights -- generates AI board commentary from the dashboard's
- * current KPIs. Server-side only: keeps GEMINI_INSIGHTS_API_KEY off the
- * client. Always resolves with a usable Insight[] (falls back to static
- * content rather than erroring) so the dashboard panel never breaks if
- * Gemini is unavailable, misconfigured, or returns something unparseable.
+ * POST /api/insights -- generates AI board commentary. Server-side only:
+ * keeps GEMINI_INSIGHTS_API_KEY off the client. Always resolves with a
+ * usable Insight[] (falls back to static content rather than erroring) so
+ * the dashboard panel never breaks if Gemini is unavailable, misconfigured,
+ * or returns something unparseable.
+ *
+ * Two modes, selected by which key the request body carries:
+ * - `{ metrics }` -- the existing per-report flow (exactly 3 insights about
+ *   the current period's own KPIs, see buildInsightsPrompt).
+ * - `{ chartData }` -- the historical-trend flow (exactly 1 insight
+ *   describing the trajectory across every report on file, see
+ *   buildHistoricalInsightPrompt). Kept on this same route rather than a
+ *   separate one specifically so both modes share the one circuit breaker
+ *   above -- they're the same Gemini key/quota pool, so a route split would
+ *   need to duplicate (and keep in sync) the backoff state instead.
  *
  * `isFallback` distinguishes a real generation from the static placeholder
- * content -- a real, live-confirmed gap this used not to signal at all: the
- * caller (see insights-cache.ts) previously cached and gated the manual
- * refresh button on FALLBACK_INSIGHTS exactly the same way as real content,
- * so once a quota-exhausted call returned fallback text, refresh stayed
- * disabled ("already up to date") even though nothing real had ever been
- * generated for that data.
+ * content -- a real, live-confirmed gap this used not to signal at all: a
+ * caller that caches results must never cache fallback content identically
+ * to a real success, or refresh stays permanently disabled ("already up to
+ * date") even though nothing real had ever been generated for that data.
  *
  * Deliberately a *separate* API key/project from the backend's own Gemini
  * integration (financial document extraction --
@@ -82,17 +105,28 @@ export async function POST(
   request: Request
 ): Promise<NextResponse<{ insights: Insight[]; isFallback: boolean; model: string | null }>> {
   const apiKey = process.env.GEMINI_INSIGHTS_API_KEY
-  if (!apiKey || !isGeminiAvailable()) {
+
+  let body: InsightsRequestBody
+  try {
+    body = await request.json()
+  } catch {
     return NextResponse.json({ insights: FALLBACK_INSIGHTS, isFallback: true, model: null })
   }
 
+  const trendMode = isTrendRequest(body)
+  const fallback = trendMode ? [FALLBACK_TREND_INSIGHT] : FALLBACK_INSIGHTS
+
+  if (!apiKey || !isGeminiAvailable()) {
+    return NextResponse.json({ insights: fallback, isFallback: true, model: null })
+  }
+
   try {
-    const { metrics } = (await request.json()) as { metrics: Metrics }
     const client = new GoogleGenAI({ apiKey })
+    const prompt = isTrendRequest(body) ? buildHistoricalInsightPrompt(body.chartData) : buildInsightsPrompt(body.metrics)
 
     const response = await client.models.generateContent({
       model: MODEL,
-      contents: buildInsightsPrompt(metrics),
+      contents: prompt,
       config: {
         temperature: 0.3,
         // Gemini otherwise tends to wrap JSON in a ```json fenced block in
@@ -104,13 +138,13 @@ export async function POST(
     const insights = parseInsightsResponse(response.text ?? '')
 
     if (insights === null) {
-      return NextResponse.json({ insights: FALLBACK_INSIGHTS, isFallback: true, model: null })
+      return NextResponse.json({ insights: fallback, isFallback: true, model: null })
     }
     return NextResponse.json({ insights, isFallback: false, model: MODEL })
   } catch (error) {
     console.error('AI insights generation failed, using fallback:', error)
     backoffForError(error)
-    return NextResponse.json({ insights: FALLBACK_INSIGHTS, isFallback: true, model: null })
+    return NextResponse.json({ insights: fallback, isFallback: true, model: null })
   }
 }
 

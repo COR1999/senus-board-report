@@ -1,7 +1,7 @@
-import type { Metrics, MetricValue } from '@/lib/data-service'
+import type { Metrics, MetricValue, ChartDataPoint } from '@/lib/data-service'
 import { KPI_CATEGORIES, type KpiCategory } from '@/lib/kpi-categories'
 
-export type InsightType = 'positive' | 'risk' | 'opportunity'
+export type InsightType = 'positive' | 'risk' | 'opportunity' | 'trend'
 
 export interface Insight {
   text: string
@@ -40,6 +40,60 @@ export const FALLBACK_INSIGHTS: Insight[] = [
     category: 'Cash & Liquidity',
   },
 ]
+
+/**
+ * Shown when Gemini is unavailable for the historical-trend insight
+ * specifically -- a single fallback item, distinct from FALLBACK_INSIGHTS
+ * (which is always 3 report-scoped items and would misrepresent what this
+ * one describes if reused here).
+ */
+export const FALLBACK_TREND_INSIGHT: Insight = {
+  text: 'Historical trend commentary is temporarily unavailable.',
+  type: 'trend',
+  action: '',
+}
+
+/**
+ * Builds the prompt for the ONE insight describing the trajectory across
+ * every report on file (not one report's own snapshot -- see
+ * buildInsightsPrompt above for that). Full-Year and Half-Year points are
+ * described separately and the prompt explicitly warns against blending
+ * them -- the same reason the Revenue Trend chart itself renders two
+ * separate lines rather than one (see docs/roadmap.md's "all-reports trend
+ * chart" entry): a half-year total and a full-year total aren't directly
+ * comparable magnitudes, so a naive "period-over-period" narrative across
+ * both would imply a change that isn't real.
+ */
+export function buildHistoricalInsightPrompt(chartData: ChartDataPoint[]): string {
+  const fyPoints = chartData.filter((p) => (p.cadence_months ?? 0) >= 9)
+  const hyPoints = chartData.filter((p) => (p.cadence_months ?? 0) > 0 && (p.cadence_months ?? 0) <= 6)
+
+  const describe = (points: ChartDataPoint[]) =>
+    points
+      .map((p) => `${p.period}: revenue ${p.revenue ?? 'N/A'}, EBITDA ${p.ebitda ?? 'N/A'}, cash ${p.cash ?? 'N/A'}`)
+      .join('; ')
+
+  return `You are a financial analyst writing board-level commentary for Senus PLC, \
+a natural capital SaaS company, about its performance trajectory ACROSS every reporting \
+period on file -- not just the latest one.
+
+Full-Year periods, oldest to newest: ${fyPoints.length > 0 ? describe(fyPoints) : 'none reported yet'}.
+Half-Year periods, oldest to newest: ${hyPoints.length > 0 ? describe(hyPoints) : 'none reported yet'}.
+
+Full-Year and Half-Year figures are NOT directly comparable magnitudes (a half-year total is \
+roughly half of a full year's) -- describe each cadence's own trajectory separately, never as \
+one blended sequence, and never imply a period-over-period change between a Half-Year figure \
+and a Full-Year figure.
+
+Write exactly 1 short, specific insight describing the trajectory across these periods (e.g. \
+accelerating or decelerating growth, a turning point, consistency vs. volatility). Provide:
+- "text": the observation itself, backed by the numbers above.
+- "type": always "trend" for this insight.
+- "action": a distinct, concrete recommended next step for the board.
+
+Respond with ONLY a JSON object shaped like {"insights": [{"text": string, "type": "trend", \
+"action": string}]}, no surrounding prose.`
+}
 
 function isMetricValue(value: unknown): value is MetricValue {
   return typeof value === 'object' && value !== null && 'value' in value && 'trend' in value
@@ -115,7 +169,7 @@ export function parseInsightsResponse(raw: string): Insight[] | null {
           typeof item === 'object' &&
           item !== null &&
           typeof (item as Insight).text === 'string' &&
-          ['positive', 'risk', 'opportunity'].includes((item as Insight).type)
+          ['positive', 'risk', 'opportunity', 'trend'].includes((item as Insight).type)
       )
       .map((item): Insight => ({
         text: item.text,

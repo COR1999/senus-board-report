@@ -145,6 +145,38 @@ class RevenueTrendPoint(BaseModel):
     )
 
 
+# ==================== Historical trend insight ====================
+# One AI-generated insight describing the trend across EVERY report on file
+# (not one report's own snapshot) -- see app/models/historical_insight.py.
+# The Gemini call itself stays entirely frontend-side (same architecture as
+# every other AI Board Insight); these endpoints only ever persist what the
+# frontend already generated.
+class HistoricalInsightPayload(BaseModel):
+    """Mirrors the frontend's own `Insight` shape (frontend/lib/insights.ts) exactly."""
+
+    text: str
+    type: str
+    action: str = ""
+    category: Optional[str] = None
+
+
+class HistoricalInsightUpsert(BaseModel):
+    """Request body for PUT /metrics/dashboard/historical-insight."""
+
+    insight: HistoricalInsightPayload
+    model_version: Optional[str] = None
+
+
+class HistoricalInsightResponse(BaseModel):
+    """Response schema for GET/PUT /metrics/dashboard/historical-insight."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    insight: HistoricalInsightPayload
+    model_version: Optional[str] = None
+    generated_at: datetime
+
+
 # ==================== Document ====================
 class DocumentBase(BaseModel):
     """Base document schema."""
