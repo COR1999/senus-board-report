@@ -5,13 +5,18 @@ import { Sparkles, TrendingUp, TriangleAlert, Lightbulb, RefreshCw, ArrowRight }
 import { Card, CardContent, CardHeader, CardTitle, CardAction } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { getAiInsights, type Metrics } from '@/lib/data-service'
+import { getAiInsights, getStoredInsights, saveInsights, type Metrics } from '@/lib/data-service'
 import { FALLBACK_INSIGHTS, type Insight, type InsightType } from '@/lib/insights'
-import { getCachedInsights, setCachedInsights, hasCachedInsightsFor } from '@/lib/insights-cache'
 import { cn } from '@/lib/utils'
 
 interface AiInsightsProps {
   metrics: Metrics
+  /** The `Report.id` backing the currently-selected period, resolved by
+   * `dashboard-container.tsx` from `metrics.document_id` against the
+   * already-fetched reports list. `null` when no matching report exists yet
+   * (e.g. the empty-dashboard state) -- insights still generate live in
+   * that case, they just have nothing to persist against. */
+  reportId: number | null
 }
 
 // Fixed status roles, not a categorical series -- each insight is one of
@@ -34,60 +39,73 @@ const INSIGHT_STYLE: Record<InsightType, { badgeClass: string; Icon: typeof Tren
   },
 }
 
-export function AiInsights({ metrics }: AiInsightsProps) {
-  // Keyed by metrics *content*, not object reference, and stored at module
-  // scope (see lib/insights-cache.ts) -- what actually matters is whether a
-  // new report has landed since the last call, not how long ago the button
-  // was clicked or whether this component instance happens to still be
-  // mounted. A per-instance ref/state guard here would reset every time a
-  // user navigates away (e.g. to Settings to change the theme) and back,
-  // triggering a wasted, non-deterministic Gemini re-call on unchanged data.
-  const cached = getCachedInsights(metrics)
-  const [insights, setInsights] = useState<Insight[]>(cached ?? FALLBACK_INSIGHTS)
-  const [loading, setLoading] = useState(cached === null)
+export function AiInsights({ metrics, reportId }: AiInsightsProps) {
+  const [insights, setInsights] = useState<Insight[]>(FALLBACK_INSIGHTS)
+  const [loading, setLoading] = useState(true)
+  // Whether a persisted row exists on the backend for `reportId` right now
+  // (just loaded, or just saved after a live generation) -- this, not a
+  // metrics content-hash, is what gates the manual refresh button. Tied to
+  // *this specific extraction* via report_id rather than "these particular
+  // numbers happened to repeat," a stronger key than the old localStorage
+  // cache used.
+  const [hasStored, setHasStored] = useState(false)
 
   useEffect(() => {
-    const alreadyCached = getCachedInsights(metrics)
-    if (alreadyCached) {
-      setInsights(alreadyCached)
+    let cancelled = false
+    setLoading(true)
+
+    async function load() {
+      if (reportId != null) {
+        const stored = await getStoredInsights(reportId).catch(() => null)
+        if (cancelled) return
+        if (stored) {
+          setInsights(stored.insights)
+          setHasStored(true)
+          setLoading(false)
+          return
+        }
+      }
+
+      // No report to check, or nothing stored for it yet -- generate live
+      // and persist the result so this report never re-spends Gemini quota
+      // once a real generation succeeds.
+      const { insights: result, isFallback, model } = await getAiInsights(metrics)
+      if (cancelled) return
+      setInsights(result)
       setLoading(false)
-      return
+      if (!isFallback && reportId != null) {
+        setHasStored(true)
+        saveInsights(reportId, result, model).catch(() => {
+          // Persistence is a durability optimization, not a correctness
+          // requirement -- the panel already shows the real result either way.
+        })
+      } else {
+        setHasStored(false)
+      }
     }
 
-    let cancelled = false
-
-    setLoading(true)
-    getAiInsights(metrics).then(({ insights: result, isFallback }) => {
-      if (!cancelled) {
-        setInsights(result)
-        setLoading(false)
-        // Only a real generation counts as "up to date" -- caching fallback
-        // content here would permanently disable the manual refresh button
-        // for this data (see getAiInsights' own docstring for the real bug
-        // this was), even though nothing real was ever actually generated.
-        if (!isFallback) setCachedInsights(metrics, result)
-      }
-    })
+    load()
 
     return () => {
       cancelled = true
     }
-  }, [metrics])
-
-  const hasNewData = !hasCachedInsightsFor(metrics)
+  }, [reportId, metrics])
 
   const handleRefresh = () => {
-    if (loading || !hasNewData) return
+    if (loading || hasStored) return
 
     setLoading(true)
-    getAiInsights(metrics).then(({ insights: result, isFallback }) => {
+    getAiInsights(metrics).then(({ insights: result, isFallback, model }) => {
       setInsights(result)
       setLoading(false)
-      if (!isFallback) setCachedInsights(metrics, result)
+      if (!isFallback && reportId != null) {
+        setHasStored(true)
+        saveInsights(reportId, result, model).catch(() => {})
+      }
     })
   }
 
-  const refreshDisabled = loading || !hasNewData
+  const refreshDisabled = loading || hasStored
 
   return (
     <Card className="border-foreground/10">
@@ -103,7 +121,7 @@ export function AiInsights({ metrics }: AiInsightsProps) {
             onClick={handleRefresh}
             disabled={refreshDisabled}
             title={
-              !loading && !hasNewData
+              !loading && hasStored
                 ? 'Already up to date -- upload a new report to regenerate'
                 : 'Regenerate insights from the current data'
             }

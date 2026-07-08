@@ -78,10 +78,12 @@ function backoffForError(error: unknown): void {
  * route's calls in the same quota pool the backend's own rate limiter
  * tracks for itself, silently defeating that tracking.
  */
-export async function POST(request: Request): Promise<NextResponse<{ insights: Insight[]; isFallback: boolean }>> {
+export async function POST(
+  request: Request
+): Promise<NextResponse<{ insights: Insight[]; isFallback: boolean; model: string | null }>> {
   const apiKey = process.env.GEMINI_INSIGHTS_API_KEY
   if (!apiKey || !isGeminiAvailable()) {
-    return NextResponse.json({ insights: FALLBACK_INSIGHTS, isFallback: true })
+    return NextResponse.json({ insights: FALLBACK_INSIGHTS, isFallback: true, model: null })
   }
 
   try {
@@ -102,13 +104,13 @@ export async function POST(request: Request): Promise<NextResponse<{ insights: I
     const insights = parseInsightsResponse(response.text ?? '')
 
     if (insights === null) {
-      return NextResponse.json({ insights: FALLBACK_INSIGHTS, isFallback: true })
+      return NextResponse.json({ insights: FALLBACK_INSIGHTS, isFallback: true, model: null })
     }
-    return NextResponse.json({ insights, isFallback: false })
+    return NextResponse.json({ insights, isFallback: false, model: MODEL })
   } catch (error) {
     console.error('AI insights generation failed, using fallback:', error)
     backoffForError(error)
-    return NextResponse.json({ insights: FALLBACK_INSIGHTS, isFallback: true })
+    return NextResponse.json({ insights: FALLBACK_INSIGHTS, isFallback: true, model: null })
   }
 }
 

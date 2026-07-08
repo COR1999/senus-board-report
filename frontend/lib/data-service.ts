@@ -80,8 +80,10 @@ export interface Metrics {
   /** The document backing "latest"/current_period above -- normally the true
    * most-recently-extracted document, but reflects whichever document_id the
    * period selector anchored this response on. Used to highlight the
-   * matching point on the (always-full-history) revenue trend chart. Null
-   * only in the no-data-at-all empty state. */
+   * matching point on the (always-full-history) revenue trend chart, and to
+   * resolve the matching `Report.id` for persisted AI Board Insights (see
+   * getStoredInsights/saveInsights below). Null only in the no-data-at-all
+   * empty state. */
   document_id: number | null
 }
 
@@ -193,6 +195,10 @@ export interface AiInsightsResult {
    * insights, silently blocking a retry even though nothing real had ever
    * been generated for that data. */
   isFallback: boolean
+  /** The Gemini model that produced `insights`, e.g. "gemini-flash-latest" --
+   * `null` for fallback content. Persisted alongside a real result via
+   * `saveInsights` so a stored row records what actually generated it. */
+  model: string | null
 }
 
 export async function getAiInsights(metrics: Metrics): Promise<AiInsightsResult> {
@@ -204,11 +210,59 @@ export async function getAiInsights(metrics: Metrics): Promise<AiInsightsResult>
     })
     if (!res.ok) throw new Error(`Failed to fetch insights: ${res.statusText}`)
     const data = await res.json()
-    return { insights: data.insights, isFallback: Boolean(data.isFallback) }
+    return { insights: data.insights, isFallback: Boolean(data.isFallback), model: data.model ?? null }
   } catch (error) {
     console.warn('Failed to fetch AI insights, using fallback:', error)
-    return { insights: FALLBACK_INSIGHTS, isFallback: true }
+    return { insights: FALLBACK_INSIGHTS, isFallback: true, model: null }
   }
+}
+
+/**
+ * Server-persisted AI Board Insights for one report -- see
+ * backend/app/models/report_insights.py. This is the durable source of
+ * truth `ai-insights.tsx` checks *before* ever calling Gemini: a report
+ * that already has a stored result never triggers a second live generation,
+ * even across a hard reload, a different browser, or a redeploy (unlike the
+ * old localStorage-only cache).
+ */
+export interface StoredInsights {
+  report_id: number
+  insights: Insight[]
+  model_version: string | null
+  generated_at: string
+}
+
+/**
+ * Resolves to `null` on a 404 ("never generated for this report yet") --
+ * an expected absence, not an error, so callers can treat it as the signal
+ * to fall back to a live Gemini generation rather than throwing. Still
+ * throws on a genuine failure (backend unreachable, 5xx), same convention
+ * as every other mutation-adjacent call in this file.
+ */
+export async function getStoredInsights(reportId: number): Promise<StoredInsights | null> {
+  const res = await fetch(`${API_URL}/api/reports/${reportId}/insights`, {
+    headers: { 'Content-Type': 'application/json' },
+  })
+  if (res.status === 404) return null
+  if (!res.ok) {
+    const detail = await res
+      .json()
+      .then((body) => (typeof body?.detail === 'string' ? body.detail : null))
+      .catch(() => null)
+    throw new Error(detail ?? `Failed to fetch stored insights: ${res.statusText}`)
+  }
+  return res.json()
+}
+
+export async function saveInsights(
+  reportId: number,
+  insights: Insight[],
+  modelVersion: string | null
+): Promise<StoredInsights> {
+  return apiFetch<StoredInsights>(`/api/reports/${reportId}/insights`, {
+    method: 'PUT',
+    body: JSON.stringify({ insights, model_version: modelVersion }),
+  })
 }
 
 export async function getReports(): Promise<Report[]> {

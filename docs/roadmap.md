@@ -566,6 +566,41 @@ Also fixed along the way: the frontend's own `Metrics` interface was missing the
 backend's `DashboardSummaryResponse` had already been returning since PR #44 — never surfaced before
 because nothing previously needed to read it client-side.
 
+### AI Board Insights persisted server-side, per report (PR #58)
+
+The AI Board Insights panel only ever cached its result in `localStorage`, keyed by a hash of the
+current metrics content. Real gap: a hard reload survived (the cache was persisted), but a different
+browser/device, a cleared browser, or genuinely investigating "what did the AI say about this specific
+report" later had no durable record at all — the underlying report data changes at most a few times a
+year for this tool, so a report that already got a real Gemini analysis should never need a second one.
+
+New `ReportInsights` table (`report_id` unique FK, `insights: JSON`, `model_version`, `generated_at`) —
+one row per report, not per document, since a regenerated report is a genuinely new analysis of
+possibly-different data. New `GET`/`PUT /api/reports/{report_id}/insights`: `GET` 404s when nothing's
+been generated yet for that report (an expected "not yet" state, not an error); `PUT` upserts (create or
+replace, never appends a second row). The Gemini call itself stays entirely frontend-side, unchanged —
+this endpoint only ever *persists* what the frontend's own `/api/insights` route already generated,
+keeping the two Gemini integrations' quota pools exactly as separate as every other doc in this project
+insists they must stay.
+
+`ai-insights.tsx`'s flow: on load, check `getStoredInsights(reportId)` first — if present, render it
+directly, **no Gemini call at all**. If absent, fall back to a live generation via the existing
+`getAiInsights`, then persist the result (only when it's a real, non-fallback result — fallback content
+is never saved, same reasoning PR #55 already established for the old cache). The manual refresh
+button's "already up to date" gate changed from a metrics-content-hash comparison to "does a stored row
+exist for this report" — a stronger key, since it ties to *this specific extraction* rather than "these
+particular numbers happened to repeat." `dashboard-container.tsx` resolves the `Report.id` to pass down
+by matching `metrics.document_id` (the backend's own resolved anchor, correct in both the default
+"latest" case and an explicit period selection) against the already-fetched reports list.
+
+`lib/insights-cache.ts` (the old localStorage-only cache) and its test file were deleted outright,
+superseded entirely rather than left running alongside the new persistence — simpler, and removes the
+"lost on browser clear" caveat the old version carried.
+
+Built as its own branch off `main` (not stacked on PR #56/#57, which were still open when this started),
+per this project's "one branch, one concern" discipline — required a rebase once #57 merged first, to
+pick up its own (unrelated) addition of `Metrics.document_id` rather than duplicating it.
+
 ## Working discipline throughout Phase 2
 
 A few rules were established early and enforced consistently across all 48 branches:

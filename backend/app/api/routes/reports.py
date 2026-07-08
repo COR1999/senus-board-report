@@ -11,10 +11,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.models.financial_metrics import FinancialMetrics
 from app.models.report import Report
+from app.models.report_insights import ReportInsights
 from app.schemas.report import (
     ReportResponse,
     ReportDeleteResponse,
     ReportDashboardResponse,
+    ReportInsightsUpsert,
+    ReportInsightsResponse,
 )
 from app.services.report_service import ReportService
 from app.services.extraction_confidence import LowConfidenceExtractionError
@@ -112,6 +115,61 @@ async def delete_report(report_id: int, db: AsyncSession = Depends(get_db)):
     if not success:
         raise HTTPException(status_code=404, detail="Report not found")
     return {"deleted": True}
+
+
+@router.get("/{report_id}/insights", response_model=ReportInsightsResponse)
+async def get_report_insights(report_id: int, db: AsyncSession = Depends(get_db)):
+    """
+    Stored AI Board Insights for a report, if a real (non-fallback)
+    generation has ever succeeded and been persisted for it -- 404 means
+    "never generated yet," not an error, so the frontend can generate fresh
+    and persist the result via PUT below.
+    """
+    stmt = select(ReportInsights).where(ReportInsights.report_id == report_id)
+    result = await db.execute(stmt)
+    row = result.scalars().first()
+    if not row:
+        raise HTTPException(status_code=404, detail="No insights stored for this report yet")
+    return row
+
+
+@router.put("/{report_id}/insights", response_model=ReportInsightsResponse)
+async def save_report_insights(
+    report_id: int, body: ReportInsightsUpsert, db: AsyncSession = Depends(get_db)
+):
+    """
+    Upsert (create or replace) the stored insights for a report. The Gemini
+    call itself stays entirely frontend-side -- this endpoint only ever
+    persists what the frontend already generated, keeping the two Gemini
+    integrations' quota pools exactly as separate as they are everywhere
+    else in this project.
+    """
+    stmt = select(Report).where(Report.id == report_id)
+    result = await db.execute(stmt)
+    if not result.scalars().first():
+        raise HTTPException(status_code=404, detail="Report not found")
+
+    stmt = select(ReportInsights).where(ReportInsights.report_id == report_id)
+    result = await db.execute(stmt)
+    row = result.scalars().first()
+
+    insights_data = [insight.model_dump() for insight in body.insights]
+    if row:
+        row.insights = insights_data
+        row.model_version = body.model_version
+        row.generated_at = datetime.utcnow()
+    else:
+        row = ReportInsights(
+            report_id=report_id,
+            insights=insights_data,
+            model_version=body.model_version,
+            generated_at=datetime.utcnow(),
+        )
+        db.add(row)
+
+    await db.commit()
+    await db.refresh(row)
+    return row
 
 
 @router.get("/{report_id}/dashboard", response_model=ReportDashboardResponse)
