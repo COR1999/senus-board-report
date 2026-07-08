@@ -502,6 +502,50 @@ async def test_dashboard_summary_change_percent_uses_same_cadence_comparative_no
 
 
 @pytest.mark.anyio
+async def test_dashboard_summary_never_diffs_two_documents_covering_the_identical_period(
+    async_client, async_session,
+):
+    # Real production bug (distinct from the mixed-cadence one above): ADF
+    # Farm Solutions (vision-extracted, FY2025) and the Information
+    # Document (also FY2025, same underlying company/period under a prior
+    # name) are two SEPARATE documents that happen to report the exact
+    # same calendar period -- same cadence (both 12 months), so the
+    # cadence-mismatch guard above doesn't catch this. Picking "the next
+    # most recent same-cadence row" as `previous` diffed 836,991 against
+    # itself (0% "change"), even though a real FY2024 comparative existed
+    # on the *other* document's own revenue_prior. Fixed by
+    # _covers_same_period/_select_previous in metrics.py: a same-period
+    # duplicate is skipped, falling back to the anchor's own (here: absent)
+    # embedded prior -- an honest 0%/neutral "no data", not a fabricated
+    # same-vs-same "no change".
+    base = datetime(2026, 1, 1)
+    await _add_metrics_row(
+        async_session,
+        revenue=836_991.0, revenue_prior=688_317.0,
+        fm_reporting_period_start="Jul 2024", fm_reporting_period_end="Jun 2025",
+        extracted_at=base,
+    )
+    await _add_metrics_row(
+        async_session,
+        revenue=836_991.0,  # no revenue_prior -- vision extraction never provides one
+        fm_reporting_period_start="Jul 2024", fm_reporting_period_end="Jun 2025",  # identical period
+        extracted_at=base + timedelta(days=1),
+    )
+
+    response = await async_client.get("/metrics/dashboard/summary")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["revenue"]["value"] == "€837K"
+    # Not diffed against the same-period duplicate (which would show 0%
+    # "no change") -- and the anchor itself has no revenue_prior of its
+    # own here, so this honestly falls back to N/A-equivalent 0%/neutral
+    # rather than fabricating a comparison from a different document.
+    assert body["revenue"]["change"] == 0
+    assert body["revenue"]["trend"] == "neutral"
+
+
+@pytest.mark.anyio
 async def test_dashboard_summary_null_confidence_stays_permissive(async_client, async_session):
     # NULL means "extracted before this feature existed" (the original
     # half-year filing) -- must be treated the same as auto_accept, not
