@@ -32,7 +32,11 @@ export function DashboardContainer() {
   const { data: metrics, loading: metricsLoading, error: metricsError } = useMetrics(selectedDocumentId, {
     pollIntervalMs: DASHBOARD_POLL_INTERVAL_MS,
   })
-  const { data: chartData, loading: chartLoading, error: chartError } = useChartData(selectedDocumentId, {
+  // Deliberately not passed `selectedDocumentId` -- the trend chart always
+  // shows the whole history regardless of the selected period (see
+  // useChartData's own docstring); only the KPI cards/AI insights/ratios
+  // anchor on the selection.
+  const { data: chartData, loading: chartLoading, error: chartError } = useChartData({
     pollIntervalMs: DASHBOARD_POLL_INTERVAL_MS,
   })
   const { data: reports, loading: reportsLoading, error: reportsError, refetch: refetchReports } = useReports({
@@ -190,8 +194,13 @@ export function DashboardContainer() {
       {/* Secondary metrics: Bookings, Profitability, Cash & Liquidity, Solvency & Leverage, Returns */}
       <KpiStatStrip items={statStripConfig} periodLabel={metrics.current_period ?? undefined} />
 
-      {/* Revenue Trend chart */}
-      <RevenueChart data={chartData ?? []} periodLabel={metrics.current_period} />
+      {/* Revenue Trend chart -- always the full history, with whichever
+          period is selected above highlighted, not filtered to it alone.
+          `metrics.document_id` (not the raw `selectedDocumentId` state) --
+          the backend already resolves "nothing explicitly selected" to the
+          true latest document's own id, so the highlight lands on the
+          right point even in the default "latest" state, not nowhere. */}
+      <RevenueChart data={chartData ?? []} periodLabel={metrics.current_period} selectedDocumentId={metrics.document_id} />
 
       {/* Reports Table */}
       <ReportsTable reports={reports ?? []} onRegenerated={refetchReports} />

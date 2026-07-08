@@ -14,6 +14,7 @@ const mockMetrics = {
   current_period: 'Jul 2025 – Dec 2025',
   prior_period: 'Jul 2024 – Dec 2024',
   data_extracted_at: '2026-03-19T08:38:00',
+  document_id: 1,
 }
 
 describe('buildInsightsPrompt', () => {

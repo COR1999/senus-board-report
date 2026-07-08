@@ -524,6 +524,48 @@ end state:
    a `useDownloadDocument` hook matching every other mutation hook's shape) that surfaces the backend's
    real, specific "no longer available" detail message through the page's existing error banner.
 
+### Revenue Trend: always the whole history, split by cadence (PR #56)
+
+Directly after PR #55, the user flagged that the Revenue Trend chart re-anchored on whichever
+reporting period was selected (`?document_id=` truncating to that period's own same-cadence history)
+— picking an older period showed a near-empty chart instead of the company's actual trajectory.
+Initially considered one continuous line across all periods regardless of cadence, then self-corrected
+once discussed: connecting an HY (6-month) figure to an FY (12-month) figure on one line would visually
+fabricate a zigzag trend that isn't real — exactly the class of incident PR #43/#53 already guarded
+against for the KPI cards, now applied to the trend chart too.
+
+**Decided approach: two lines, split by cadence**, sharing one chronological x-axis, no numbers
+altered or estimated. `GET /metrics/dashboard/revenue-trend` dropped its `document_id` query param and
+anchor-truncation entirely — it now always returns every `_IS_CONFIDENT_ENOUGH_FOR_DASHBOARD` row,
+oldest → newest, each tagged with its own `document_id` and `cadence_months` (reusing `_cadence_months`,
+already computed for the KPI cards). Selection/highlighting moved entirely to the frontend:
+`RevenueChart` buckets `data` client-side (`cadenceBucket`: ≤6mo → Half Year, ≥9mo → Full Year, anything
+undeterminable → an isolated, unconnected "Other" marker rather than guessed into either line) and
+renders two `<Area>` series with related-but-distinct colors (a Full-Year hue and a lighter tint for
+Half-Year — deliberately not the forecast overlay's dashed/indigo treatment, which must stay uniquely
+"this is projected, not real"). The currently-selected period (`dashboard-container.tsx`'s existing
+period-selector state, resolved through `metrics.document_id` — the backend's own anchor resolution, not
+the raw `null`-by-default selector state, so the true-latest point is highlighted correctly even when
+nothing has been explicitly picked) gets a larger dot with a soft halo via a custom Recharts dot
+renderer, without filtering the rest of the history out.
+
+A concrete, stated reason this design beat a blended line or an annualized-normalization approach: each
+cadence's forecast (`lib/forecast.ts`'s existing linear-regression `projectSeries`) now runs
+**independently per cadence**, but both tails are merged into the *same* trailing "Next Report N" rows
+by index rather than appended separately — letting a viewer directly compare "is the Full-Year line
+actually tracking to what the Half-Year run-rate implied," something a single blended line couldn't show.
+
+The chart's core data-shaping logic (`buildChartRows` — bucketing, per-cadence forecast projection, the
+index-aligned merge) was extracted into a small, pure, exported function specifically so it has real
+unit coverage: `ResponsiveContainer` reports zero width under jsdom and never renders Recharts' actual
+SVG children (confirmed directly — a probe test found zero `<circle>` elements and no legend text in the
+rendered output), so the previous test file could only assert on the surrounding Card chrome. Extracting
+the logic sidesteps that limitation entirely rather than fighting jsdom with a fake ResizeObserver.
+
+Also fixed along the way: the frontend's own `Metrics` interface was missing the `document_id` field the
+backend's `DashboardSummaryResponse` had already been returning since PR #44 — never surfaced before
+because nothing previously needed to read it client-side.
+
 ## Working discipline throughout Phase 2
 
 A few rules were established early and enforced consistently across all 48 branches:
@@ -600,6 +642,14 @@ viewer on the frontend — a real, separate feature, not a quick add. What exist
 from the original notes shipped as scoped: combined bare-label + calendar-range dropdown options, and
 YoY comparisons anchored to the selected period's own same-cadence history rather than always "the
 second-most-recent upload."
+
+**Financial health radar chart (idea, not built).** Raised alongside the PR #56 trend-chart work: a
+radar/spider chart plotting Growth, Profitability, Liquidity, Solvency, and Efficiency as five axes,
+built from ratios already calculated today (`ebitda_margin`, `cash_runway`, `interest_cover`, `roce`,
+etc. — no new extraction needed). Explicitly deferred to its own separate, deeper page rather than added
+to the main executive dashboard, per the user's own instruction to keep that page's headline view
+clutter-free — a natural companion to the "per-category drill-down pages" idea above rather than a
+replacement for it.
 
 Deliberately **not** picking up the rest of a general executive-dashboard template (a monthly
 revenue bar chart, a segment/product-line donut breakdown, budget-vs-actual variance columns) --

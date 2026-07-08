@@ -55,6 +55,10 @@ export function projectSeries(
       revenue: null,
       ebitda: null,
       cash: null,
+      // No real document backs a projected point -- see RevenueChart's own
+      // reasoning for why its synthetic prior-period point does the same.
+      document_id: null,
+      cadence_months: null,
       [metric]: value,
     }
   })

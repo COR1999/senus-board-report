@@ -31,11 +31,12 @@ export function useMetrics(documentId: number | null, options?: UseAsyncDataOpti
   })
 }
 
-export function useChartData(documentId: number | null, options?: UseAsyncDataOptions): AsyncDataState<ChartDataPoint[]> {
-  return useAsyncData(() => getChartData(documentId), {
-    ...options,
-    deps: [documentId, ...(options?.deps ?? [])],
-  })
+// Deliberately no `documentId` param, unlike `useMetrics` -- the trend
+// chart always shows the whole history regardless of which period is
+// selected elsewhere (see `getChartData`'s own docstring), so switching
+// periods never triggers a chart refetch, only a KPI refetch.
+export function useChartData(options?: UseAsyncDataOptions): AsyncDataState<ChartDataPoint[]> {
+  return useAsyncData(getChartData, options)
 }
 
 // No `pollIntervalMs` -- the period list rarely changes within a session

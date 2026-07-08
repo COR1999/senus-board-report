@@ -127,6 +127,22 @@ class RevenueTrendPoint(BaseModel):
         None,
         description="Cash for this period. Null means the document didn't report it -- never 0.",
     )
+    document_id: Optional[int] = Field(
+        None,
+        description="The document this point came from -- lets the frontend highlight whichever "
+        "point matches the currently-selected period. Null only for the single synthetic "
+        "prior-period point get_revenue_trend may prepend when just one document exists (that "
+        "point is derived from the real document's own embedded prior-period column, not a "
+        "separate upload).",
+    )
+    cadence_months: Optional[int] = Field(
+        None,
+        description="This point's reporting cadence in months (6 for half-year, 12 for full-year), "
+        "when derivable -- lets the frontend split the chart into separate half-year/full-year "
+        "lines instead of connecting incomparable period lengths on one line. Null when the "
+        "cadence couldn't be determined (see _cadence_months) -- rendered as an isolated point, "
+        "not guessed into either line.",
+    )
 
 
 # ==================== Document ====================
