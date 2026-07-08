@@ -89,6 +89,25 @@ async def test_list_documents_ignores_financial_metrics_with_no_extra_queries(as
 
 
 @pytest.mark.anyio
+async def test_list_documents_includes_extraction_confidence_tier_via_one_batched_query(async_session):
+    needs_review_doc = await _add_document(async_session, filename="needs-review.pdf")
+    async_session.add(
+        FinancialMetrics(
+            document_id=needs_review_doc.id, revenue=100_000.0,
+            extraction_confidence=88.0, extraction_confidence_tier="needs_review",
+        )
+    )
+    no_metrics_doc = await _add_document(async_session, filename="no-metrics-yet.pdf")
+    await async_session.commit()
+
+    responses = await list_documents(db=async_session)
+
+    by_filename = {r.filename: r for r in responses}
+    assert by_filename["needs-review.pdf"].extraction_confidence_tier == "needs_review"
+    assert by_filename["no-metrics-yet.pdf"].extraction_confidence_tier is None
+
+
+@pytest.mark.anyio
 async def test_list_documents_orders_newest_first(async_session):
     older = await _add_document(async_session, filename="older.pdf", created_at=datetime.utcnow() - timedelta(days=1))
     newer = await _add_document(async_session, filename="newer.pdf", created_at=datetime.utcnow())

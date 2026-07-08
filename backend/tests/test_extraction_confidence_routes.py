@@ -1,0 +1,193 @@
+"""
+Route-level tests for the extraction confidence gate -- unlike
+test_document_dedup.py/test_investor_relations_sync.py (which fake out
+ReportService entirely), these use the *real* ReportService/_generate so
+the actual confidence-scoring wiring is exercised, with only
+FinancialMetricsExtractor and GeminiAnalysisService mocked (no real PDF
+parsing or network calls).
+"""
+from typing import AsyncGenerator
+
+import pytest
+import pytest_asyncio
+from fastapi import UploadFile
+from io import BytesIO
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import StaticPool
+
+from app.api.routes import documents as documents_routes
+from app.api.routes import reports as reports_routes
+from app.core.database import Base
+from app.models.document import Document
+from app.models.financial_metrics import FinancialMetrics
+from app.models.report import Report
+from app.services import financial_metrics_extractor as fme_module
+from app.services import report_service as report_service_module
+import app.models  # noqa: F401 -- registers all models on Base.metadata
+
+
+@pytest_asyncio.fixture
+async def async_session() -> AsyncGenerator[AsyncSession, None]:
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", poolclass=StaticPool)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    session_maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    async with session_maker() as session:
+        yield session
+
+    await engine.dispose()
+
+
+class _FakeGemini:
+    """Stands in for GeminiAnalysisService -- never makes a real API call."""
+
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def generate_report(self, prompt):
+        return {"financial_metrics": {}, "key_findings": [], "ai_commentary": "", "model_version": "fake"}
+
+
+def _mock_extraction(monkeypatch, *, format_recognized: bool, baseline: dict):
+    """
+    Configures FinancialMetricsExtractor's real (module-level) methods to
+    return controlled values, so a real ReportService._generate exercises
+    the actual confidence-scoring wiring without needing real PDF text.
+    """
+    monkeypatch.setattr(fme_module.FinancialMetricsExtractor, "is_format_recognized", staticmethod(lambda text: format_recognized))
+    monkeypatch.setattr(fme_module.FinancialMetricsExtractor, "extract", classmethod(lambda cls, text: dict(baseline)))
+    monkeypatch.setattr(
+        fme_module.FinancialMetricsExtractor, "extract_balance_sheet", classmethod(lambda cls, text: {})
+    )
+    monkeypatch.setattr(
+        fme_module.FinancialMetricsExtractor,
+        "check_reconciliation",
+        classmethod(lambda cls, text: {"pnl_reconciles": None, "cashflow_reconciles": None}),
+    )
+    monkeypatch.setattr(report_service_module, "GeminiAnalysisService", _FakeGemini)
+
+
+_GOVERNANCE_DOC_BASELINE = {
+    "revenue": None, "revenue_prior": None, "cash": None, "cash_prior": None,
+    "ebitda": None, "ebitda_prior": None, "customers": None,
+    "bookings_value": None, "bookings_customers": None, "bookings_pipeline": None,
+    "reporting_period": None, "reporting_period_prior": None,
+    "reporting_period_end": None, "reporting_period_end_prior": None,
+    "reporting_period_start": None, "reporting_period_start_prior": None,
+    "gross_margin": None, "gross_margin_prior": None,
+    "operating_margin": None, "operating_margin_prior": None,
+}
+
+_REAL_FILING_BASELINE = {
+    **_GOVERNANCE_DOC_BASELINE,
+    "revenue": 354_813.0, "cash": 735_189.0, "ebitda": -473_739.0, "customers": 138,
+    "reporting_period": "HY2026",
+}
+
+
+@pytest.fixture(autouse=True)
+def _fake_pdf_parsing(monkeypatch):
+    monkeypatch.setattr(
+        documents_routes.pdf_service,
+        "extract_text_from_upload",
+        lambda content, filename: (f"/tmp/{filename}", "some extracted text"),
+    )
+
+
+@pytest.mark.anyio
+async def test_upload_rejects_a_governance_document_with_422_and_persists_nothing(async_session, monkeypatch):
+    _mock_extraction(monkeypatch, format_recognized=False, baseline=_GOVERNANCE_DOC_BASELINE)
+
+    upload_file = UploadFile(filename="agm-notice.pdf", file=BytesIO(b"%PDF-1.4 fake"))
+    with pytest.raises(Exception) as exc_info:
+        await documents_routes.upload_document(upload_file, async_session)
+
+    assert getattr(exc_info.value, "status_code", None) == 422
+    assert "confidence" in exc_info.value.detail.lower()
+
+    documents = (await async_session.execute(Document.__table__.select())).all()
+    assert documents == []
+
+
+@pytest.mark.anyio
+async def test_import_external_filing_rejects_a_governance_document_with_422(async_session, monkeypatch):
+    _mock_extraction(monkeypatch, format_recognized=False, baseline=_GOVERNANCE_DOC_BASELINE)
+
+    async def _find_filing(attachment_id):
+        return {"attachment_id": attachment_id, "file_name": "AGM Notice", "file_size": 1000, "published_date": None}
+
+    async def _download_filing(attachment_id):
+        return b"%PDF-1.4 fake"
+
+    monkeypatch.setattr(documents_routes.investor_relations_client, "find_filing", _find_filing)
+    monkeypatch.setattr(documents_routes.investor_relations_client, "download_filing", _download_filing)
+
+    with pytest.raises(Exception) as exc_info:
+        await documents_routes.import_external_filing("agm-id", async_session)
+
+    assert getattr(exc_info.value, "status_code", None) == 422
+
+    documents = (await async_session.execute(Document.__table__.select())).all()
+    assert documents == []
+
+
+@pytest.mark.anyio
+async def test_upload_of_a_real_filing_auto_accepts_and_stores_confidence(async_session, monkeypatch):
+    _mock_extraction(monkeypatch, format_recognized=True, baseline=_REAL_FILING_BASELINE)
+
+    upload_file = UploadFile(filename="half-year.pdf", file=BytesIO(b"%PDF-1.4 fake"))
+    response = await documents_routes.upload_document(upload_file, async_session)
+
+    assert response.financial_metrics.extraction_confidence == 100.0
+    assert response.financial_metrics.extraction_confidence_tier == "auto_accept"
+
+
+@pytest.mark.anyio
+async def test_upload_with_partial_deterministic_match_persists_as_needs_review(async_session, monkeypatch):
+    # Format recognized, revenue found deterministically, but no secondary
+    # field or period -- 40 + 30 = 70... below reject. Use a scenario that
+    # actually lands in 85-94: revenue + secondary via baseline, no period.
+    partial_baseline = {
+        **_GOVERNANCE_DOC_BASELINE,
+        "revenue": 100_000.0,
+        "cash": 50_000.0,
+    }
+    _mock_extraction(monkeypatch, format_recognized=True, baseline=partial_baseline)
+
+    upload_file = UploadFile(filename="partial.pdf", file=BytesIO(b"%PDF-1.4 fake"))
+    response = await documents_routes.upload_document(upload_file, async_session)
+
+    # 40 (format) + 30 (revenue) + 15 (secondary) + 0 (no period) = 85
+    assert response.financial_metrics.extraction_confidence == 85.0
+    assert response.financial_metrics.extraction_confidence_tier == "needs_review"
+
+    documents = (await async_session.execute(Document.__table__.select())).all()
+    assert len(documents) == 1
+
+
+@pytest.mark.anyio
+async def test_regenerate_with_low_confidence_leaves_existing_report_untouched(async_session, monkeypatch):
+    # First: a real filing succeeds normally.
+    _mock_extraction(monkeypatch, format_recognized=True, baseline=_REAL_FILING_BASELINE)
+    upload_file = UploadFile(filename="half-year.pdf", file=BytesIO(b"%PDF-1.4 fake"))
+    first_response = await documents_routes.upload_document(upload_file, async_session)
+    original_revenue = first_response.financial_metrics.revenue
+    assert original_revenue == 354_813.0
+
+    # Then: regenerating with a now-broken extraction (simulating e.g. a
+    # code regression, or the extractor being pointed at the wrong text)
+    # must not silently overwrite the existing good data.
+    _mock_extraction(monkeypatch, format_recognized=False, baseline=_GOVERNANCE_DOC_BASELINE)
+
+    with pytest.raises(Exception) as exc_info:
+        await reports_routes.regenerate_report(first_response.report_id, async_session)
+    assert getattr(exc_info.value, "status_code", None) == 422
+
+    # The original FinancialMetrics row must be completely unchanged.
+    metrics_result = await async_session.execute(
+        FinancialMetrics.__table__.select().where(FinancialMetrics.document_id == first_response.id)
+    )
+    metrics_row = metrics_result.first()
+    assert metrics_row.revenue == 354_813.0
+    assert metrics_row.extraction_confidence_tier == "auto_accept"

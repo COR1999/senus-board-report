@@ -82,5 +82,15 @@ class FinancialMetrics(Base):
 
     extracted_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
 
+    # Extraction confidence (see app/services/extraction_confidence.py) --
+    # `score` is the 0-100 point total, `tier` is "auto_accept"/
+    # "needs_review"/"rejected" (a rejected extraction is never persisted
+    # at all, so "rejected" never actually appears here in practice).
+    # Both `NULL` for any row extracted before this feature existed (the
+    # original half-year filing) -- treated permissively everywhere this
+    # is read, not as a missing/broken value.
+    extraction_confidence: Mapped[Optional[float]] = mapped_column(default=None)
+    extraction_confidence_tier: Mapped[Optional[str]] = mapped_column(default=None)
+
     # Relationship back to the source document.
     document: Mapped["Document"] = relationship(back_populates="financial_metrics")

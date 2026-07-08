@@ -21,6 +21,7 @@ describe('DashboardContainer', () => {
       bookings: { value: 'ANY_BOOKINGS', change: 0, trend: 'neutral', history: [] },
       current_period: 'Jul 2025 – Dec 2025',
       prior_period: 'Jul 2024 – Dec 2024',
+      data_extracted_at: '2026-03-19T08:38:00',
     })
 
     vi.spyOn(dataService, 'getChartData').mockResolvedValue([])
@@ -86,5 +87,34 @@ describe('DashboardContainer', () => {
     expect(screen.getAllByText('Jul 2025 – Dec 2025').length).toBeGreaterThan(0)
     // Customers has no real prior comparative -- context only, no comparison claim.
     expect(screen.getByText('as of Jul 2025 – Dec 2025')).toBeInTheDocument()
+  })
+
+  it('shows a global "as of" banner stating the currency and extraction date', async () => {
+    render(<DashboardContainer />)
+
+    await screen.findByText('ANY_REVENUE')
+    expect(await screen.findByText(/All figures in EUR · Data as of/)).toBeInTheDocument()
+  })
+
+  it('shows no "as of" banner when there is no data yet', async () => {
+    vi.spyOn(dataService, 'getMetrics').mockResolvedValue({
+      revenue: { value: 'ANY_REVENUE', change: 0, trend: 'neutral', history: [] },
+      customers: { value: '0', change: 0, trend: 'neutral', history: [] },
+      cash: { value: 'ANY_CASH', change: 0, trend: 'neutral', history: [] },
+      ebitda: { value: 'ANY_EBITDA', change: 0, trend: 'neutral', history: [] },
+      ebitda_margin: { value: 'N/A', change: 0, trend: 'neutral', history: [] },
+      cash_runway: { value: 'N/A', change: 0, trend: 'neutral', history: [] },
+      interest_cover: { value: 'N/A', change: 0, trend: 'neutral', history: [] },
+      roce: { value: 'N/A', change: 0, trend: 'neutral', history: [] },
+      bookings: { value: 'N/A', change: 0, trend: 'neutral', history: [] },
+      current_period: null,
+      prior_period: null,
+      data_extracted_at: null,
+    })
+
+    render(<DashboardContainer />)
+
+    await screen.findByText('ANY_REVENUE')
+    expect(screen.queryByText(/Data as of/)).not.toBeInTheDocument()
   })
 })

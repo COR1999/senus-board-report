@@ -326,3 +326,107 @@ class TestExtractAgainstRealFiling:
         assert result["interest_expense"] == 1_391.0
         assert result["capital_employed"] == 637_554.0
         assert result["net_cash_used_operating"] == 410_291.0
+
+
+class TestExtractInformationDocument:
+    """
+    Real-fixture regression test for the Information Document format (an
+    IPO/listing prospectus -- structurally unrelated to the half-year
+    filing's three-statement layout, see financial_metrics_extractor.py's
+    `_get_information_document_summary` docstring). Only the fields this
+    document type actually discloses are asserted as real values; the rest
+    (ebitda, interest_expense, capital_employed, total_debt,
+    working_capital_change, net_cash_used_operating) are asserted `None`
+    -- confirmed by direct inspection of the real document, not assumed.
+    """
+
+    @pytest.fixture(scope="class")
+    @classmethod
+    def real_text(cls):
+        pdf_path = (
+            Path(__file__).resolve().parent
+            / "fixtures"
+            / "Senus_PLC_Information_Document_Dec2025.pdf"
+        )
+        content = pdf_path.read_bytes()
+        _, text = PDFExtractionService.extract_text_from_upload(content, "info-doc-test.pdf")
+        return text
+
+    def test_is_format_recognized(self, real_text):
+        assert FME.is_format_recognized(real_text) is True
+
+    def test_extract_matches_known_real_values(self, real_text):
+        result = FME.extract(real_text)
+        assert result["revenue"] == 836_991.0
+        assert result["revenue_prior"] == 688_317.0
+        assert result["cash"] == 140_135.0
+        assert result["cash_prior"] == 424_639.0
+        assert result["customers"] == 36
+        assert result["gross_margin"] == pytest.approx(77.47, abs=0.01)
+        assert result["gross_margin_prior"] == pytest.approx(62.83, abs=0.01)
+        assert result["operating_margin"] == pytest.approx(-75.71, abs=0.01)
+        assert result["operating_margin_prior"] == pytest.approx(-164.27, abs=0.01)
+        assert result["reporting_period"] == "FY2025"
+        assert result["reporting_period_prior"] == "FY2024"
+        assert result["reporting_period_end"] == "Jun 2025"
+        assert result["reporting_period_end_prior"] == "Jun 2024"
+        assert result["reporting_period_start"] == "Jul 2024"
+        assert result["reporting_period_start_prior"] == "Jul 2023"
+
+    def test_ebitda_and_undisclosed_fields_stay_none(self, real_text):
+        # No depreciation figure is disclosed anywhere in this document --
+        # EBITDA cannot be derived (must not be guessed), unlike the
+        # half-year filing where it's computed from operating result +
+        # depreciation add-back.
+        result = FME.extract(real_text)
+        assert result["ebitda"] is None
+        assert result["ebitda_prior"] is None
+        assert result["bookings_value"] is None
+
+    def test_extract_balance_sheet_fields_stay_none(self, real_text):
+        # No interest expense, capital-employed subtotal, or total-debt
+        # figure is disclosed in this document's one summary table.
+        result = FME.extract_balance_sheet(real_text)
+        assert result["total_debt"] is None
+        assert result["interest_expense"] is None
+        assert result["capital_employed"] is None
+        assert result["working_capital_change"] is None
+        assert result["net_cash_used_operating"] is None
+
+    def test_reconciliation(self, real_text):
+        result = FME.check_reconciliation(real_text)
+        # No cost-of-sales line in this document's table -- can't check.
+        assert result["pnl_reconciles"] is None
+        # Cash flow figures (operating/investing/financing, opening/
+        # closing cash) are all disclosed and genuinely reconcile.
+        assert result["cashflow_reconciles"] is True
+
+
+class TestFullYearCadenceCueLocalization:
+    """
+    Regression test for a real false-positive found while building the
+    Information Document support: a forward-looking sentence far from the
+    actual period statement ("a trading update following completion of the
+    half year ending 31 December 2025") previously made cadence detection
+    ambiguous for a genuinely full-year filing, because cue regexes were
+    searched across the whole document instead of near the period match.
+    """
+
+    def test_unrelated_half_year_mention_does_not_confuse_a_full_year_filing(self):
+        # The "half year" mention must sit well outside the ±200-char cue
+        # window around the real period statement -- padded with filler far
+        # longer than that window, mirroring the real document where the
+        # two were 40+ pages apart.
+        filler = "Unrelated narrative filler text padding out the document. " * 10
+        text = (
+            "The Company will announce a trading update following completion "
+            "of the half year ending 31 December 2025, expected in early 2026.\n"
+            + filler
+            + "\nSummary Financial Information\n"
+            "For the financial year ended 30 June 2025 Senus recorded revenue.\n"
+            "Turnover\n123,456\n111,111\n"
+            "Profit and Loss\n"
+        )
+        result = FME.extract(text)
+        assert result["reporting_period"] == "FY2025"
+        assert result["reporting_period_start"] == "Jul 2024"

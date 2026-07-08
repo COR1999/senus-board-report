@@ -15,6 +15,7 @@ from app.models.document import Document
 from app.models.financial_metrics import FinancialMetrics
 from app.models.balance_sheet_metrics import BalanceSheetMetrics
 from app.services.gemini_service import GeminiAnalysisService
+from app.services.extraction_confidence import score_extraction, LowConfidenceExtractionError
 from sqlalchemy.orm import selectinload
 
 
@@ -149,6 +150,18 @@ class ReportService:
             metrics_data.get("reporting_period_start_prior")
         )
 
+        # Extraction confidence -- set by `_generate` before calling this
+        # method (stashed on `content`, not `metrics_data`, since it's a
+        # property of the whole extraction attempt, not one of the
+        # individual financial-metrics fields above). `None` for anything
+        # that reaches `_save_metrics` without it having been computed
+        # (there shouldn't be one today -- `_generate` always computes it
+        # first -- but this keeps the method safe to call from anywhere
+        # without a hard dependency on that caller).
+        confidence = content.get("extraction_confidence")
+        metrics.extraction_confidence = confidence.score if confidence else None
+        metrics.extraction_confidence_tier = confidence.tier if confidence else None
+
         metrics.extracted_at = datetime.utcnow()
 
         await self.db.commit()
@@ -254,6 +267,33 @@ class ReportService:
             content["financial_metrics"] = merged_metrics
 
             # =====================================================
+            # 3b. EXTRACTION CONFIDENCE (see extraction_confidence.py)
+            # Computed before anything is persisted -- a rejected
+            # extraction must not leave any trace in the database at all.
+            # =====================================================
+            extracted_text = document.extracted_text or ""
+            reconciliation = FinancialMetricsExtractor.check_reconciliation(extracted_text)
+            confidence = score_extraction(
+                format_recognized=FinancialMetricsExtractor.is_format_recognized(extracted_text),
+                baseline_metrics=baseline_metrics,
+                merged_metrics=merged_metrics,
+                pnl_reconciles=reconciliation["pnl_reconciles"],
+                cashflow_reconciles=reconciliation["cashflow_reconciles"],
+            )
+            if confidence.tier == "rejected":
+                # Raised ahead of the broad `except Exception` below (see
+                # the `except LowConfidenceExtractionError: raise` clause)
+                # so it reaches whichever caller invoked `generate_report`
+                # as a distinguishable error, not a generic "failed" status
+                # -- each caller (a brand-new upload/import vs. a
+                # regenerate of an existing document) applies its own
+                # consequence. See extraction_confidence.py's module
+                # docstring for the incident this closes.
+                raise LowConfidenceExtractionError(confidence)
+
+            content["extraction_confidence"] = confidence
+
+            # =====================================================
             # 4. REPORT FIELDS
             # =====================================================
             report.ai_commentary = content.get("ai_commentary", "")
@@ -285,6 +325,13 @@ class ReportService:
             await self.db.refresh(report)
 
             return report
+
+        except LowConfidenceExtractionError:
+            # Not caught by the broad `except Exception` below -- nothing
+            # about this document's report/metrics should be touched or
+            # persisted here; the caller (documents.py's `_ingest_document`
+            # or reports.py's regenerate route) decides the consequence.
+            raise
 
         except Exception as e:
             # THIS is the fix for reports getting stuck in "pending" forever

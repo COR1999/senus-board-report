@@ -43,7 +43,54 @@ _HAS_CORE_METRICS = or_(
     FinancialMetrics.ebitda.isnot(None),
 )
 
+# Only an `auto_accept`-tier extraction (see app/services/
+# extraction_confidence.py) may drive the executive dashboard's headline
+# KPIs -- a `needs_review` (85-94%) document is real and persisted, but
+# must not silently become "the" board-facing number just because it
+# cleared the (separate, lower) *reject* bar. `NULL` stays permissive so
+# rows extracted before this feature existed (the original half-year
+# filing) keep working exactly as they did before it existed.
+_IS_CONFIDENT_ENOUGH_FOR_DASHBOARD = or_(
+    FinancialMetrics.extraction_confidence >= 95,
+    FinancialMetrics.extraction_confidence.is_(None),
+)
+
 _EMPTY_RATIO = KPIMetric(value="N/A", change=0, trend="neutral", history=[])
+
+_MONTH_LOOKUP = {
+    name: index
+    for index, name in enumerate(
+        ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"], start=1
+    )
+}
+
+
+def _cadence_months(row: FinancialMetrics) -> Optional[int]:
+    """
+    Reporting cadence in months, derived from `reporting_period_start`/
+    `reporting_period_end` (e.g. "Jul 2025"/"Dec 2025" -> 6, "Jul 2024"/
+    "Jun 2025" -> 12). `None` when either label is missing or unparseable
+    -- used by `get_revenue_trend` to keep documents of different cadences
+    (e.g. a half-year filing and a full-year filing) from being silently
+    blended into one trend line as if they were regular, comparable
+    periods (see that endpoint's docstring for the real incident this
+    prevents).
+    """
+    def _parse(label: Optional[str]) -> Optional[tuple[int, int]]:
+        if not label:
+            return None
+        parts = label.split()
+        if len(parts) != 2 or parts[0] not in _MONTH_LOOKUP or not parts[1].isdigit():
+            return None
+        return int(parts[1]), _MONTH_LOOKUP[parts[0]]
+
+    start = _parse(row.reporting_period_start)
+    end = _parse(row.reporting_period_end)
+    if start is None or end is None:
+        return None
+    start_year, start_month = start
+    end_year, end_month = end
+    return (end_year - start_year) * 12 + (end_month - start_month) + 1
 
 
 async def _ai_reporting_periods_by_document(
@@ -85,7 +132,7 @@ async def get_dashboard_metrics(db: AsyncSession = Depends(get_db)):
 
     stmt = (
         select(FinancialMetrics)
-        .where(_HAS_CORE_METRICS)
+        .where(_HAS_CORE_METRICS, _IS_CONFIDENT_ENOUGH_FOR_DASHBOARD)
         .order_by(FinancialMetrics.extracted_at.desc())
         .limit(HISTORY_WINDOW)
     )
@@ -275,6 +322,7 @@ async def get_dashboard_metrics(db: AsyncSession = Depends(get_db)):
         bookings=bookings_kpi(),
         current_period=current_period,
         prior_period=prior_period,
+        data_extracted_at=latest.extracted_at,
     )
 
 
@@ -286,20 +334,45 @@ async def get_revenue_trend(db: AsyncSession = Depends(get_db)):
     for a document that didn't report it -- same missing-vs-zero convention as
     the sparkline history on /dashboard/summary.
     """
-    # Unlike /dashboard/summary below, this endpoint plots every document's
+    # Unlike /dashboard/summary above, this endpoint plots every document's
     # data independently per field (a document missing revenue specifically
     # still contributes a real point with a null revenue value) -- so
     # `_HAS_CORE_METRICS` is deliberately NOT applied here. Excluding a
     # document based on a cross-field "no signal at all" heuristic would
     # contradict the per-field missing-vs-zero convention this endpoint is
-    # built on (see `optional_float` below).
+    # built on (see `optional_float` below). The exec-view confidence
+    # boundary *is* applied, though -- this chart is still an executive
+    # dashboard surface, same as /dashboard/summary.
     stmt = (
         select(FinancialMetrics)
+        .where(_IS_CONFIDENT_ENOUGH_FOR_DASHBOARD)
         .order_by(FinancialMetrics.extracted_at.desc())
         .limit(REVENUE_TREND_WINDOW)
     )
     result = await db.execute(stmt)
     rows = result.scalars().all()
+
+    # Documents of different reporting cadence (e.g. this project's
+    # half-year filing alongside a full-year "Information Document") must
+    # never be blended into one trend line as if they were regular,
+    # comparable periods -- confirmed against the real data: an annual
+    # total (~€837K) plotted next to a half-year total (~€355K) as
+    # sequential same-length points reads as a ~58% revenue collapse and
+    # produces an actively misleading forecast (see `forecast.ts`'s
+    # `projectSeries`, which has no notion of how much calendar time each
+    # point covers). A row is excluded only when a *confirmed* mismatch
+    # exists (both its own cadence and the latest row's are known and
+    # differ) -- most filings (including every existing test fixture)
+    # don't set `reporting_period_start`/`_end` at all, and an unknown
+    # cadence must not be treated as evidence of a mismatch, only a real,
+    # positively-detected one.
+    if rows:
+        latest_cadence = _cadence_months(rows[0])
+        if latest_cadence is not None:
+            rows = [
+                r for r in rows
+                if (row_cadence := _cadence_months(r)) is None or row_cadence == latest_cadence
+            ]
 
     ai_periods = await _ai_reporting_periods_by_document(db, [r.document_id for r in rows])
 

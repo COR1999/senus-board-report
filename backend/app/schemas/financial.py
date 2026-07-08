@@ -28,7 +28,17 @@ class FinancialMetricsResponse(FinancialMetricsBase):
     id: Optional[int] = None
     document_id: Optional[int] = None
     extracted_at: Optional[datetime] = None
-    
+    # See app/services/extraction_confidence.py. Both None for any row
+    # extracted before this feature existed (the original half-year
+    # filing) -- the frontend must treat that the same as "no concerns",
+    # not as a broken/missing value.
+    extraction_confidence: Optional[float] = Field(
+        None, description="0-100 extraction confidence score, or null if not yet scored."
+    )
+    extraction_confidence_tier: Optional[str] = Field(
+        None, description="'auto_accept' / 'needs_review', or null if not yet scored."
+    )
+
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -76,6 +86,13 @@ class DashboardSummaryResponse(BaseModel):
     # never a guessed/fabricated label.
     current_period: Optional[str] = None
     prior_period: Optional[str] = None
+    # When this data was actually extracted (the "latest" FinancialMetrics
+    # row's own extracted_at) -- distinct from `current_period` (the
+    # filing's *reporting* period, e.g. "FY2025"). Powers the dashboard's
+    # global "Data as of ..." banner so a board reader always knows how
+    # fresh the figures are, independent of which period they cover. None
+    # only when there's no data at all yet.
+    data_extracted_at: Optional[datetime] = None
 
 
 # ==================== Revenue Trend ====================
@@ -113,6 +130,13 @@ class DocumentResponse(DocumentBase):
     file_path: Optional[str] = None
     status: str
     created_at: datetime
+    # Populated by a separate batched query in list_documents() (see
+    # app/services/extraction_confidence.py) -- not a real column on
+    # Document itself, so `from_attributes` alone won't fill it; the route
+    # sets it explicitly per row. None for a document with no
+    # FinancialMetrics row yet, or one extracted before this feature
+    # existed.
+    extraction_confidence_tier: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 

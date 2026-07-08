@@ -223,9 +223,20 @@ export default function DocumentsPage() {
                       <TableRow key={doc.id} className="border-border/40">
                         <TableCell className="font-medium">{doc.filename}</TableCell>
                         <TableCell>
-                          <Badge className={STATUS_STYLES[doc.status] ?? 'bg-muted text-foreground'}>
-                            {capitalize(doc.status)}
-                          </Badge>
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <Badge className={STATUS_STYLES[doc.status] ?? 'bg-muted text-foreground'}>
+                              {capitalize(doc.status)}
+                            </Badge>
+                            {doc.extraction_confidence_tier === 'needs_review' && (
+                              <Badge
+                                variant="outline"
+                                className="border-border/60 bg-muted text-muted-foreground"
+                                title="This document's extracted figures scored below the auto-accept confidence threshold -- they're saved, but excluded from the dashboard's headline KPIs until reviewed."
+                              >
+                                Pending Review
+                              </Badge>
+                            )}
+                          </div>
                         </TableCell>
                         <TableCell className="text-muted-foreground">{formatFileSize(doc.file_size)}</TableCell>
                         <TableCell className="text-muted-foreground">
