@@ -196,7 +196,7 @@ large change. The working pattern, used consistently:
 
 ## How outputs were validated
 
-- **Automated tests**: 177 backend (pytest) + 138 frontend (Vitest) tests, run before every merge.
+- **Automated tests**: 177 backend (pytest) + 144 frontend (Vitest) tests, run before every merge.
 - **Type safety**: `tsc --noEmit` clean before every merge.
 - **Manual validation against the real filing**: extracted figures (revenue, EBITDA, cash,
   customers, bookings) were cross-checked by hand against the source PDF during
@@ -251,10 +251,16 @@ npm run dev
   currently returning its static fallback content in production rather than real generated
   commentary — confirmed by directly calling the deployed `/api/insights` endpoint with genuinely
   different metrics and observing identical output. This needs `GEMINI_INSIGHTS_API_KEY`/quota
-  checked on Vercel and Google AI Studio directly; it isn't a code bug (the panel's own prompt-
-  building bug that could have caused this was found and fixed, see `docs/roadmap.md`, but the
-  fallback persisted after that fix too, pointing at an API key/quota/billing issue outside this
-  repo's code).
+  checked on Vercel and Google AI Studio directly; it isn't a code bug in the sense of "wrong logic"
+  (the panel's own prompt-building bug that could have caused this was found and fixed, see
+  `docs/roadmap.md`) — but the route previously had no backoff at all, so every genuinely-new dataset
+  kept blindly retrying an already-exhausted quota instead of giving it a chance to recover. Fixed by
+  giving `/api/insights` the same circuit-breaker the backend's own Gemini integration already had
+  (60s backoff on a rate-limit error, 24h on a billing/prepayment-exhausted one), plus persisting the
+  insights cache to `localStorage` so a page reload no longer forces a fresh call for unchanged data.
+  If the underlying cause turns out to be depleted prepayment credits rather than a recoverable rate
+  limit, that part still needs manual billing action at ai.studio — no code change can conjure quota
+  that isn't there — but the wasted-retry problem is fixed regardless.
 
 ## Further reading
 
