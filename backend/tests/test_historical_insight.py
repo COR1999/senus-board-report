@@ -2,11 +2,35 @@
 from datetime import datetime, timedelta
 
 import pytest
+from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.document import Document
 from app.models.financial_metrics import FinancialMetrics
 from app.models.historical_insight import HistoricalInsight
+
+
+@pytest.fixture(autouse=True)
+async def _cleanup_committed_rows(async_session: AsyncSession):
+    """
+    Unlike every other test file, these tests exercise a PUT endpoint that
+    calls `db.commit()` -- and conftest.py's `async_session` fixture only
+    `rollback()`s at teardown, which cannot undo an already-committed
+    change. Left alone, this test file's own `_add_metrics_row` fixtures
+    (added via `flush()`, never committed by the test itself) get
+    permanently committed as a side effect of hitting the PUT endpoint,
+    leaking real FinancialMetrics rows into every other test file that
+    runs afterward in the same session-scoped in-memory database (confirmed
+    directly: `test_revenue_trend.py`'s exact-count assertions broke when
+    run after this file, because unrelated leaked rows showed up in its own
+    `/metrics/dashboard/revenue-trend` results). Explicit teardown restores
+    isolation regardless of which endpoints under test happen to commit.
+    """
+    yield
+    await async_session.execute(delete(HistoricalInsight))
+    await async_session.execute(delete(FinancialMetrics))
+    await async_session.execute(delete(Document))
+    await async_session.commit()
 
 
 async def _add_metrics_row(
