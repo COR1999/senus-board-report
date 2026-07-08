@@ -217,3 +217,36 @@ export async function extractFromPDF(documentId: string): Promise<ExtractedPdfDa
     throw error
   }
 }
+
+export interface ExternalFiling {
+  attachment_id: string
+  file_name: string
+  file_size: number | null
+  published_date: string | null
+}
+
+/**
+ * Filings on Senus's own investor relations API not yet imported into this
+ * system (see the root README's "Investor relations API" section). Checked
+ * on page load / a manual "Check now" button, not polled in the background --
+ * fails silently to an empty list like the other GET helpers, since an
+ * unreachable IR API should just mean the banner doesn't show, not break the
+ * documents page.
+ */
+export async function getAvailableExternalFilings(): Promise<ExternalFiling[]> {
+  try {
+    return await apiFetch<ExternalFiling[]>('/api/documents/external/available')
+  } catch (error) {
+    console.warn('Failed to check investor relations API for new filings:', error)
+    return []
+  }
+}
+
+/**
+ * Downloads and ingests one filing from the investor relations API by its
+ * attachment_id -- the same extraction/report-generation pipeline as a
+ * manual upload. Throws on failure (same reasoning as uploadPDF/deleteDocument).
+ */
+export async function importExternalFiling(attachmentId: string): Promise<DocumentItem> {
+  return apiFetch<DocumentItem>(`/api/documents/external/${attachmentId}/import`, { method: 'POST' })
+}

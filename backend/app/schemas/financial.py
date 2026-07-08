@@ -122,3 +122,11 @@ class DocumentWithText(DocumentResponse):
     extracted_at: Optional[datetime] = None
     financial_metrics: Optional[FinancialMetricsResponse] = None
     report_id: Optional[int] = Field(None, description="Associated report ID if available")
+
+
+class ExternalFilingSummary(BaseModel):
+    """A filing on Senus's investor relations API not yet imported here."""
+    attachment_id: str
+    file_name: str
+    file_size: Optional[int] = None
+    published_date: Optional[str] = None

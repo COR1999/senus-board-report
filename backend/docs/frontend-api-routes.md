@@ -38,8 +38,14 @@ Set the frontend environment variable:
   - Lists documents.
 - GET /api/documents/{document_id}
   - Gets one document by ID.
+- GET /api/documents/{document_id}/file
+  - Downloads the original uploaded PDF (404 if not retained across a redeploy -- see "Known limitations" in the root README).
 - DELETE /api/documents/{document_id}
   - Deletes a document.
+- GET /api/documents/external/available
+  - Lists filings on Senus's investor relations API not yet imported here (see the root README's "Investor relations API" section).
+- POST /api/documents/external/{attachment_id}/import
+  - Downloads and ingests one filing from the investor relations API by its attachment_id.
 
 ## Example frontend usage
 

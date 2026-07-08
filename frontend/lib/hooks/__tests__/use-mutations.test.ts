@@ -1,7 +1,7 @@
 import { renderHook, waitFor, act } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import * as dataService from '@/lib/data-service'
-import { useUploadDocument, useDeleteDocument, useRegenerateReport } from '@/lib/hooks/use-mutations'
+import { useUploadDocument, useDeleteDocument, useRegenerateReport, useImportExternalFiling } from '@/lib/hooks/use-mutations'
 
 describe('useUploadDocument', () => {
   beforeEach(() => vi.restoreAllMocks())
@@ -48,6 +48,44 @@ describe('useDeleteDocument', () => {
     })
 
     expect(result.current.error).toBe('ANY_DELETE_FAILURE')
+    expect(onSuccess).not.toHaveBeenCalled()
+  })
+})
+
+describe('useImportExternalFiling', () => {
+  beforeEach(() => vi.restoreAllMocks())
+
+  it('calls onSuccess and clears importingId/error on a successful import', async () => {
+    vi.spyOn(dataService, 'importExternalFiling').mockResolvedValue({
+      id: 2,
+      filename: 'Senus PLC Information Document.pdf',
+      file_size: 1_056_649,
+      status: 'completed',
+      created_at: '2026-07-08T00:00:00Z',
+    })
+    const onSuccess = vi.fn()
+    const { result } = renderHook(() => useImportExternalFiling(onSuccess))
+
+    act(() => {
+      result.current.importFiling('info-doc-id')
+    })
+    expect(result.current.importingId).toBe('info-doc-id')
+
+    await waitFor(() => expect(result.current.importingId).toBeNull())
+    expect(onSuccess).toHaveBeenCalled()
+    expect(result.current.error).toBeNull()
+  })
+
+  it('surfaces a failed import as a user-facing error instead of throwing', async () => {
+    vi.spyOn(dataService, 'importExternalFiling').mockRejectedValue(new Error('ANY_IMPORT_FAILURE'))
+    const onSuccess = vi.fn()
+    const { result } = renderHook(() => useImportExternalFiling(onSuccess))
+
+    await act(async () => {
+      await result.current.importFiling('info-doc-id')
+    })
+
+    expect(result.current.error).toBe('ANY_IMPORT_FAILURE')
     expect(onSuccess).not.toHaveBeenCalled()
   })
 })

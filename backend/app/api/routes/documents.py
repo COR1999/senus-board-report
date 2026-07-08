@@ -21,9 +21,15 @@ from app.core.database import get_db
 from app.models.document import Document
 from app.models.report import Report
 from app.models.financial_metrics import FinancialMetrics
-from app.schemas.financial import DocumentResponse, DocumentWithText, FinancialMetricsResponse
+from app.schemas.financial import (
+    DocumentResponse,
+    DocumentWithText,
+    ExternalFilingSummary,
+    FinancialMetricsResponse,
+)
 from app.services.pdf_service import PDFExtractionService
-from app.services.report_service import ReportService  
+from app.services.report_service import ReportService
+from app.services import investor_relations_client
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +84,93 @@ def build_document_response(
     )
 
 
+async def _ingest_document(
+    content: bytes,
+    filename: str,
+    db: AsyncSession,
+    external_attachment_id: Optional[str] = None,
+) -> DocumentWithText:
+    """
+    Shared by `upload_document` (manual upload) and `import_external_filing`
+    (Senus investor-relations API import) -- everything from "we have valid
+    PDF bytes and a filename" through extraction, dedup, report generation,
+    and response building lives in exactly one place, so the two entry
+    points can't drift out of sync.
+    """
+    if not content:
+        raise HTTPException(status_code=400, detail="File is empty")
+    if len(content) > MAX_UPLOAD_SIZE_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File exceeds the {MAX_UPLOAD_SIZE_BYTES // (1024 * 1024)}MB upload limit",
+        )
+
+    # Exact-duplicate detection: hash the raw bytes (not the filename --
+    # a renamed copy of the same PDF should still match, and two
+    # different PDFs that happen to share a filename shouldn't).
+    content_hash = hashlib.sha256(content).hexdigest()
+    existing = await db.execute(
+        select(Document).where(Document.content_hash == content_hash)
+    )
+    duplicate = existing.scalars().first()
+    if duplicate:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"This exact file was already uploaded as document "
+                f"#{duplicate.id} on {duplicate.created_at:%Y-%m-%d}."
+            ),
+        )
+
+    file_path, extracted_text = pdf_service.extract_text_from_upload(content, filename)
+
+    document = Document(
+        filename=filename,
+        file_path=file_path,
+        file_size=len(content),
+        content_hash=content_hash,
+        external_attachment_id=external_attachment_id,
+        extracted_text=extracted_text,
+        status="completed",
+        created_at=datetime.utcnow(),
+        extracted_at=datetime.utcnow(),
+    )
+
+    db.add(document)
+    try:
+        await db.flush()
+    except IntegrityError:
+        # Race: two imports/uploads of the same file (or the same IR
+        # attachment_id) committed between the pre-check above and this
+        # flush. The unique constraints are the real guarantee; the
+        # pre-check is just the common-case fast path with a clearer
+        # error message.
+        await db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="This exact file was already uploaded (uploaded concurrently).",
+        )
+
+    report = None
+
+    try:
+        service = ReportService(db)
+        report = await service.generate_report(document.id)
+    except Exception as e:
+        logger.warning(f"Report generation failed: {e}")
+
+    await db.commit()
+
+    metrics_result = await db.execute(
+        select(FinancialMetrics)
+        .where(FinancialMetrics.document_id == document.id)
+        .order_by(FinancialMetrics.extracted_at.desc())
+    )
+    metrics = metrics_result.scalars().first()
+
+    return build_document_response(document, report, metrics)
+
+
 # ============================================================
 # Upload
 # ============================================================
@@ -93,78 +186,7 @@ async def upload_document(
             raise HTTPException(status_code=400, detail="Only PDF files are supported")
 
         content = await file.read()
-        if not content:
-            raise HTTPException(status_code=400, detail="File is empty")
-        if len(content) > MAX_UPLOAD_SIZE_BYTES:
-            raise HTTPException(
-                status_code=413,
-                detail=f"File exceeds the {MAX_UPLOAD_SIZE_BYTES // (1024 * 1024)}MB upload limit",
-            )
-
-        # Exact-duplicate detection: hash the raw bytes (not the filename --
-        # a renamed copy of the same PDF should still match, and two
-        # different PDFs that happen to share a filename shouldn't).
-        content_hash = hashlib.sha256(content).hexdigest()
-        existing = await db.execute(
-            select(Document).where(Document.content_hash == content_hash)
-        )
-        duplicate = existing.scalars().first()
-        if duplicate:
-            raise HTTPException(
-                status_code=409,
-                detail=(
-                    f"This exact file was already uploaded as document "
-                    f"#{duplicate.id} on {duplicate.created_at:%Y-%m-%d}."
-                ),
-            )
-
-        file_path, extracted_text = pdf_service.extract_text_from_upload(
-            content, file.filename
-        )
-
-        document = Document(
-            filename=file.filename,
-            file_path=file_path,
-            file_size=len(content),
-            content_hash=content_hash,
-            extracted_text=extracted_text,
-            status="completed",
-            created_at=datetime.utcnow(),
-            extracted_at=datetime.utcnow(),
-        )
-
-        db.add(document)
-        try:
-            await db.flush()
-        except IntegrityError:
-            # Race: two uploads of the same file committed between the
-            # pre-check above and this flush. The unique constraint on
-            # content_hash is the real guarantee; the pre-check is just the
-            # common-case fast path with a clearer error message.
-            await db.rollback()
-            raise HTTPException(
-                status_code=409,
-                detail="This exact file was already uploaded (uploaded concurrently).",
-            )
-
-        report = None
-
-        try:
-            service = ReportService(db)
-            report = await service.generate_report(document.id)
-        except Exception as e:
-            logger.warning(f"Report generation failed: {e}")
-
-        await db.commit()
-
-        metrics_result = await db.execute(
-            select(FinancialMetrics)
-            .where(FinancialMetrics.document_id == document.id)
-            .order_by(FinancialMetrics.extracted_at.desc())
-        )
-        metrics = metrics_result.scalars().first()
-
-        return build_document_response(document, report, metrics)
+        return await _ingest_document(content, file.filename, db)
 
     except HTTPException:
         raise
@@ -172,6 +194,66 @@ async def upload_document(
         await db.rollback()
         logger.error(f"Upload failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Upload failed")
+
+
+# ============================================================
+# Investor relations API sync
+# ============================================================
+
+@router.get("/external/available", response_model=List[ExternalFilingSummary])
+async def list_available_external_filings(db: AsyncSession = Depends(get_db)):
+    """
+    Filings on Senus's investor relations API not yet in this system.
+    Read-only -- doesn't download or ingest anything, just compares
+    metadata so the frontend can show an "import?" prompt.
+    """
+    try:
+        filings = await investor_relations_client.list_available_filings()
+    except Exception as e:
+        logger.error(f"Failed to reach investor relations API: {e}", exc_info=True)
+        raise HTTPException(status_code=502, detail="Could not reach the investor relations API")
+
+    existing = await db.execute(select(Document.external_attachment_id, Document.filename))
+    known_attachment_ids = set()
+    known_filenames = set()
+    for attachment_id, filename in existing.all():
+        if attachment_id:
+            known_attachment_ids.add(attachment_id)
+        known_filenames.add(filename)
+
+    # Filtered by both attachment_id AND filename -- the real API has
+    # already shown one edge case where the exact same filing (the
+    # half-year results, manually uploaded here, so its
+    # external_attachment_id is NULL) appears under two different
+    # attachment_ids across different category listings. An
+    # attachment_id-only check would wrongly flag it as "new" every time.
+    return [
+        ExternalFilingSummary(**f)
+        for f in filings
+        if f["attachment_id"] not in known_attachment_ids and f["file_name"] not in known_filenames
+    ]
+
+
+@router.post("/external/{attachment_id}/import", response_model=DocumentWithText)
+async def import_external_filing(attachment_id: str, db: AsyncSession = Depends(get_db)):
+    try:
+        filing = await investor_relations_client.find_filing(attachment_id)
+        if filing is None:
+            raise HTTPException(status_code=404, detail="Filing not found on the investor relations API")
+
+        content = await investor_relations_client.download_filing(attachment_id)
+        filename = filing["file_name"]
+        if not filename.lower().endswith(".pdf"):
+            filename = f"{filename}.pdf"
+
+        return await _ingest_document(content, filename, db, external_attachment_id=attachment_id)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"External filing import failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Import failed")
 
 
 # ============================================================

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { uploadPDF, deleteDocument, regenerateReport } from '@/lib/data-service'
+import { uploadPDF, deleteDocument, regenerateReport, importExternalFiling } from '@/lib/data-service'
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'Something went wrong'
@@ -52,6 +52,26 @@ export function useDeleteDocument(onSuccess?: () => void) {
   }
 
   return { remove, deletingId, error }
+}
+
+export function useImportExternalFiling(onSuccess?: () => void) {
+  const [importingId, setImportingId] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const importFiling = async (attachmentId: string) => {
+    setImportingId(attachmentId)
+    setError(null)
+    try {
+      await importExternalFiling(attachmentId)
+      onSuccess?.()
+    } catch (err) {
+      setError(errorMessage(err))
+    } finally {
+      setImportingId(null)
+    }
+  }
+
+  return { importFiling, importingId, error }
 }
 
 export function useRegenerateReport(onSuccess?: () => void) {

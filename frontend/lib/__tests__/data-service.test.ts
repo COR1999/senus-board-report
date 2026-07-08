@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { uploadPDF } from '@/lib/data-service'
+import { uploadPDF, getAvailableExternalFilings } from '@/lib/data-service'
 
 function mockFetchOnce(response: { ok: boolean; statusText: string; json: () => Promise<unknown> }) {
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response))
@@ -46,5 +46,17 @@ describe('uploadPDF', () => {
     await expect(uploadPDF(new File(['x'], 'a.pdf'))).rejects.toThrow(
       'Failed to upload PDF: Bad Gateway'
     )
+  })
+})
+
+describe('getAvailableExternalFilings', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('resolves to an empty list instead of throwing when the IR API is unreachable', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network down')))
+
+    await expect(getAvailableExternalFilings()).resolves.toEqual([])
   })
 })
