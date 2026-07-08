@@ -86,6 +86,7 @@ def score_extraction(
     merged_metrics: Dict[str, Any],
     pnl_reconciles: Optional[bool] = None,
     cashflow_reconciles: Optional[bool] = None,
+    vision_extracted: bool = False,
 ) -> ExtractionConfidence:
     """
     Scores one document's extraction result. `baseline_metrics` is the
@@ -97,6 +98,18 @@ def score_extraction(
     `FinancialMetricsExtractor.check_reconciliation()` -- `None` when the
     document doesn't disclose enough to check (not a failure), `False`
     only on a genuine, confirmed arithmetic mismatch.
+
+    `vision_extracted=True` for a scanned document with no text layer at
+    all (see report_service.py's use of
+    GeminiAnalysisService.generate_report_from_images) -- `baseline_metrics`
+    is always empty in that case (there's no text to run the deterministic
+    extractor against), so the usual baseline-vs-Gemini-narrative point
+    split doesn't apply. Scored on its own full-weight scale below, but the
+    resulting *tier* is unconditionally capped at `needs_review`: unlike a
+    text document, there's no independent deterministic cross-check
+    possible for a scanned one, so a human must confirm it before it can
+    ever drive the executive dashboard, regardless of how complete the
+    vision extraction looks.
     """
     if not format_recognized:
         return ExtractionConfidence(
@@ -106,47 +119,77 @@ def score_extraction(
                 "No recognized financial-statement section was found in this document "
                 "(not the half-year filing's statement layout, nor the Information "
                 "Document's summary table) -- likely not a financial statement at all."
+            ] if not vision_extracted else [
+                "Gemini vision extraction found nothing resembling a financial statement "
+                "in this document's page images."
             ],
         )
 
     score = 40.0
     reasons: List[str] = ["Recognized financial-statement section (40/40)."]
 
-    if baseline_metrics.get("revenue") is not None:
-        score += 30.0
-        reasons.append("Revenue found via a deterministic table match (30/30).")
-    elif merged_metrics.get("revenue") is not None:
-        score += 15.0
-        reasons.append("Revenue found only via AI narrative extraction, not a structured table match (15/30).")
-    else:
-        reasons.append("Revenue not found (0/30).")
+    if vision_extracted:
+        if merged_metrics.get("revenue") is not None:
+            score += 30.0
+            reasons.append("Revenue found via Gemini vision extraction (30/30).")
+        else:
+            reasons.append("Revenue not found (0/30).")
 
-    secondary_baseline = any(baseline_metrics.get(field) is not None for field in _SECONDARY_FIELDS)
-    secondary_merged = any(merged_metrics.get(field) is not None for field in _SECONDARY_FIELDS)
-    if secondary_baseline:
-        score += 15.0
-        reasons.append("At least one of cash/EBITDA/customers found via a deterministic table match (15/15).")
-    elif secondary_merged:
-        score += 8.0
-        reasons.append("At least one of cash/EBITDA/customers found only via AI narrative extraction (8/15).")
-    else:
-        reasons.append("None of cash/EBITDA/customers found (0/15).")
+        if any(merged_metrics.get(field) is not None for field in _SECONDARY_FIELDS):
+            score += 15.0
+            reasons.append("At least one of cash/EBITDA/customers found via Gemini vision extraction (15/15).")
+        else:
+            reasons.append("None of cash/EBITDA/customers found (0/15).")
 
-    period_baseline = baseline_metrics.get("reporting_period") is not None or (
-        baseline_metrics.get("reporting_period_start") is not None
-        and baseline_metrics.get("reporting_period_end") is not None
-    )
-    period_merged = merged_metrics.get("reporting_period") is not None
-    if period_baseline:
-        score += 15.0
-        reasons.append("Reporting period determined deterministically (15/15).")
-    elif period_merged:
-        score += 8.0
-        reasons.append("Reporting period found only via AI narrative extraction (8/15).")
+        if merged_metrics.get("reporting_period") is not None:
+            score += 15.0
+            reasons.append("Reporting period found via Gemini vision extraction (15/15).")
+        else:
+            reasons.append("Reporting period not determined (0/15).")
     else:
-        reasons.append("Reporting period not determined (0/15).")
+        if baseline_metrics.get("revenue") is not None:
+            score += 30.0
+            reasons.append("Revenue found via a deterministic table match (30/30).")
+        elif merged_metrics.get("revenue") is not None:
+            score += 15.0
+            reasons.append("Revenue found only via AI narrative extraction, not a structured table match (15/30).")
+        else:
+            reasons.append("Revenue not found (0/30).")
+
+        secondary_baseline = any(baseline_metrics.get(field) is not None for field in _SECONDARY_FIELDS)
+        secondary_merged = any(merged_metrics.get(field) is not None for field in _SECONDARY_FIELDS)
+        if secondary_baseline:
+            score += 15.0
+            reasons.append("At least one of cash/EBITDA/customers found via a deterministic table match (15/15).")
+        elif secondary_merged:
+            score += 8.0
+            reasons.append("At least one of cash/EBITDA/customers found only via AI narrative extraction (8/15).")
+        else:
+            reasons.append("None of cash/EBITDA/customers found (0/15).")
+
+        period_baseline = baseline_metrics.get("reporting_period") is not None or (
+            baseline_metrics.get("reporting_period_start") is not None
+            and baseline_metrics.get("reporting_period_end") is not None
+        )
+        period_merged = merged_metrics.get("reporting_period") is not None
+        if period_baseline:
+            score += 15.0
+            reasons.append("Reporting period determined deterministically (15/15).")
+        elif period_merged:
+            score += 8.0
+            reasons.append("Reporting period found only via AI narrative extraction (8/15).")
+        else:
+            reasons.append("Reporting period not determined (0/15).")
 
     tier = _tier_for(score)
+
+    if vision_extracted and tier == "auto_accept":
+        tier = "needs_review"
+        reasons.append(
+            "Capped at 'needs_review' -- extracted from a scanned document via Gemini vision, "
+            "with no independent deterministic cross-check possible. Always requires human "
+            "confirmation before reaching the executive dashboard, regardless of score."
+        )
 
     # A failed reconciliation caps the *tier*, not the score itself -- the
     # score stays an honest reflection of the point system above (useful as

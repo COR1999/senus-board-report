@@ -50,6 +50,28 @@ def _service_with_client_raising(error: Exception) -> GeminiAnalysisService:
     return svc
 
 
+class _FakeResponse:
+    def __init__(self, text: str):
+        self.text = text
+
+
+class _FakeModelsReturning:
+    def __init__(self, text: str):
+        self.calls = []
+        self._text = text
+
+    def generate_content(self, **kwargs):
+        self.calls.append(kwargs)
+        return _FakeResponse(self._text)
+
+
+def _service_with_client_returning(text: str) -> tuple[GeminiAnalysisService, _FakeModelsReturning]:
+    svc = GeminiAnalysisService(api_key="fake-key-for-test")
+    fake_models = _FakeModelsReturning(text)
+    svc.client = type("FakeClient", (), {"models": fake_models})()
+    return svc, fake_models
+
+
 class TestBillingExhaustedBackoff:
     def test_billing_exhausted_error_backs_off_much_longer_than_rate_limit(self):
         error = Exception(
@@ -100,3 +122,69 @@ class TestBillingExhaustedBackoff:
         assert result["financial_metrics"]["revenue"] is None
         assert result["financial_metrics"]["ebitda"] is None
         assert result["financial_metrics"]["customers"] is None
+
+
+class TestGenerateReportFromImages:
+    """
+    generate_report_from_images is the backup path for a scanned document
+    with no text layer at all (see report_service._generate) -- must go
+    through the exact same rate-limit/backoff/cache machinery as the text
+    path (_call_gemini, shared by both), not a separate, unguarded call.
+    """
+
+    def test_sends_the_prompt_and_every_image_as_multimodal_parts(self):
+        svc, fake_models = _service_with_client_returning(
+            '{"financial_metrics": {"revenue": {"value": 100}}}'
+        )
+
+        svc.generate_report_from_images([b"page-1-bytes", b"page-2-bytes"], "adf.pdf")
+
+        assert len(fake_models.calls) == 1
+        contents = fake_models.calls[0]["contents"]
+        # First element is the text prompt, followed by one Part per image.
+        assert isinstance(contents[0], str)
+        assert len(contents) == 3
+
+    def test_result_is_cached_by_image_bytes_and_context_together(self):
+        svc, fake_models = _service_with_client_returning(
+            '{"financial_metrics": {"revenue": {"value": 100}}}'
+        )
+
+        svc.generate_report_from_images([b"page-1-bytes"], "adf.pdf")
+        svc.generate_report_from_images([b"page-1-bytes"], "adf.pdf")
+
+        assert len(fake_models.calls) == 1
+
+    def test_different_images_are_not_cache_collisions(self):
+        svc, fake_models = _service_with_client_returning(
+            '{"financial_metrics": {"revenue": {"value": 100}}}'
+        )
+
+        svc.generate_report_from_images([b"page-1-bytes"], "adf.pdf")
+        svc.generate_report_from_images([b"a-completely-different-page"], "adf.pdf")
+
+        assert len(fake_models.calls) == 2
+
+    def test_billing_exhausted_error_disables_the_vision_path_too(self):
+        # Same shared _call_gemini machinery as the text path -- a billing
+        # error hit via generate_report_from_images must back off exactly
+        # like one hit via generate_report (they share one circuit breaker,
+        # not two independent ones that could each keep retrying).
+        error = Exception(
+            "429 RESOURCE_EXHAUSTED. Your prepayment credits are depleted. Please go to AI Studio..."
+        )
+        svc = _service_with_client_raising(error)
+
+        result = svc.generate_report_from_images([b"page-1-bytes"], "adf.pdf")
+
+        assert result["model_version"] == "gemini-unavailable"
+        assert not svc.is_available()
+
+    def test_returns_empty_response_when_gemini_is_already_disabled(self):
+        svc, fake_models = _service_with_client_returning("{}")
+        GeminiAnalysisService._ai_disabled_until = time.time() + 1000
+
+        result = svc.generate_report_from_images([b"page-1-bytes"], "adf.pdf")
+
+        assert result["model_version"] == "gemini-unavailable"
+        assert fake_models.calls == []

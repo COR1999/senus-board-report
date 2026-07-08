@@ -32,8 +32,8 @@ report → render it on a dashboard. **46 commits**, 2 July – 6 July 2026.
 
 From this point on, development was streamlined using **Claude Code (Sonnet 5)**, working one
 feature/fix branch at a time with an explicit plan-then-implement-then-verify discipline (see the
-root `README.md`'s "AI-assisted workflow" section for the working pattern itself). **41 branches**,
-PRs #3–#46.
+root `README.md`'s "AI-assisted workflow" section for the working pattern itself). **42 branches**,
+PRs #3–#48.
 
 ### KPI system & financial metrics (PRs #3–#9, #13)
 
@@ -227,9 +227,43 @@ a small "hide" (eye-off) icon next to each available filing's Import button, and
 scope (N)" section below it listing anything hidden, each with a one-click "Restore" — reviewed and
 dismissed filings move out of the way without disappearing for good.
 
+### A Gemini vision backup for scanned documents (PR #48)
+
+Unlocks the third real Senus document: ADF Farm Solutions' audited Consolidated Financial Statements
+(30 June 2025), previously left deliberately out of scope as a scanned PDF with no text layer at all
+(confirmed via PyMuPDF: every page is a single embedded JPEG image, `get_text()` returns nothing on
+all 23 pages). Investigated free/local OCR first, per explicit direction to protect Gemini quota:
+PyMuPDF has a built-in OCR hook (`get_textpage_ocr`), but it requires a real Tesseract engine
+installed, and it isn't — confirmed directly (`RuntimeError: No tessdata specified and Tesseract is
+not installed`). Getting that working for real would mean a system-level install on both this dev
+machine and the Railway deployment (an apt/Nixpacks config change), a real infra lift for one
+document. Given the explicit "not OCR tooling" direction and no viable free alternative without that
+lift, the user chose a **gated, efficient Gemini vision path**: `GeminiAnalysisService.
+generate_report_from_images` sends every page image in a single request (not one call per page, so a
+23-page document still costs exactly one call), reusing the exact same rate-limit/backoff/cache
+machinery as the text extraction path (refactored both onto one shared `_call_gemini` helper) rather
+than a second, unguarded call site. Triggered only from inside the existing Import/Upload action for
+a document with no text layer at all — never a background scan, and never for a document the text
+pipeline could already read.
+
+A real architectural problem surfaced while wiring this in: the existing confidence formula weights
+a deterministic table match above a Gemini-narrative guess, but a scanned document has **no baseline
+at all** by definition — applying the formula unchanged capped every vision extraction at 71 points
+(`15+8+8` Gemini-only weights plus the 40-point format bonus), permanently below the 85% floor
+regardless of accuracy. Fixed by giving vision extraction its own full-weight scoring path (there's
+only one possible source, so no baseline-vs-narrative split makes sense) — but the resulting *tier*
+is unconditionally capped at `needs_review`, never `auto_accept`, since there's no independent
+deterministic cross-check possible for a scanned document the way there is for a text one. This
+reuses the exact same "Pending Review" UI already built for the confidence gate (PR #42) — no new
+frontend work needed at all. Verified via a thorough mocked test suite exercising the real 23-page
+fixture end-to-end (routing, image count, confidence capping, persistence); not verified against the
+live Gemini API, since this same session's earlier testing had already exhausted the account's real
+quota (a billing/prepayment issue, confirmed via the actual API error), so a live attempt would just
+hit the same known error rather than prove anything new.
+
 ## Working discipline throughout Phase 2
 
-A few rules were established early and enforced consistently across all 41 branches:
+A few rules were established early and enforced consistently across all 42 branches:
 
 - **Never fabricate missing data.** A missing value is `null`/`None`, never a guessed `0` — this
   came up repeatedly (KPI sparkline history, reporting-period extraction, bookings figures, cadence
@@ -282,20 +316,10 @@ discovery) — inventing plausible-sounding "sector average" numbers to make an 
 authoritative would be exactly the kind of fabrication this project has actively avoided at every
 other turn. Scoped here as a real idea worth pursuing once a real data source exists, not as
 something to fake in the meantime.
-share the existing `getAiInsights`/`insights-cache.ts` machinery or need their own cache key per
-category) — a real next feature, not started.
 
-**Extract the ADF Farm Solutions statements — genuinely blocked, not just unscoped.** The Senus PLC
-Information Document (the Euronext listing prospectus, FY2024/FY2025 annual figures) was extracted
-in PR #42 — see the section above. Its sibling, **ADF Farm Solutions Consolidated Financial
-Statements (30 June 2025)** (Senus's predecessor entity's full audited annual statutory accounts,
-pre-re-registration as a PLC), turned out to be a **scanned PDF with no text layer at all** when
-actually inspected (confirmed via PyMuPDF: `get_text()` returns nothing, every page is a single
-embedded JPEG image) — the Information Document's own "SECTION 3: FINANCIAL INFORMATION" says as
-much, describing it as an appended filing rather than text within the prospectus itself. This isn't
-extractable by this project's text-based pipeline at all; it would need OCR or a vision-capable
-model call, a genuinely separate capability from anything built so far. Deliberately left unscoped
-rather than rushed.
+**~~Extract the ADF Farm Solutions statements~~ — done, PR #48.** See the section above: a gated
+Gemini vision backup, used only when the deterministic text pipeline finds no text layer at all,
+always capped at the `needs_review` confidence tier.
 
 **Hover-to-source with bounding-box highlighting.** A natural extension of the extraction confidence
 work (PR #42) — clicking a KPI or flagged figure would show exactly where on the source PDF page it
@@ -320,7 +344,8 @@ doesn't exist would mean fabricating it, which this project has avoided everywhe
 section): PDF-download storage durability (no persistent/object storage yet), a few remaining
 Documents/Reports-area gaps (bulk actions, document preview, the separate AI-generated-report PDF
 export, a "Pending Review" confidence tag on the Reports table to match the one already on
-Documents — same batched-query pattern, just not done in PR #42 given time), fixing the frontend's
-separate AI Board Insights Gemini integration (currently silently falling back to static placeholder
-content in production -- needs someone with Vercel/Google AI Studio access to check
-`GEMINI_INSIGHTS_API_KEY`/quota, not a code fix), and a demo video recording.
+Documents — same batched-query pattern, just not done in PR #42 given time), and a demo video
+recording. The frontend's separate AI Board Insights Gemini integration's wasted-retry problem was
+fixed in PR #45 (a real circuit breaker, same design as the backend's own); if it's still returning
+fallback content after that, the remaining cause is a genuine billing/quota issue needing someone
+with Vercel/Google AI Studio access to check `GEMINI_INSIGHTS_API_KEY` directly — not a code fix.

@@ -181,3 +181,72 @@ def test_no_fields_found_at_all_still_scores_format_recognition_only():
     result = score_extraction(format_recognized=True, baseline_metrics={}, merged_metrics={})
     assert result.score == 40.0
     assert result.tier == "rejected"
+
+
+class TestVisionExtraction:
+    """
+    A scanned document with no text layer at all (e.g. ADF Farm Solutions'
+    statements) has zero possible baseline -- every field comes from a
+    single Gemini vision read of the page images, not a baseline-vs-Gemini-
+    narrative split. Scored on its own full-weight scale, but the tier is
+    unconditionally capped at needs_review: there's no independent
+    deterministic cross-check possible for a scanned document.
+    """
+
+    def test_unrecognized_format_still_caps_at_zero(self):
+        result = score_extraction(
+            format_recognized=False,
+            baseline_metrics={},
+            merged_metrics={"revenue": 100.0},
+            vision_extracted=True,
+        )
+        assert result.score == 0.0
+        assert result.tier == "rejected"
+
+    def test_a_full_vision_extraction_scores_100_but_is_capped_at_needs_review(self):
+        merged = {"revenue": 100.0, "cash": 50.0, "reporting_period": "FY2025"}
+        result = score_extraction(
+            format_recognized=True,
+            baseline_metrics={},
+            merged_metrics=merged,
+            vision_extracted=True,
+        )
+        # Unlike a text document, vision extraction is never "baseline vs
+        # Gemini-narrative" -- full point weights apply directly since
+        # there's only one possible source.
+        assert result.score == 100.0
+        # But never auto_accept -- no independent cross-check exists for a
+        # scanned document, so a human must always confirm it first.
+        assert result.tier == "needs_review"
+        assert any("capped" in reason.lower() for reason in result.reasons)
+
+    def test_a_partial_vision_extraction_can_still_land_in_needs_review(self):
+        result = score_extraction(
+            format_recognized=True,
+            baseline_metrics={},
+            merged_metrics={"revenue": 100.0, "cash": 50.0},
+            vision_extracted=True,
+        )
+        # 40 (format) + 30 (revenue) + 15 (secondary) + 0 (no period) = 85
+        assert result.score == 85.0
+        assert result.tier == "needs_review"
+
+    def test_a_weak_vision_extraction_is_rejected(self):
+        result = score_extraction(
+            format_recognized=True,
+            baseline_metrics={},
+            merged_metrics={},
+            vision_extracted=True,
+        )
+        assert result.score == 40.0
+        assert result.tier == "rejected"
+
+    def test_vision_extraction_never_reaches_auto_accept_even_with_a_perfect_score(self):
+        merged = {"revenue": 1.0, "cash": 1.0, "ebitda": 1.0, "customers": 1, "reporting_period": "FY2025"}
+        result = score_extraction(
+            format_recognized=True,
+            baseline_metrics={},
+            merged_metrics=merged,
+            vision_extracted=True,
+        )
+        assert result.tier != "auto_accept"

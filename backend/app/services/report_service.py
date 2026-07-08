@@ -16,6 +16,7 @@ from app.models.financial_metrics import FinancialMetrics
 from app.models.balance_sheet_metrics import BalanceSheetMetrics
 from app.services.gemini_service import GeminiAnalysisService
 from app.services.extraction_confidence import score_extraction, LowConfidenceExtractionError
+from app.services.pdf_service import PDFExtractionService
 from sqlalchemy.orm import selectinload
 
 
@@ -219,32 +220,56 @@ class ReportService:
         try:
             from app.services.financial_metrics_extractor import FinancialMetricsExtractor
 
-            # =====================================================
-            # 1. BASELINE (DETERMINISTIC EXTRACTION - SOURCE OF TRUTH)
-            # =====================================================
-            baseline_metrics = FinancialMetricsExtractor.extract(
-                document.extracted_text or ""
-            )
+            extracted_text = document.extracted_text or ""
+            # A scanned PDF with no text layer at all (confirmed for e.g.
+            # ADF Farm Solutions' statements via PyMuPDF: every page is a
+            # single embedded image, get_text() returns nothing) -- the
+            # deterministic extractor has zero baseline to work with by
+            # definition, so Gemini vision is the *only* possible source
+            # here. Used strictly as a backup for a document the normal
+            # text pipeline structurally cannot handle at all, never for
+            # one a text-based extraction could already read (that always
+            # takes the branch below instead, at zero extra Gemini cost).
+            vision_extracted = not extracted_text.strip()
 
-            # =====================================================
-            # 2. AI LAYER (OPTIONAL ENRICHMENT)
-            # Only spend a Gemini call if baseline extraction didn't
-            # already get everything -- baseline wins the merge below
-            # regardless, so calling Gemini when baseline is already
-            # complete just burns quota for a result we'd throw away.
-            # =====================================================
-            if self._baseline_is_complete(baseline_metrics):
-                content: Dict[str, Any] = {
-                    "company_name": document.filename,
-                    "reporting_period": None,
-                    "financial_metrics": {},
-                    "key_findings": [],
-                    "ai_commentary": "",
-                    "model_version": "baseline-only",
-                }
+            if vision_extracted:
+                # =====================================================
+                # 1v. VISION BASELINE (ONLY POSSIBLE SOURCE FOR A SCAN)
+                # =====================================================
+                baseline_metrics: Dict[str, Any] = {}
+                images = (
+                    PDFExtractionService.render_page_images(document.file_path)
+                    if document.file_path else []
+                )
+                content: Dict[str, Any] = (
+                    self.gemini.generate_report_from_images(images, document.filename) or {}
+                    if images else {}
+                )
             else:
-                prompt = self._build_prompt(document)
-                content = self.gemini.generate_report(prompt) or {}
+                # =====================================================
+                # 1. BASELINE (DETERMINISTIC EXTRACTION - SOURCE OF TRUTH)
+                # =====================================================
+                baseline_metrics = FinancialMetricsExtractor.extract(extracted_text)
+
+                # =====================================================
+                # 2. AI LAYER (OPTIONAL ENRICHMENT)
+                # Only spend a Gemini call if baseline extraction didn't
+                # already get everything -- baseline wins the merge below
+                # regardless, so calling Gemini when baseline is already
+                # complete just burns quota for a result we'd throw away.
+                # =====================================================
+                if self._baseline_is_complete(baseline_metrics):
+                    content = {
+                        "company_name": document.filename,
+                        "reporting_period": None,
+                        "financial_metrics": {},
+                        "key_findings": [],
+                        "ai_commentary": "",
+                        "model_version": "baseline-only",
+                    }
+                else:
+                    prompt = self._build_prompt(document)
+                    content = self.gemini.generate_report(prompt) or {}
 
             ai_metrics = content.get("financial_metrics") or {}
 
@@ -271,14 +296,29 @@ class ReportService:
             # Computed before anything is persisted -- a rejected
             # extraction must not leave any trace in the database at all.
             # =====================================================
-            extracted_text = document.extracted_text or ""
-            reconciliation = FinancialMetricsExtractor.check_reconciliation(extracted_text)
+            if vision_extracted:
+                # No text at all to run is_format_recognized/
+                # check_reconciliation against -- "format recognized" here
+                # means Gemini vision actually returned a real result
+                # rather than the empty-response fallback (which fires
+                # when Gemini is unavailable/exhausted, or found nothing
+                # resembling a financial statement in the images).
+                format_recognized = content.get("model_version") != "gemini-unavailable"
+                pnl_reconciles = None
+                cashflow_reconciles = None
+            else:
+                reconciliation = FinancialMetricsExtractor.check_reconciliation(extracted_text)
+                format_recognized = FinancialMetricsExtractor.is_format_recognized(extracted_text)
+                pnl_reconciles = reconciliation["pnl_reconciles"]
+                cashflow_reconciles = reconciliation["cashflow_reconciles"]
+
             confidence = score_extraction(
-                format_recognized=FinancialMetricsExtractor.is_format_recognized(extracted_text),
+                format_recognized=format_recognized,
                 baseline_metrics=baseline_metrics,
                 merged_metrics=merged_metrics,
-                pnl_reconciles=reconciliation["pnl_reconciles"],
-                cashflow_reconciles=reconciliation["cashflow_reconciles"],
+                pnl_reconciles=pnl_reconciles,
+                cashflow_reconciles=cashflow_reconciles,
+                vision_extracted=vision_extracted,
             )
             if confidence.tier == "rejected":
                 # Raised ahead of the broad `except Exception` below (see
@@ -298,8 +338,13 @@ class ReportService:
             # =====================================================
             report.ai_commentary = content.get("ai_commentary", "")
             report.key_findings = content.get("key_findings") or []
-            report.model_version = content.get("model_version", "gemini-2.0-flash")
-            report.generation_source = "hybrid"
+            report.model_version = content.get(
+                "model_version", "gemini-vision" if vision_extracted else "gemini-2.0-flash"
+            )
+            # Distinct from "hybrid" (deterministic baseline + optional text
+            # Gemini enrichment) -- a scanned document has no baseline at
+            # all, so its provenance is worth recording separately.
+            report.generation_source = "vision" if vision_extracted else "hybrid"
 
             # Falls back to the document's filename when neither Gemini nor
             # the baseline produced a company name -- previously only the
