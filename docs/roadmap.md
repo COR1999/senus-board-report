@@ -96,9 +96,10 @@ A few rules were established early and enforced consistently across all 27 branc
 - **Never fabricate missing data.** A missing value is `null`/`None`, never a guessed `0` — this
   came up repeatedly (KPI sparkline history, reporting-period extraction, bookings figures, cadence
   detection) and was actively defended each time it resurfaced.
-- **No synthetic historical data.** Senus's one real filing is genuinely its first-ever public
-  results — there is nothing earlier to compare against, so every comparative on the dashboard comes
-  from that filing's own prior-period column, never a fabricated additional quarter.
+- **No synthetic historical data.** Only one filing (HY2026) has been ingested; every comparative on
+  the dashboard comes from that filing's own prior-period column, never a fabricated additional
+  quarter — even though, as noted below, more real historical documents do exist and simply haven't
+  been extracted yet.
 - **Verify against the real system, not just mocks.** Where practical, changes were checked against
   the actual deployed backend and production database, not just local test doubles.
 - **One branch, one concern, tested before merge.** Every branch shipped with its own tests, ran
@@ -107,3 +108,26 @@ A few rules were established early and enforced consistently across all 27 branc
 
 See `frontend/docs/ai-usage/` for the per-branch record of what was AI-generated vs. human-directed
 and how each branch was verified.
+
+## Next priorities (not yet started)
+
+**Extract additional real historical filings.** Only the HY2026 half-year results have been
+ingested so far. Senus's investor relations page (`app.assiduous.tech/investor-relations/senus`)
+also lists real financial documents that haven't been extracted yet:
+
+- **Senus PLC Information Document (December 2025)** — the Euronext listing prospectus, which
+  includes FY2024/FY2025 annual figures (P&L, balance sheet, cash flow, customer/KPI metrics).
+- **ADF Farm Solutions Consolidated Financial Statements (30 June 2025)** — Senus's predecessor
+  entity's full audited annual statutory accounts (pre-re-registration as a PLC), with richer
+  note-level detail than the Information Document.
+
+Extracting either would give genuine additional historical comparatives for Growth & Revenue YoY
+analysis, strengthening the assignment's own required metric category rather than relying on a
+single filing's internal comparison column. This was identified late (8 July 2026) via a comparison
+against other candidates' public repos for the same assessment — not investigated further this
+session, deliberately left as a flagged gap rather than rushed.
+
+**Other open items** (see the audit referenced in the README's "How outputs were validated"
+section): PDF-download storage durability (no persistent/object storage yet), a few remaining
+Documents/Reports-area gaps (bulk actions, document preview, the separate AI-generated-report PDF
+export), and a demo video recording — not yet done, unlike several other candidates' submissions.
