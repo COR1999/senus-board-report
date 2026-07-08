@@ -1,5 +1,14 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { uploadPDF, getAvailableExternalFilings, getMetrics, getChartData, getDashboardPeriods } from '@/lib/data-service'
+import {
+  uploadPDF,
+  getAvailableExternalFilings,
+  getMetrics,
+  getChartData,
+  getDashboardPeriods,
+  getHiddenExternalFilings,
+  hideExternalFiling,
+  unhideExternalFiling,
+} from '@/lib/data-service'
 
 function mockFetchOnce(response: { ok: boolean; statusText: string; json: () => Promise<unknown> }) {
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response))
@@ -106,5 +115,49 @@ describe('period selector fetchers', () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network down')))
 
     await expect(getDashboardPeriods()).resolves.toEqual([])
+  })
+})
+
+describe('hide/unhide external filings', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('getHiddenExternalFilings resolves to an empty list instead of throwing when the backend is unreachable', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network down')))
+
+    await expect(getHiddenExternalFilings()).resolves.toEqual([])
+  })
+
+  it('hideExternalFiling POSTs to the hide endpoint', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ attachment_id: 'agm-id', file_name: 'AGM notice', file_size: null, published_date: null }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await hideExternalFiling('agm-id')
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringMatching(/\/api\/documents\/external\/agm-id\/hide$/),
+      expect.objectContaining({ method: 'POST' })
+    )
+  })
+
+  it('unhideExternalFiling POSTs to the unhide endpoint and does not choke on an empty (204) body', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 204 })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(unhideExternalFiling('agm-id')).resolves.toBeUndefined()
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringMatching(/\/api\/documents\/external\/agm-id\/unhide$/),
+      expect.objectContaining({ method: 'POST' })
+    )
+  })
+
+  it('unhideExternalFiling throws with the status text on failure', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, statusText: 'Not Found' }))
+
+    await expect(unhideExternalFiling('unknown-id')).rejects.toThrow('Failed to unhide filing: Not Found')
   })
 })

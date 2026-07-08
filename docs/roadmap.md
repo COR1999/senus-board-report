@@ -32,7 +32,7 @@ report → render it on a dashboard. **46 commits**, 2 July – 6 July 2026.
 
 From this point on, development was streamlined using **Claude Code (Sonnet 5)**, working one
 feature/fix branch at a time with an explicit plan-then-implement-then-verify discipline (see the
-root `README.md`'s "AI-assisted workflow" section for the working pattern itself). **43 branches**,
+root `README.md`'s "AI-assisted workflow" section for the working pattern itself). **42 branches**,
 PRs #3–#48.
 
 ### KPI system & financial metrics (PRs #3–#9, #13)
@@ -211,6 +211,22 @@ turns out to be genuinely depleted prepayment credits rather than a recoverable 
 still needs manual billing action at ai.studio — this fix can't conjure quota that isn't there — but
 the wasted-retry problem, which is real and code-fixable, is now fixed regardless.
 
+### "Out of scope" filings, so a rejected import stops re-appearing forever (PR #46)
+
+A rejected external-filing import (the confidence gate scoring a governance document, e.g. an AGM
+notice or Memo & Articles, below the 85% reject threshold) creates no `Document` row at all, by
+design (see the extraction confidence service entry above). That meant there was previously no way
+to tell "not yet reviewed" apart from "reviewed and confirmed not a financial statement" — a
+non-financial filing kept re-appearing in the "new filings available" banner on every page load,
+forever, with no way to dismiss it. Added a new `HiddenExternalFiling` table (its metadata
+snapshotted at hide-time, not re-fetched from the IR API on every read, so a hidden entry stays
+displayable even if the IR API later changes or stops listing that filing) plus three routes: `GET
+/external/hidden`, `POST /external/{attachment_id}/hide`, `POST /external/{attachment_id}/unhide` —
+all idempotent. `GET /external/available` now also excludes anything hidden. The Documents page gets
+a small "hide" (eye-off) icon next to each available filing's Import button, and a muted "Out of
+scope (N)" section below it listing anything hidden, each with a one-click "Restore" — reviewed and
+dismissed filings move out of the way without disappearing for good.
+
 ### A Gemini vision backup for scanned documents (PR #48)
 
 Unlocks the third real Senus document: ADF Farm Solutions' audited Consolidated Financial Statements
@@ -247,7 +263,7 @@ hit the same known error rather than prove anything new.
 
 ## Working discipline throughout Phase 2
 
-A few rules were established early and enforced consistently across all 43 branches:
+A few rules were established early and enforced consistently across all 42 branches:
 
 - **Never fabricate missing data.** A missing value is `null`/`None`, never a guessed `0` — this
   came up repeatedly (KPI sparkline history, reporting-period extraction, bookings figures, cadence

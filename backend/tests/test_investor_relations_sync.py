@@ -269,3 +269,83 @@ async def _as_list(value):
 
 async def _as_value(value):
     return value
+
+
+# ==================== hide / unhide ====================
+
+@pytest.mark.anyio
+async def test_hide_excludes_the_filing_from_available(async_session, monkeypatch):
+    monkeypatch.setattr(investor_relations_client, "find_filing", lambda attachment_id: _as_value(_INFO_DOC))
+    monkeypatch.setattr(
+        investor_relations_client, "list_available_filings", lambda: _as_list([_INFO_DOC, _ADF_STATEMENTS])
+    )
+
+    await documents_routes.hide_external_filing("info-doc-id", async_session)
+    result = await documents_routes.list_available_external_filings(async_session)
+
+    assert [f.attachment_id for f in result] == ["adf-statements-id"]
+
+
+@pytest.mark.anyio
+async def test_hide_is_idempotent(async_session, monkeypatch):
+    monkeypatch.setattr(investor_relations_client, "find_filing", lambda attachment_id: _as_value(_INFO_DOC))
+
+    first = await documents_routes.hide_external_filing("info-doc-id", async_session)
+    second = await documents_routes.hide_external_filing("info-doc-id", async_session)
+
+    assert first.attachment_id == second.attachment_id == "info-doc-id"
+
+
+@pytest.mark.anyio
+async def test_hide_404s_on_an_unknown_attachment_id(async_session, monkeypatch):
+    monkeypatch.setattr(investor_relations_client, "find_filing", lambda attachment_id: _as_value(None))
+
+    with pytest.raises(HTTPException) as exc_info:
+        await documents_routes.hide_external_filing("unknown-id", async_session)
+
+    assert exc_info.value.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_hidden_list_shows_the_hidden_filing(async_session, monkeypatch):
+    monkeypatch.setattr(investor_relations_client, "find_filing", lambda attachment_id: _as_value(_INFO_DOC))
+
+    await documents_routes.hide_external_filing("info-doc-id", async_session)
+    result = await documents_routes.list_hidden_external_filings(async_session)
+
+    assert [f.attachment_id for f in result] == ["info-doc-id"]
+
+
+@pytest.mark.anyio
+async def test_hidden_list_stays_stable_even_if_the_ir_api_stops_listing_the_filing(async_session, monkeypatch):
+    # Metadata is snapshotted at hide-time, not re-fetched -- confirms the
+    # hidden entry is still shown even when list_available_filings() no
+    # longer returns it at all (the whole point of snapshotting).
+    monkeypatch.setattr(investor_relations_client, "find_filing", lambda attachment_id: _as_value(_INFO_DOC))
+    await documents_routes.hide_external_filing("info-doc-id", async_session)
+
+    monkeypatch.setattr(investor_relations_client, "list_available_filings", lambda: _as_list([]))
+    result = await documents_routes.list_hidden_external_filings(async_session)
+
+    assert [f.attachment_id for f in result] == ["info-doc-id"]
+
+
+@pytest.mark.anyio
+async def test_unhide_restores_the_filing_to_available(async_session, monkeypatch):
+    monkeypatch.setattr(investor_relations_client, "find_filing", lambda attachment_id: _as_value(_INFO_DOC))
+    monkeypatch.setattr(
+        investor_relations_client, "list_available_filings", lambda: _as_list([_INFO_DOC, _ADF_STATEMENTS])
+    )
+
+    await documents_routes.hide_external_filing("info-doc-id", async_session)
+    await documents_routes.unhide_external_filing("info-doc-id", async_session)
+    result = await documents_routes.list_available_external_filings(async_session)
+
+    assert {f.attachment_id for f in result} == {"info-doc-id", "adf-statements-id"}
+
+
+@pytest.mark.anyio
+async def test_unhide_is_idempotent_for_a_filing_that_was_never_hidden(async_session):
+    # Must not raise -- unhiding something that isn't hidden is a no-op,
+    # not an error (e.g. a double-click, or a stale UI state).
+    await documents_routes.unhide_external_filing("never-hidden-id", async_session)
