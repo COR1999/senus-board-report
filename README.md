@@ -249,7 +249,7 @@ large change. The working pattern, used consistently:
 
 ## How outputs were validated
 
-- **Automated tests**: 222 backend (pytest) + 186 frontend (Vitest) tests, run before every merge.
+- **Automated tests**: 228 backend (pytest) + 179 frontend (Vitest) tests, run before every merge.
 - **Type safety**: `tsc --noEmit` clean before every merge.
 - **Manual validation against the real filing**: extracted figures (revenue, EBITDA, cash,
   customers, bookings) were cross-checked by hand against the source PDF during
