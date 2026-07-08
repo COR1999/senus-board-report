@@ -28,6 +28,24 @@ Required metric categories: **Growth & Revenue** (YoY, MoM, Customers, Channels,
 capital), **Solvency & Leverage**, **Returns** (ROCE), plus AI-generated commentary. All five are
 implemented and visible on the dashboard (see `backend/docs/metrics-expansion-plan.md`).
 
+## Investor relations API
+
+Senus's investor relations page is a client-rendered SPA (`app.assiduous.tech/investor-relations/senus`)
+backed by a plain JSON REST API — undocumented, but discoverable by inspecting the page's network
+requests. Useful for anyone extending this project (see `docs/roadmap.md`'s "Next priorities"):
+
+| Endpoint | Returns |
+|---|---|
+| `GET https://api.app.assiduous.tech/v1/investor-relations/senus/documents/all-documents` | Information-Document-category filings (metadata: `attachmentId`, `fileName`, `fileSize`, `labels`, `publishedDate`) |
+| `GET https://api.app.assiduous.tech/v1/investor-relations/senus/reports/all-documents` | Results filings (the half-year results PDF this project already ingests) |
+| `GET https://api.app.assiduous.tech/v1/investor-relations/senus/corporate/all-documents` | Corporate presentations |
+| `GET https://api.app.assiduous.tech/v1/investor-relations/senus/regulatory/all-documents` | Regulatory news/press releases |
+| `GET https://api.app.assiduous.tech/v1/investor-relations/senus/documents/documents/{attachmentId}` | The actual PDF for a given `attachmentId` from any of the above lists |
+
+Every document currently in `backend/docs/source-documents/` was fetched via this last endpoint.
+This is the same API a future automated sync (poll for new `attachmentId`s, download and run them
+through the existing extraction pipeline) would use — not built yet, see `docs/roadmap.md`.
+
 ## Architecture
 
 ```
@@ -127,13 +145,15 @@ large change. The working pattern, used consistently:
 
 - **Only one real filing has been ingested so far — this is a known gap, not a data ceiling.**
   Every prior-period comparative currently on the dashboard comes from the HY2026 half-year filing's
-  own comparison column, not from separate historical documents. Senus's investor relations page
-  (`app.assiduous.tech/investor-relations/senus`) also lists an **Information Document (December
-  2025)** — the Euronext listing prospectus, which includes FY2024/FY2025 annual figures — and
-  **ADF Farm Solutions' audited Consolidated Financial Statements (30 June 2025)** (Senus's
-  predecessor entity, pre-re-registration), either of which would give genuine additional historical
-  comparatives for Growth & Revenue YoY analysis. Neither has been extracted for this submission —
-  see `docs/roadmap.md` for why this is flagged as the top follow-up priority rather than backfilled
+  own comparison column, not from separate historical documents. Initially believed that filing was
+  the only real financial document Senus had ever published — a more thorough look at the investor
+  relations page (`app.assiduous.tech/investor-relations/senus`), and finding the API it's built on
+  (see "Investor relations API" below), turned up two more real documents: an **Information
+  Document (December 2025)** — the Euronext listing prospectus, which includes FY2024/FY2025 annual
+  figures — and **ADF Farm Solutions' audited Consolidated Financial Statements (30 June 2025)**
+  (Senus's predecessor entity, pre-re-registration). Both are downloaded into
+  `backend/docs/source-documents/` but **not yet extracted into the pipeline** — see
+  `docs/roadmap.md` for why this is flagged as the top follow-up priority rather than backfilled
   under time pressure or, worse, fabricated. What *is* on the dashboard is never synthetic: no
   additional historical quarter has been invented to fill this gap.
 - **This is a single-user tool**, not a multi-tenant product. The dashboard assumes one fixed
