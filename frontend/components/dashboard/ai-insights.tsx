@@ -57,11 +57,15 @@ export function AiInsights({ metrics }: AiInsightsProps) {
     let cancelled = false
 
     setLoading(true)
-    getAiInsights(metrics).then((result) => {
+    getAiInsights(metrics).then(({ insights: result, isFallback }) => {
       if (!cancelled) {
         setInsights(result)
         setLoading(false)
-        setCachedInsights(metrics, result)
+        // Only a real generation counts as "up to date" -- caching fallback
+        // content here would permanently disable the manual refresh button
+        // for this data (see getAiInsights' own docstring for the real bug
+        // this was), even though nothing real was ever actually generated.
+        if (!isFallback) setCachedInsights(metrics, result)
       }
     })
 
@@ -76,10 +80,10 @@ export function AiInsights({ metrics }: AiInsightsProps) {
     if (loading || !hasNewData) return
 
     setLoading(true)
-    getAiInsights(metrics).then((result) => {
+    getAiInsights(metrics).then(({ insights: result, isFallback }) => {
       setInsights(result)
       setLoading(false)
-      setCachedInsights(metrics, result)
+      if (!isFallback) setCachedInsights(metrics, result)
     })
   }
 

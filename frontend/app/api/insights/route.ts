@@ -64,16 +64,24 @@ function backoffForError(error: unknown): void {
  * content rather than erroring) so the dashboard panel never breaks if
  * Gemini is unavailable, misconfigured, or returns something unparseable.
  *
+ * `isFallback` distinguishes a real generation from the static placeholder
+ * content -- a real, live-confirmed gap this used not to signal at all: the
+ * caller (see insights-cache.ts) previously cached and gated the manual
+ * refresh button on FALLBACK_INSIGHTS exactly the same way as real content,
+ * so once a quota-exhausted call returned fallback text, refresh stayed
+ * disabled ("already up to date") even though nothing real had ever been
+ * generated for that data.
+ *
  * Deliberately a *separate* API key/project from the backend's own Gemini
  * integration (financial document extraction --
  * backend/app/services/gemini_service.py). Sharing a key would put this
  * route's calls in the same quota pool the backend's own rate limiter
  * tracks for itself, silently defeating that tracking.
  */
-export async function POST(request: Request): Promise<NextResponse<{ insights: Insight[] }>> {
+export async function POST(request: Request): Promise<NextResponse<{ insights: Insight[]; isFallback: boolean }>> {
   const apiKey = process.env.GEMINI_INSIGHTS_API_KEY
   if (!apiKey || !isGeminiAvailable()) {
-    return NextResponse.json({ insights: FALLBACK_INSIGHTS })
+    return NextResponse.json({ insights: FALLBACK_INSIGHTS, isFallback: true })
   }
 
   try {
@@ -93,11 +101,14 @@ export async function POST(request: Request): Promise<NextResponse<{ insights: I
 
     const insights = parseInsightsResponse(response.text ?? '')
 
-    return NextResponse.json({ insights: insights ?? FALLBACK_INSIGHTS })
+    if (insights === null) {
+      return NextResponse.json({ insights: FALLBACK_INSIGHTS, isFallback: true })
+    }
+    return NextResponse.json({ insights, isFallback: false })
   } catch (error) {
     console.error('AI insights generation failed, using fallback:', error)
     backoffForError(error)
-    return NextResponse.json({ insights: FALLBACK_INSIGHTS })
+    return NextResponse.json({ insights: FALLBACK_INSIGHTS, isFallback: true })
   }
 }
 

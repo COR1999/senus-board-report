@@ -185,19 +185,23 @@ async def test_dashboard_summary_skips_an_all_null_latest_row(async_client, asyn
 @pytest.mark.anyio
 async def test_dashboard_summary_all_null_rows_render_na_not_zero(async_client, async_session):
     # Confirms the *other* half of the fix: when there's genuinely nothing
-    # but empty rows (e.g. only non-financial documents imported so far),
-    # the KPI cards must show "N/A", not a fabricated "€0"/"0" that would
-    # misrepresent "not extracted" as a real zero-value filing.
+    # but empty rows (e.g. only non-financial documents imported so far), a
+    # row with every core field null is excluded by _HAS_CORE_METRICS
+    # entirely (never reaches build()'s per-field branch), so the whole
+    # dashboard falls back to the generic "No data yet" -- not a fabricated
+    # "€0"/"0" that would misrepresent "not extracted" as a real zero-value
+    # filing, and not the field-specific message either, since there's no
+    # eligible document at all to attribute a specific missing field to.
     await _add_metrics_row(async_session, revenue=None, customers=None, cash=None, ebitda=None)
 
     response = await async_client.get("/metrics/dashboard/summary")
 
     assert response.status_code == 200
     body = response.json()
-    assert body["revenue"]["value"] == "N/A"
-    assert body["customers"]["value"] == "N/A"
-    assert body["cash"]["value"] == "N/A"
-    assert body["ebitda"]["value"] == "N/A"
+    assert body["revenue"]["value"] == "No data yet"
+    assert body["customers"]["value"] == "No data yet"
+    assert body["cash"]["value"] == "No data yet"
+    assert body["ebitda"]["value"] == "No data yet"
 
 
 @pytest.mark.anyio
@@ -211,19 +215,44 @@ async def test_dashboard_summary_latest_row_with_partial_data_is_still_selected(
     assert response.status_code == 200
     body = response.json()
     assert body["cash"]["value"] == "€50K"
-    assert body["revenue"]["value"] == "N/A"
+    assert body["revenue"]["value"] == "Revenue not reported in this filing"
 
 
 @pytest.mark.anyio
 async def test_dashboard_summary_ratio_kpis_are_na_with_no_data(async_client, async_session):
+    # No document at all exists yet -- the early "no eligible rows"
+    # short-circuit applies uniformly (_EMPTY_RATIO), not the per-field
+    # missing-value messages (those only ever apply to a real, selected
+    # document that's missing one specific field -- see the sibling test
+    # below for that case).
     response = await async_client.get("/metrics/dashboard/summary")
 
     assert response.status_code == 200
     body = response.json()
     for key in ("ebitda_margin", "cash_runway", "interest_cover", "roce"):
-        assert body[key]["value"] == "N/A"
+        assert body[key]["value"] == "No data yet"
         assert body[key]["trend"] == "neutral"
         assert body[key]["history"] == []
+
+
+@pytest.mark.anyio
+async def test_dashboard_summary_ratio_kpis_show_field_specific_message_when_a_real_document_is_missing_them(
+    async_client, async_session,
+):
+    # Distinct from the "no data at all" case above -- a real, selected
+    # document that simply doesn't have enough underlying data to compute a
+    # given ratio (no BalanceSheetMetrics row here at all) gets the
+    # field-specific message from ratio_kpi(), not the generic "No data yet".
+    await _add_metrics_row(async_session, revenue=100_000.0)
+
+    response = await async_client.get("/metrics/dashboard/summary")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ebitda_margin"]["value"] == "EBITDA margin not available (EBITDA not reported)"
+    assert body["cash_runway"]["value"] == "Cash runway not available (insufficient data)"
+    assert body["interest_cover"]["value"] == "Interest cover not available (no interest expense reported)"
+    assert body["roce"]["value"] == "ROCE not available (insufficient balance sheet data)"
 
 
 @pytest.mark.anyio
@@ -325,7 +354,7 @@ async def test_dashboard_summary_bookings_is_na_when_not_extracted(async_client,
 
     assert response.status_code == 200
     body = response.json()["bookings"]
-    assert body["value"] == "N/A"
+    assert body["value"] == "No bookings reported in this filing"
     assert body["trend"] == "neutral"
     assert body["change"] == 0
 

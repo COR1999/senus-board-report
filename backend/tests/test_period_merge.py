@@ -38,13 +38,23 @@ class _FakeGemini:
     simulating two complementary real-world extractions), which makes
     _baseline_is_complete() False and would otherwise trigger a real Gemini
     call -- same reasoning/pattern as test_extraction_confidence_routes.py's
-    own _FakeGemini."""
+    own _FakeGemini.
+
+    `company_name` is a class attribute (not per-instance), settable by a
+    test before an upload, so a specific upload can simulate Gemini having
+    found a real company name -- reset to None afterward so it doesn't leak
+    into later uploads/tests."""
+
+    company_name = None
 
     def __init__(self, *args, **kwargs):
         pass
 
     def generate_report(self, prompt):
-        return {"financial_metrics": {}, "key_findings": [], "ai_commentary": "", "model_version": "fake"}
+        return {
+            "financial_metrics": {}, "key_findings": [], "ai_commentary": "",
+            "model_version": "fake", "company_name": _FakeGemini.company_name,
+        }
 
 
 @pytest_asyncio.fixture
@@ -135,6 +145,43 @@ async def test_ingest_merges_a_clean_gap_fill_with_no_conflicts(async_session, m
     assert "doc-a.pdf" in merged_doc.filename
     assert "doc-b.pdf" in merged_doc.filename
     assert merged_doc.file_path is None
+
+
+@pytest.mark.anyio
+async def test_merged_report_uses_a_real_company_name_not_a_raw_filename(async_session, monkeypatch):
+    # Real production bug: the merged Report's summary.company_name was set
+    # to a raw source filename ("ADF Farm Solutions Consolidated Financial
+    # Statements (30 June 2025).pdf"), not the actual extracted company name
+    # ("ADF Farm Solutions Limited") -- confusing on the Reports page, which
+    # displays company_name prominently. Doc A's own report never found a
+    # real name (report_service falls back to the raw filename in that
+    # case); doc B's did -- the merge must prefer the real one.
+    _FakeGemini.company_name = None
+    doc_a = await _upload(
+        async_session, monkeypatch,
+        filename="doc-a.pdf",
+        baseline={**_SAME_PERIOD, "revenue": 836_991.0, "cash": 140_135.0, "ebitda": -613_313.0, "customers": None},
+    )
+    _FakeGemini.company_name = "ADF Farm Solutions Limited"
+    await _upload(
+        async_session, monkeypatch,
+        filename="doc-b.pdf",
+        baseline={**_SAME_PERIOD, "revenue": 836_991.0, "cash": 140_135.0, "ebitda": None, "customers": 36},
+    )
+    _FakeGemini.company_name = None  # don't leak into later tests
+
+    from sqlalchemy import select
+    from app.models.report import Report
+
+    metrics_result = await async_session.execute(
+        FinancialMetrics.__table__.select().where(FinancialMetrics.document_id == doc_a.id)
+    )
+    merged_document_id = metrics_result.first().superseded_by_document_id
+
+    merged_report = (
+        await async_session.execute(select(Report).where(Report.document_id == merged_document_id))
+    ).scalars().first()
+    assert merged_report.summary["company_name"] == "ADF Farm Solutions Limited"
 
 
 @pytest.mark.anyio

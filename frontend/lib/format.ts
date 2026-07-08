@@ -78,6 +78,29 @@ export function getTrendStyle(trend: Trend): TrendStyle {
 }
 
 /**
+ * The color a KPI's big value number should render in -- distinct from
+ * `getTrendStyle(trend).textClass` alone, which a real production screenshot
+ * showed reading wrong: EBITDA at -€613K rendered in plain neutral/black
+ * text because its `trend` was `'neutral'` (no prior-period comparative to
+ * diff against, the "no data" case, not "genuinely unchanged") -- the
+ * *value itself* being deeply negative was never considered, only whether
+ * it had moved. When a real trend exists (up/down), that's the strongest
+ * signal and wins, exactly as before. When trend is neutral, this instead
+ * checks whether the formatted value itself is negative (backend currency/
+ * percent formatters always prefix a negative value with "-" before the
+ * symbol, e.g. "-€613K"/"-73.3%" -- never "€-613K" -- so a leading "-" is a
+ * reliable signal) and renders it in the same rose/"down" color used
+ * elsewhere for a genuine decline, since a negative EBITDA or margin is
+ * inherently a warning signal regardless of whether it improved or worsened.
+ * A neutral, non-negative value (e.g. a flat customer count) still renders
+ * in the plain default color -- nothing alarming about that case.
+ */
+export function getValueTextClass(trend: Trend, value: string): string {
+  if (trend !== 'neutral') return getTrendStyle(trend).textClass
+  return value.trim().startsWith('-') ? getTrendStyle('down').textClass : 'text-foreground'
+}
+
+/**
  * Hex color for a trend, for direct use as a Recharts `stroke`/`fill` prop --
  * Recharts renders raw SVG and can't consume Tailwind utility classes.
  * Kept in sync with the Tailwind palette used by getTrendStyle() above

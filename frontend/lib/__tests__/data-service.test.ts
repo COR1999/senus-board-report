@@ -10,6 +10,8 @@ import {
   unhideExternalFiling,
   getDocument,
   approveDocument,
+  downloadDocument,
+  getDocumentFileUrl,
 } from '@/lib/data-service'
 
 function mockFetchOnce(response: { ok: boolean; statusText: string; json: () => Promise<unknown> }) {
@@ -219,5 +221,50 @@ describe('needs_review approve workflow', () => {
     await expect(approveDocument(3)).rejects.toThrow(
       'This document is not pending review (tier: auto_accept) -- nothing to approve.'
     )
+  })
+})
+
+describe('downloadDocument', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('fetches the file URL and triggers a real file save on success', async () => {
+    const fakeBlob = new Blob(['%PDF-1.4 fake'])
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, blob: async () => fakeBlob })
+    vi.stubGlobal('fetch', fetchMock)
+    vi.stubGlobal('URL', { createObjectURL: vi.fn().mockReturnValue('blob:fake-url'), revokeObjectURL: vi.fn() })
+    const clickSpy = vi.fn()
+    const createElementSpy = vi.spyOn(document, 'createElement').mockReturnValue({
+      set href(_v: string) {},
+      set download(_v: string) {},
+      click: clickSpy,
+    } as unknown as HTMLAnchorElement)
+
+    await downloadDocument(3, 'report.pdf')
+
+    expect(fetchMock).toHaveBeenCalledWith(getDocumentFileUrl(3))
+    expect(clickSpy).toHaveBeenCalled()
+    createElementSpy.mockRestore()
+  })
+
+  it('throws with the backend\'s specific detail message on failure, not a generic one', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: false,
+      statusText: 'Not Found',
+      json: async () => ({
+        detail: "The original PDF is no longer available on the server (uploads aren't yet persisted across deploys).",
+      }),
+    }))
+
+    await expect(downloadDocument(3, 'report.pdf')).rejects.toThrow(
+      "The original PDF is no longer available on the server (uploads aren't yet persisted across deploys)."
+    )
+  })
+
+  it('falls back to a generic message when the error body has no detail field', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, statusText: 'Internal Server Error', json: async () => ({}) }))
+
+    await expect(downloadDocument(3, 'report.pdf')).rejects.toThrow('Failed to download file: Internal Server Error')
   })
 })

@@ -16,7 +16,7 @@ import {
 } from '@/components/ui/table'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Trash2, Upload, Download, DownloadCloud, RefreshCw, EyeOff, RotateCcw } from 'lucide-react'
-import { type DocumentItem, getDocumentFileUrl } from '@/lib/data-service'
+import { type DocumentItem } from '@/lib/data-service'
 import { DocumentReviewSheet } from '@/components/documents/document-review-sheet'
 import { formatFileSize } from '@/lib/format'
 import { capitalize } from '@/lib/utils'
@@ -24,6 +24,7 @@ import { useDocuments, useAvailableExternalFilings, useHiddenExternalFilings } f
 import {
   useUploadDocument,
   useDeleteDocument,
+  useDownloadDocument,
   useImportExternalFiling,
   useHideExternalFiling,
   useUnhideExternalFiling,
@@ -45,6 +46,7 @@ export default function DocumentsPage() {
   const { data: documents, loading, error: loadError, refetch } = useDocuments()
   const { upload, uploading, error: uploadError } = useUploadDocument(refetch)
   const { remove, deletingId, error: deleteError } = useDeleteDocument(refetch)
+  const { download, downloadingId, error: downloadError } = useDownloadDocument()
   const {
     data: availableFilings,
     loading: loadingAvailableFilings,
@@ -73,7 +75,7 @@ export default function DocumentsPage() {
   const [periodFilter, setPeriodFilter] = useState('all')
   const [sizeError, setSizeError] = useState<string | null>(null)
 
-  const error = loadError || uploadError || deleteError || sizeError || importError || hideError || unhideError
+  const error = loadError || uploadError || deleteError || downloadError || sizeError || importError || hideError || unhideError
 
   // Only created_at (upload date) exists on a document -- there's no
   // reporting-period concept at this level (that only exists on the
@@ -353,18 +355,22 @@ export default function DocumentsPage() {
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end">
-                            {/* Plain download link, not a fetch/blob helper --
-                                the browser handles the download itself once the
-                                backend sets Content-Disposition, and a direct
-                                navigation isn't subject to CORS the way a
-                                cross-origin `fetch` would be. May 404 with a
-                                specific message if the file wasn't retained
-                                across a backend redeploy (see getDocumentFileUrl). */}
-                            <Button variant="ghost" size="sm" className="h-8 w-8 p-0" asChild>
-                              <a href={getDocumentFileUrl(doc.id)} download={doc.filename}>
-                                <Download className="h-5 w-5" />
-                                <span className="sr-only">Download {doc.filename}</span>
-                              </a>
+                            {/* fetch-and-blob download (see useDownloadDocument),
+                                not a plain `<a href download>` -- a plain
+                                navigation gave the browser nothing to show when
+                                the backend 404s (Railway's filesystem isn't
+                                persistent yet, see backend/README.md), leaving
+                                what looked like a dead button. Now surfaces the
+                                backend's real, specific error message instead. */}
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 w-8 p-0"
+                              onClick={() => download(doc.id, doc.filename)}
+                              disabled={downloadingId === doc.id}
+                            >
+                              <Download className="h-5 w-5" />
+                              <span className="sr-only">Download {doc.filename}</span>
                             </Button>
                             <Button
                               variant="ghost"
