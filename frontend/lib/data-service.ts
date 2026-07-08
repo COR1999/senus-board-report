@@ -202,6 +202,14 @@ export interface DocumentItem {
   status: string
   created_at: string
   extraction_confidence_tier: ExtractionConfidenceTier
+  /** Set when this document's data has been merged into a new combined
+   * document covering the same reporting period (see the backend's
+   * period_merge_service.py) -- shows a "Merged" tag instead of/alongside
+   * the tier tag, since a superseded document's own tier is otherwise
+   * unchanged (e.g. still literally "auto_accept") despite no longer
+   * driving the dashboard. `null` for the overwhelming majority of
+   * documents, which aren't superseded by anything. */
+  superseded_by_document_id: number | null
 }
 
 export async function getDocuments(): Promise<DocumentItem[]> {

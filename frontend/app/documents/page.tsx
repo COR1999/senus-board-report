@@ -80,6 +80,14 @@ export default function DocumentsPage() {
   // generated Report, a separate entity), so this is an upload-date filter.
   const periodOptions = useMemo(() => buildPeriodOptions((documents ?? []).map((d) => d.created_at)), [documents])
 
+  // Filename lookup for the "Merged" tag's tooltip -- superseded_by_document_id
+  // is only ever an id, and the document it points to is always somewhere in
+  // this same list (the merge target is a real, visible document itself).
+  const filenameById = useMemo(
+    () => new Map((documents ?? []).map((d) => [d.id, d.filename])),
+    [documents]
+  )
+
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase()
     return (documents ?? []).filter((doc) => {
@@ -321,6 +329,17 @@ export default function DocumentsPage() {
                                 </Badge>
                                 <DocumentReviewSheet document={doc} onApproved={refetch} />
                               </>
+                            )}
+                            {doc.superseded_by_document_id != null && (
+                              <Badge
+                                variant="outline"
+                                className="border-border/60 bg-muted text-muted-foreground"
+                                title={`This document's data has been merged into "${
+                                  filenameById.get(doc.superseded_by_document_id) ?? `document #${doc.superseded_by_document_id}`
+                                }", which now represents this reporting period on the dashboard.`}
+                              >
+                                Merged
+                              </Badge>
                             )}
                           </div>
                         </TableCell>

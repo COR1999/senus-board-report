@@ -14,7 +14,7 @@ describe('DocumentsPage', () => {
     // rely on shared state.
     vi.restoreAllMocks()
     vi.spyOn(dataService, 'getDocuments').mockResolvedValue([
-      { id: 1, filename: 'ANY_DOCUMENT.pdf', file_size: 1024, status: 'completed', created_at: '2025-12-31T00:00:00Z', extraction_confidence_tier: null },
+      { id: 1, filename: 'ANY_DOCUMENT.pdf', file_size: 1024, status: 'completed', created_at: '2025-12-31T00:00:00Z', extraction_confidence_tier: null, superseded_by_document_id: null },
     ])
     // Otherwise every test in this file makes a real network call (the
     // hook has no mock/fallback data path like getDocuments) -- default to
@@ -71,6 +71,7 @@ describe('DocumentsPage', () => {
       {
         id: 1, filename: 'shaky-extraction.pdf', file_size: 1024, status: 'completed',
         created_at: '2025-12-31T00:00:00Z', extraction_confidence_tier: 'needs_review',
+        superseded_by_document_id: null,
       },
     ])
     render(<DocumentsPage />)
@@ -85,8 +86,8 @@ describe('DocumentsPage', () => {
 
   it('filters the list by filename search', async () => {
     vi.spyOn(dataService, 'getDocuments').mockResolvedValue([
-      { id: 1, filename: 'senus-filing.pdf', file_size: 1024, status: 'completed', created_at: '2025-12-31T00:00:00Z', extraction_confidence_tier: null },
-      { id: 2, filename: 'other-report.pdf', file_size: 2048, status: 'completed', created_at: '2025-12-31T00:00:00Z', extraction_confidence_tier: null },
+      { id: 1, filename: 'senus-filing.pdf', file_size: 1024, status: 'completed', created_at: '2025-12-31T00:00:00Z', extraction_confidence_tier: null, superseded_by_document_id: null },
+      { id: 2, filename: 'other-report.pdf', file_size: 2048, status: 'completed', created_at: '2025-12-31T00:00:00Z', extraction_confidence_tier: null, superseded_by_document_id: null },
     ])
 
     render(<DocumentsPage />)
@@ -100,8 +101,8 @@ describe('DocumentsPage', () => {
 
   it('filters by period (year/month of created_at)', async () => {
     vi.spyOn(dataService, 'getDocuments').mockResolvedValue([
-      { id: 1, filename: 'december.pdf', file_size: 1024, status: 'completed', created_at: '2025-12-15T12:00:00Z', extraction_confidence_tier: null },
-      { id: 2, filename: 'june.pdf', file_size: 1024, status: 'completed', created_at: '2025-06-15T12:00:00Z', extraction_confidence_tier: null },
+      { id: 1, filename: 'december.pdf', file_size: 1024, status: 'completed', created_at: '2025-12-15T12:00:00Z', extraction_confidence_tier: null, superseded_by_document_id: null },
+      { id: 2, filename: 'june.pdf', file_size: 1024, status: 'completed', created_at: '2025-06-15T12:00:00Z', extraction_confidence_tier: null, superseded_by_document_id: null },
     ])
 
     render(<DocumentsPage />)
@@ -165,6 +166,7 @@ describe('DocumentsPage', () => {
       status: 'completed',
       created_at: '2026-07-08T00:00:00Z',
       extraction_confidence_tier: null,
+      superseded_by_document_id: null,
     })
 
     render(<DocumentsPage />)
@@ -213,6 +215,28 @@ describe('DocumentsPage', () => {
     expect(screen.getByText('Senus_Circular_Notice of AGM 2026')).toBeInTheDocument()
   })
 
+  it('shows a "Merged" tag naming the target document for a superseded document', async () => {
+    vi.spyOn(dataService, 'getDocuments').mockResolvedValue([
+      {
+        id: 37, filename: 'ADF Farm Solutions Consolidated Financial Statements.pdf', file_size: 1024,
+        status: 'completed', created_at: '2025-12-31T00:00:00Z', extraction_confidence_tier: 'auto_accept',
+        superseded_by_document_id: 100,
+      },
+      {
+        id: 100, filename: 'FY2025 (merged: ADF Farm Solutions + Information Document)', file_size: 1024,
+        status: 'completed', created_at: '2026-01-01T00:00:00Z', extraction_confidence_tier: 'auto_accept',
+        superseded_by_document_id: null,
+      },
+    ])
+    render(<DocumentsPage />)
+
+    const mergedTag = await screen.findByText('Merged')
+    expect(mergedTag).toHaveAttribute(
+      'title',
+      expect.stringContaining('FY2025 (merged: ADF Farm Solutions + Information Document)')
+    )
+  })
+
   it('does not show the "Out of scope" section when nothing is hidden', async () => {
     render(<DocumentsPage />)
     await screen.findByText('ANY_DOCUMENT.pdf')
@@ -247,11 +271,13 @@ describe('DocumentsPage', () => {
       {
         id: 5, filename: 'shaky-extraction.pdf', file_size: 1024, status: 'completed',
         created_at: '2025-12-31T00:00:00Z', extraction_confidence_tier: 'needs_review',
+        superseded_by_document_id: null,
       },
     ])
     vi.spyOn(dataService, 'getDocument').mockResolvedValue({
       id: 5, filename: 'shaky-extraction.pdf', file_size: 1024, status: 'completed',
       created_at: '2025-12-31T00:00:00Z', extraction_confidence_tier: 'needs_review',
+      superseded_by_document_id: null,
       financial_metrics: {
         revenue: null, customers: null, cash: 120_000, ebitda: null,
         gross_margin: null, operating_margin: null,
@@ -274,11 +300,13 @@ describe('DocumentsPage', () => {
       {
         id: 5, filename: 'shaky-extraction.pdf', file_size: 1024, status: 'completed',
         created_at: '2025-12-31T00:00:00Z', extraction_confidence_tier: 'needs_review',
+        superseded_by_document_id: null,
       },
     ])
     vi.spyOn(dataService, 'getDocument').mockResolvedValue({
       id: 5, filename: 'shaky-extraction.pdf', file_size: 1024, status: 'completed',
       created_at: '2025-12-31T00:00:00Z', extraction_confidence_tier: 'needs_review',
+      superseded_by_document_id: null,
       financial_metrics: {
         revenue: null, customers: null, cash: 120_000, ebitda: null,
         gross_margin: null, operating_margin: null,
@@ -289,6 +317,7 @@ describe('DocumentsPage', () => {
     const approveSpy = vi.spyOn(dataService, 'approveDocument').mockResolvedValue({
       id: 5, filename: 'shaky-extraction.pdf', file_size: 1024, status: 'completed',
       created_at: '2025-12-31T00:00:00Z', extraction_confidence_tier: 'auto_accept',
+      superseded_by_document_id: null,
       financial_metrics: null,
     })
 
@@ -308,6 +337,7 @@ describe('DocumentsPage', () => {
       {
         id: 6, filename: 'agm-notice.pdf', file_size: 1024, status: 'completed',
         created_at: '2025-12-31T00:00:00Z', extraction_confidence_tier: 'rejected',
+        superseded_by_document_id: null,
       },
     ])
     render(<DocumentsPage />)
@@ -319,11 +349,13 @@ describe('DocumentsPage', () => {
       {
         id: 6, filename: 'agm-notice.pdf', file_size: 1024, status: 'completed',
         created_at: '2025-12-31T00:00:00Z', extraction_confidence_tier: 'rejected',
+        superseded_by_document_id: null,
       },
     ])
     vi.spyOn(dataService, 'getDocument').mockResolvedValue({
       id: 6, filename: 'agm-notice.pdf', file_size: 1024, status: 'completed',
       created_at: '2025-12-31T00:00:00Z', extraction_confidence_tier: 'rejected',
+      superseded_by_document_id: null,
       financial_metrics: {
         revenue: null, customers: null, cash: null, ebitda: null,
         gross_margin: null, operating_margin: null,

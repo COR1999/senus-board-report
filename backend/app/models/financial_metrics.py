@@ -114,5 +114,21 @@ class FinancialMetrics(Base):
     # needed approval in the first place.
     human_approved_at: Mapped[Optional[datetime]] = mapped_column(default=None)
 
+    # Set by period_merge_service when this row's document is discovered to
+    # cover the exact same reporting period as another, already-eligible
+    # document (e.g. two independently-extracted filings both reporting
+    # FY2025) -- points at the new, synthetic "merged" document that now
+    # represents this period instead. A real production incident, not
+    # hypothetical: ADF Farm Solutions and the Information Document both
+    # genuinely report FY2025 (Jul 2024 - Jun 2025), and nothing previously
+    # stopped both from independently appearing in the period selector with
+    # identical labels and different (complementary, not conflicting)
+    # figures. Plain `int`, not a hard FK -- this is a filtering marker
+    # (see the `_HAS_CORE_METRICS`-adjacent filters in metrics.py, which all
+    # exclude a superseded row), not a relationship anything else joins
+    # through. `None` means this row is not superseded -- still eligible to
+    # be "latest" on its own, the overwhelming majority of rows.
+    superseded_by_document_id: Mapped[Optional[int]] = mapped_column(default=None)
+
     # Relationship back to the source document.
     document: Mapped["Document"] = relationship(back_populates="financial_metrics")

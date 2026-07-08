@@ -32,8 +32,8 @@ report → render it on a dashboard. **46 commits**, 2 July – 6 July 2026.
 
 From this point on, development was streamlined using **Claude Code (Sonnet 5)**, working one
 feature/fix branch at a time with an explicit plan-then-implement-then-verify discipline (see the
-root `README.md`'s "AI-assisted workflow" section for the working pattern itself). **46 branches**,
-PRs #3–#53.
+root `README.md`'s "AI-assisted workflow" section for the working pattern itself). **47 branches**,
+PRs #3–#54.
 
 ### KPI system & financial metrics (PRs #3–#9, #13)
 
@@ -430,9 +430,55 @@ Railway's ephemeral filesystem (see the README's "Known limitations") means the 
 won't survive the redeploy either, so `regenerate` won't work -- a delete + fresh re-upload is needed
 to actually pick up the fix.
 
+### Same-period duplicate documents, merged instead of colliding (PR #54)
+
+Exactly the scenario PR #53's own closing note anticipated: re-uploading ADF Farm Solutions after
+that fix produced a fresh document (id 37) with a real, derivable period -- and the period selector
+immediately showed **two entries with the identical label** ("FY2025 (Jul 2024 – Jun 2025)"), one for
+the new ADF upload and one for the pre-existing Information Document, no way to tell them apart, and
+picking one vs. the other returned different KPI values. Flagged directly by the user as a major
+problem while using the live app.
+
+Investigated the real data before proposing anything (a repeated discipline throughout this project):
+the two documents weren't actually in conflict. Every field they both reported -- revenue (€836,991),
+cash (€140,135), gross/operating margin -- agreed exactly (one extracted via Gemini vision, the other
+via deterministic text parsing, independently confirming each other), and each filled a gap the other
+had (ADF had EBITDA but no customer count; the Information Document had customers but no EBITDA). A
+genuine, safe merge opportunity, not a "which source do we trust" problem.
+
+Reuses the existing `Document`/`Report`/`FinancialMetrics` triad for the merged record -- no new
+tables. A merge is just another ordinary Document (synthetic filename, no `file_path` since there's
+no single source PDF) + Report + FinancialMetrics row, so the entire existing Documents page, review
+panel, and dashboard-eligibility filters work on it automatically. New
+`FinancialMetrics.superseded_by_document_id` marks both original rows once merged -- excluded from
+`_IS_CONFIDENT_ENOUGH_FOR_DASHBOARD` (metrics.py) so a superseded row can never again be "latest",
+while the Document itself stays fully visible and downloadable, tagged "Merged" on the Documents page
+(same table-badge pattern as "Pending Review"/"Rejected").
+
+Per the user's explicit decisions: a genuine **conflict** (both sources disagree on a field) is never
+silently resolved -- the merged row is tagged `needs_review` with both candidate values and their
+source filenames named in `extraction_confidence_reasons`, reusing the exact review-panel/approve
+workflow already built in PR #52 rather than inventing a new mechanism. Only a clean merge (fields
+agree, or one side simply didn't report it) reaches `auto_accept` directly -- matching the real
+ADF/Information-Document case, which has zero conflicts.
+
+New `find_same_period_match`/`merge_documents` (`backend/app/services/period_merge_service.py`) run
+automatically at ingest time for every future upload/import (`documents.py`'s `_ingest_document`, as
+an additive follow-up step after the new document finishes ingesting completely and normally on its
+own), and a new idempotent `POST /api/documents/reconcile-periods` endpoint sweeps for documents that
+slipped through before this existed -- how the two already-existing production documents actually got
+fixed, with the user's explicit go-ahead given it mutates production data.
+
+Also checked whether more real financial data exists anywhere before building any of this: `GET
+/api/documents/external/available` (the existing investor-relations API integration, not a
+page-scrape) currently lists exactly 4 not-yet-imported filings -- an AGM proxy form, an AGM circular
+notice, "Memo and Arts", and the Balance Sheet (already correctly rejected once before at 55%
+confidence). None are financial statements -- confirmed there is no missing real financial data on
+the assessed investor-relations platform right now.
+
 ## Working discipline throughout Phase 2
 
-A few rules were established early and enforced consistently across all 46 branches:
+A few rules were established early and enforced consistently across all 47 branches:
 
 - **Never fabricate missing data.** A missing value is `null`/`None`, never a guessed `0` — this
   came up repeatedly (KPI sparkline history, reporting-period extraction, bookings figures, cadence
