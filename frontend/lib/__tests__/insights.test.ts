@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest'
-import { buildInsightsPrompt, parseInsightsResponse, FALLBACK_INSIGHTS } from '@/lib/insights'
+import {
+  buildInsightsPrompt,
+  buildHistoricalInsightPrompt,
+  parseInsightsResponse,
+  FALLBACK_INSIGHTS,
+  FALLBACK_TREND_INSIGHT,
+} from '@/lib/insights'
+import type { ChartDataPoint } from '@/lib/data-service'
 
 const mockMetrics = {
   revenue: { value: '€836,000', change: 38, trend: 'up' as const, history: [] },
@@ -110,6 +117,13 @@ describe('parseInsightsResponse', () => {
     ])
   })
 
+  it('accepts a "trend" type (used by the historical-insight prompt), not just positive/risk/opportunity', () => {
+    const raw = JSON.stringify({ insights: [{ text: 'Revenue has grown steadily', type: 'trend', action: 'Keep it up' }] })
+    expect(parseInsightsResponse(raw)).toEqual([
+      { text: 'Revenue has grown steadily', type: 'trend', action: 'Keep it up', category: undefined },
+    ])
+  })
+
   it('drops an unrecognized category rather than rejecting the insight', () => {
     const raw = JSON.stringify({
       insights: [
@@ -126,5 +140,54 @@ describe('parseInsightsResponse', () => {
 describe('FALLBACK_INSIGHTS', () => {
   it('is non-empty so the panel never renders blank', () => {
     expect(FALLBACK_INSIGHTS.length).toBeGreaterThan(0)
+  })
+})
+
+describe('buildHistoricalInsightPrompt', () => {
+  const mixedCadenceData: ChartDataPoint[] = [
+    { period: 'FY2024', revenue: 700_000, ebitda: -50_000, cash: 400_000, document_id: 1, cadence_months: 12 },
+    { period: 'HY2025', revenue: 350_000, ebitda: -20_000, cash: 500_000, document_id: 2, cadence_months: 6 },
+    { period: 'FY2025', revenue: 836_991, ebitda: -613_313, cash: 140_135, document_id: 3, cadence_months: 12 },
+  ]
+
+  it('describes Full-Year and Half-Year periods in separate lists, not one blended sequence', () => {
+    const prompt = buildHistoricalInsightPrompt(mixedCadenceData)
+
+    expect(prompt).toContain('Full-Year periods, oldest to newest: FY2024')
+    expect(prompt).toContain('Half-Year periods, oldest to newest: HY2025')
+  })
+
+  it('warns against blending the two cadences into one implied sequence', () => {
+    const prompt = buildHistoricalInsightPrompt(mixedCadenceData)
+    expect(prompt).toContain('NOT directly comparable magnitudes')
+  })
+
+  it('asks for exactly 1 insight of type "trend"', () => {
+    const prompt = buildHistoricalInsightPrompt(mixedCadenceData)
+    expect(prompt).toContain('exactly 1')
+    expect(prompt).toContain('"trend"')
+  })
+
+  it('reports "none reported yet" for a cadence with zero points, rather than an empty list', () => {
+    const onlyFullYear: ChartDataPoint[] = [
+      { period: 'FY2025', revenue: 836_991, ebitda: -613_313, cash: 140_135, document_id: 1, cadence_months: 12 },
+    ]
+    const prompt = buildHistoricalInsightPrompt(onlyFullYear)
+    expect(prompt).toContain('Half-Year periods, oldest to newest: none reported yet')
+  })
+
+  it('routes an undeterminable cadence into neither Full-Year nor Half-Year', () => {
+    const unknownCadence: ChartDataPoint[] = [
+      { period: 'FY2025', revenue: 836_991, ebitda: -613_313, cash: 140_135, document_id: 1, cadence_months: 12 },
+      { period: 'Unknown', revenue: 100, ebitda: null, cash: null, document_id: 2, cadence_months: null },
+    ]
+    const prompt = buildHistoricalInsightPrompt(unknownCadence)
+    expect(prompt).not.toContain('Unknown:')
+  })
+})
+
+describe('FALLBACK_TREND_INSIGHT', () => {
+  it('is typed "trend", distinct from the 3-item report-scoped fallback', () => {
+    expect(FALLBACK_TREND_INSIGHT.type).toBe('trend')
   })
 })

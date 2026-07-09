@@ -6,6 +6,7 @@ import { KpiCard } from './kpi-card'
 import { KpiStatStrip, type StatStripItem } from './kpi-stat-strip'
 import { RevenueChart } from './revenue-chart'
 import { AiInsights } from './ai-insights'
+import { HistoricalTrendInsight } from './historical-trend-insight'
 import { ReportsTable } from './reports-table'
 import { ErrorBanner } from '@/components/error-banner'
 import { useMetrics, useChartData, useReports, usePeriods } from '@/lib/hooks/use-dashboard-data'
@@ -196,8 +197,16 @@ export function DashboardContainer() {
       {/* AI Board Insights -- surfaced right under the headline numbers
           (rather than beside the chart, further down) per feedback that the
           narrative commentary should be one of the first things a board
-          reader sees, not something they scroll past the chart to find. */}
-      <AiInsights metrics={metrics} reportId={currentReport?.id ?? null} />
+          reader sees, not something they scroll past the chart to find.
+          Historical Trend sits alongside it as its own distinct card
+          (answers "what's the trajectory over time", not "what does this
+          one report say") rather than folded into the same list. */}
+      <div className="grid gap-4 lg:grid-cols-3">
+        <div className="lg:col-span-2">
+          <AiInsights metrics={metrics} reportId={currentReport?.id ?? null} />
+        </div>
+        <HistoricalTrendInsight chartData={chartData ?? []} />
+      </div>
 
       {/* Secondary metrics: Bookings, Profitability, Cash & Liquidity, Solvency & Leverage, Returns */}
       <KpiStatStrip items={statStripConfig} periodLabel={metrics.current_period ?? undefined} />

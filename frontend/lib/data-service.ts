@@ -197,7 +197,8 @@ export interface AiInsightsResult {
   isFallback: boolean
   /** The Gemini model that produced `insights`, e.g. "gemini-flash-latest" --
    * `null` for fallback content. Persisted alongside a real result via
-   * `saveInsights` so a stored row records what actually generated it. */
+   * `saveInsights`/`saveHistoricalInsight` so a stored row records what
+   * actually generated it. */
   model: string | null
 }
 
@@ -262,6 +263,70 @@ export async function saveInsights(
   return apiFetch<StoredInsights>(`/api/reports/${reportId}/insights`, {
     method: 'PUT',
     body: JSON.stringify({ insights, model_version: modelVersion }),
+  })
+}
+
+/**
+ * Server-persisted insight describing the trend across EVERY report on
+ * file (not one report's own snapshot -- see getAiInsights/StoredInsights
+ * above for that) -- see backend/app/models/historical_insight.py.
+ */
+export interface StoredHistoricalInsight {
+  insight: Insight
+  model_version: string | null
+  generated_at: string
+}
+
+/**
+ * A single Gemini call analyzing the whole revenue-trend chart data set,
+ * via the same /api/insights route as getAiInsights (distinguished by
+ * `chartData` instead of `metrics` in the request body -- see that route's
+ * own docstring for why both modes share one route/circuit breaker).
+ */
+export async function getHistoricalTrendInsight(chartData: ChartDataPoint[]): Promise<AiInsightsResult> {
+  try {
+    const res = await fetch('/api/insights', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chartData }),
+    })
+    if (!res.ok) throw new Error(`Failed to fetch historical insight: ${res.statusText}`)
+    const data = await res.json()
+    return { insights: data.insights, isFallback: Boolean(data.isFallback), model: data.model ?? null }
+  } catch (error) {
+    console.warn('Failed to fetch historical trend insight, using fallback:', error)
+    return { insights: [], isFallback: true, model: null }
+  }
+}
+
+/**
+ * Resolves to `null` when nothing's been generated yet for the CURRENT
+ * chart data (either never generated, or the backend's own fingerprint
+ * check found the underlying data has changed since it was) -- an expected
+ * "not yet" state, not an error, same convention as getStoredInsights.
+ */
+export async function getStoredHistoricalInsight(): Promise<StoredHistoricalInsight | null> {
+  const res = await fetch(`${API_URL}/metrics/dashboard/historical-insight`, {
+    headers: { 'Content-Type': 'application/json' },
+  })
+  if (res.status === 404) return null
+  if (!res.ok) {
+    const detail = await res
+      .json()
+      .then((body) => (typeof body?.detail === 'string' ? body.detail : null))
+      .catch(() => null)
+    throw new Error(detail ?? `Failed to fetch stored historical insight: ${res.statusText}`)
+  }
+  return res.json()
+}
+
+export async function saveHistoricalInsight(
+  insight: Insight,
+  modelVersion: string | null
+): Promise<StoredHistoricalInsight> {
+  return apiFetch<StoredHistoricalInsight>('/metrics/dashboard/historical-insight', {
+    method: 'PUT',
+    body: JSON.stringify({ insight, model_version: modelVersion }),
   })
 }
 

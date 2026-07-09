@@ -12,6 +12,10 @@ from app.schemas.financial import (
     DashboardPeriodOption,
     # Revenue Trend
     RevenueTrendPoint,
+    # Historical trend insight
+    HistoricalInsightPayload,
+    HistoricalInsightUpsert,
+    HistoricalInsightResponse,
     # Document
     DocumentBase,
     DocumentCreate,
@@ -35,6 +39,9 @@ __all__ = [
     "DashboardSummaryResponse",
     "DashboardPeriodOption",
     "RevenueTrendPoint",
+    "HistoricalInsightPayload",
+    "HistoricalInsightUpsert",
+    "HistoricalInsightResponse",
     "DocumentBase",
     "DocumentCreate",
     "DocumentResponse",

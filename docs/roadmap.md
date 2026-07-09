@@ -601,6 +601,51 @@ Built as its own branch off `main` (not stacked on PR #56/#57, which were still 
 per this project's "one branch, one concern" discipline — required a rebase once #57 merged first, to
 pick up its own (unrelated) addition of `Metrics.document_id` rather than duplicating it.
 
+### A single AI insight analyzing the trend across every report (PR #59)
+
+The last piece of the trend-chart/insights plan that started with PR #56: AI Board Insights (PR #58)
+always describes one report's own snapshot. This adds the complementary view — one insight describing
+the *trajectory* across every report on file, generated once against the all-reports chart data and
+reused the same persisted-until-stale way as the per-report case.
+
+New `HistoricalInsight` table — genuinely singleton (this is a single-user tool with one dashboard, so
+there's exactly one "trend across all reports" to describe, unlike the per-report case, which has no
+natural foreign key to scope by). `GET`/`PUT /metrics/dashboard/historical-insight`: unlike
+`ReportInsights`, staleness here is detected by a `data_fingerprint` — a SHA-256 hash of the exact
+revenue-trend point set (`document_id`/revenue/EBITDA/cash/`cadence_months` per point), computed
+server-side on both `GET` (compared against the stored value) and `PUT` (never trusted from the client).
+A stored insight is only ever served when the fingerprint still matches the current chart data; a new
+report landing changes the fingerprint and the endpoint 404s again until regenerated, mirroring the
+per-report "regenerate only when the underlying data actually changed" principle.
+
+`buildHistoricalInsightPrompt` (a new prompt builder alongside the existing `buildInsightsPrompt`) lists
+Full-Year and Half-Year periods **separately** and explicitly warns Gemini against blending them into one
+implied sequence — the same reasoning the Revenue Trend chart's own two-line cadence split (PR #56) was
+built on, now carried into the prompt itself so the AI-generated narrative can't imply a comparison the
+chart deliberately doesn't show either. Rather than a second Next.js route (which would need its own,
+separately-tracked Gemini circuit breaker), `/api/insights` now branches on which key the request body
+carries (`{ metrics }` vs. `{ chartData }`) — both modes share the one rate-limit/billing backoff, since
+they're the same Gemini key/quota pool.
+
+Surfaced as its own distinct card (`HistoricalTrendInsight`) next to AI Board Insights, not folded into
+the same list — the two answer genuinely different questions ("what does this one report say" vs. "what's
+the trajectory over time"), and mixing insight types into one feed would blur that distinction. Renders
+nothing at all with fewer than 2 real chart points, rather than a placeholder claiming a trend where there
+isn't enough data to describe one yet.
+
+**A real cross-test pollution bug found and fixed during verification**: the new PUT endpoint's
+`db.commit()` — a correct, necessary call, matching every other mutating endpoint in this codebase —
+turned out to permanently commit this test file's own `FinancialMetrics` fixture rows (added via
+`session.add()`+`flush()`, the existing convention, never committed by the test itself) into the shared
+session-scoped in-memory SQLite database, since `conftest.py`'s per-test `rollback()` cannot undo an
+already-committed change. Running the new test file before `test_revenue_trend.py`/`test_metrics_summary.py`
+leaked real revenue rows into their exact-count assertions, breaking 33 unrelated tests. Fixed with an
+explicit `autouse` cleanup fixture that deletes everything this test file added after each test, restoring
+isolation regardless of which endpoint under test happens to commit — a real, generalizable gap in this
+project's test harness (any test combining a raw `flush()`-only fixture with a commit-triggering endpoint
+is exposed to it) that hadn't previously been tripped over because no earlier test file's leaked rows
+happened to collide with another file's exact-count assertions.
+
 ## Working discipline throughout Phase 2
 
 A few rules were established early and enforced consistently across all 48 branches:

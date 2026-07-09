@@ -37,6 +37,16 @@ const INSIGHT_STYLE: Record<InsightType, { badgeClass: string; Icon: typeof Tren
     Icon: Lightbulb,
     label: 'Opportunity',
   },
+  // buildInsightsPrompt (this panel's own prompt builder) never asks Gemini
+  // for a "trend" insight -- that type is only ever produced by
+  // buildHistoricalInsightPrompt for the separate HistoricalTrendInsight
+  // card. Included here only so this Record stays exhaustive over the full
+  // InsightType union.
+  trend: {
+    badgeClass: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400',
+    Icon: TrendingUp,
+    label: 'Trend',
+  },
 }
 
 export function AiInsights({ metrics, reportId }: AiInsightsProps) {
