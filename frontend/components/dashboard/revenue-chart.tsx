@@ -2,7 +2,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
+import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
 import type { TooltipContentProps } from 'recharts'
 import type { ValueType, NameType } from 'recharts/types/component/DefaultTooltipContent'
 import { type ChartDataPoint } from '@/lib/data-service'
@@ -58,6 +58,12 @@ const FORECAST_COLOR = '#6366f1'
 
 export type CadenceBucket = 'fy' | 'hy' | 'other'
 
+// Display label per cadence bucket -- shared by the chart legend/tooltip
+// (via METRICS' own naming below) and the point-count-aware render modes,
+// so a "1 real point" stat card and a "2 real point" bar both read as
+// "Full Year" / "Half Year" the same way the 3+-point line chart already does.
+const BUCKET_LABELS: Record<CadenceBucket, string> = { fy: 'Full Year', hy: 'Half Year', other: 'Other' }
+
 // Full-year (>=9mo) vs. half-year (<=6mo) vs. undeterminable -- the real
 // extractor only ever produces 6 or 12 in practice (see
 // FinancialMetricsExtractor's cadence-cue detection), so the 7/8mo gap is a
@@ -67,6 +73,31 @@ export function cadenceBucket(cadenceMonths: number | null): CadenceBucket {
   if (cadenceMonths <= 6) return 'hy'
   if (cadenceMonths >= 9) return 'fy'
   return 'other'
+}
+
+export type ChartRenderMode = 'empty' | 'stat' | 'bars' | 'line'
+
+/**
+ * Chart presentation follows how many real points actually exist per
+ * cadence bucket, not habit -- see docs/dashboard-review.md's "Fixing the
+ * charts" section. A line/area chart around 1-2 real dots is chart-junk
+ * dressed up as a trend that isn't there; a single stat callout or a
+ * side-by-side bar comparison communicates the same real numbers more
+ * honestly. Uses the MAX count across buckets (not each bucket
+ * independently) -- once any cadence has a real 3+-point trend, the
+ * existing line/area treatment already handles a thinner sibling bucket
+ * correctly (an isolated 1-2-point marker, exactly as it does today), so
+ * there's no need to split rendering per-bucket and recombine two chart
+ * types in one canvas.
+ */
+export function determineRenderMode(data: ChartDataPoint[]): ChartRenderMode {
+  const counts: Record<CadenceBucket, number> = { fy: 0, hy: 0, other: 0 }
+  for (const point of data) counts[cadenceBucket(point.cadence_months)]++
+  const max = Math.max(counts.fy, counts.hy, counts.other)
+  if (max === 0) return 'empty'
+  if (max === 1) return 'stat'
+  if (max === 2) return 'bars'
+  return 'line'
 }
 
 function lastIndexWhere<T>(items: T[], predicate: (item: T) => boolean): number {
@@ -239,6 +270,19 @@ export function RevenueChart({ data, periodLabel, selectedDocumentId = null }: R
   const [showForecast, setShowForecast] = useState(false)
   const { label, color, hyColor } = METRICS[metric]
 
+  // Point-count-aware presentation -- see determineRenderMode's own
+  // docstring and docs/dashboard-review.md's "Fixing the charts" section.
+  // A cadence bucket with only 1-2 real points doesn't get a line chart
+  // (a 1-2-dot "trend" communicates nothing); it gets a stat callout or a
+  // bar comparison instead.
+  const renderMode = useMemo(() => determineRenderMode(data), [data])
+
+  // Forecasting (Method One, a linear trend) is only ever offered once a
+  // real 3+-point trend exists to project from -- same gate as renderMode
+  // itself, so the toggle (hidden below outside 'line' mode) can never
+  // silently produce nothing the way it could before this existed.
+  const forecastActive = showForecast && renderMode === 'line'
+
   // Splits `data` into the two real series Recharts actually plots (`fy`/
   // `hy`, plus a rare `other` for an undeterminable cadence), then -- when
   // `showForecast` is on -- projects each cadence's OWN forecast tail
@@ -251,8 +295,8 @@ export function RevenueChart({ data, periodLabel, selectedDocumentId = null }: R
   // tracking to what the half-year run-rate implied", the concrete reason
   // this two-line design was chosen over a single blended line.
   const chartData = useMemo<ChartRow[]>(
-    () => buildChartRows(data, metric, showForecast),
-    [data, showForecast, metric]
+    () => buildChartRows(data, metric, forecastActive),
+    [data, forecastActive, metric]
   )
 
   return (
@@ -288,13 +332,91 @@ export function RevenueChart({ data, periodLabel, selectedDocumentId = null }: R
               </Button>
             ))}
           </div>
-          <label className="flex items-center gap-2 text-sm text-muted-foreground">
-            Show forecast
-            <Switch checked={showForecast} onCheckedChange={setShowForecast} />
-          </label>
+          {/* Only offered once a real 3+-point trend exists to project from
+              (see renderMode/forecastActive above) -- with 1-2 real points,
+              a trend-based forecast has nothing reliable to fit a line
+              through and would previously toggle on and silently render
+              nothing. */}
+          {renderMode === 'line' && (
+            <label className="flex items-center gap-2 text-sm text-muted-foreground">
+              Show forecast
+              <Switch checked={showForecast} onCheckedChange={setShowForecast} />
+            </label>
+          )}
         </CardAction>
       </CardHeader>
       <CardContent>
+        {renderMode === 'empty' && (
+          <div className="flex h-[260px] items-center justify-center text-sm text-muted-foreground">
+            No {label.toLowerCase()} data yet -- upload a report to see this chart.
+          </div>
+        )}
+
+        {/* Exactly one real point per cadence bucket -- a single stat
+            callout per bucket communicates the real number honestly,
+            instead of a line chart with nothing to draw a line between. */}
+        {renderMode === 'stat' && (
+          <div className="grid gap-4 sm:grid-cols-2">
+            {(['fy', 'hy', 'other'] as CadenceBucket[])
+              .map((bucket) => ({
+                bucket,
+                point: data.find((p) => cadenceBucket(p.cadence_months) === bucket),
+              }))
+              .filter((b): b is { bucket: CadenceBucket; point: ChartDataPoint } => b.point != null)
+              .map(({ bucket, point }) => {
+                const bucketColor = bucket === 'hy' ? hyColor : bucket === 'fy' ? color : OTHER_COLOR
+                const value = point[metric]
+                return (
+                  <div key={bucket} className="rounded-lg border border-foreground/10 p-4">
+                    <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      {BUCKET_LABELS[bucket]}
+                    </div>
+                    <div className="mt-1 text-2xl font-bold tracking-tight" style={{ color: bucketColor }}>
+                      {value != null ? formatCurrencyShort(value) : 'Not reported'}
+                    </div>
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      {point.period} · only report on file for this cadence
+                    </div>
+                  </div>
+                )
+              })}
+          </div>
+        )}
+
+        {/* Exactly two real points in the fullest cadence bucket -- a
+            side-by-side bar comparison (current vs. prior), not a
+            two-dot line implying a trend. */}
+        {renderMode === 'bars' && (
+          <ResponsiveContainer width="100%" height={260}>
+            <BarChart data={chartData} accessibilityLayer={false} margin={{ left: 4, right: 12, top: 8 }}>
+              <CartesianGrid vertical={false} stroke="currentColor" className="text-foreground/10" />
+              <XAxis
+                dataKey="period"
+                axisLine={false}
+                tickLine={false}
+                tickMargin={10}
+                tick={{ fill: 'currentColor', fontSize: 12 }}
+                className="text-muted-foreground"
+              />
+              <YAxis
+                axisLine={false}
+                tickLine={false}
+                tickMargin={8}
+                tick={{ fill: 'currentColor', fontSize: 12 }}
+                className="text-muted-foreground"
+                tickFormatter={formatCurrencyShort}
+                width={68}
+              />
+              <Tooltip offset={24} content={(props) => <RevenueTooltip {...props} />} />
+              <Legend />
+              <Bar dataKey="fy" name="Full Year" fill={color} radius={[4, 4, 0, 0]} maxBarSize={64} />
+              <Bar dataKey="hy" name="Half Year" fill={hyColor} radius={[4, 4, 0, 0]} maxBarSize={64} />
+              <Bar dataKey="other" name="Other" legendType="none" fill={OTHER_COLOR} radius={[4, 4, 0, 0]} maxBarSize={64} />
+            </BarChart>
+          </ResponsiveContainer>
+        )}
+
+        {renderMode === 'line' && (
         <ResponsiveContainer width="100%" height={300}>
           {/* accessibilityLayer={false}: Recharts makes the chart surface
               keyboard-focusable by default, which drew an ugly focus-ring
@@ -391,7 +513,7 @@ export function RevenueChart({ data, periodLabel, selectedDocumentId = null }: R
               connectNulls={false}
               isAnimationActive={false}
             />
-            {showForecast && (
+            {forecastActive && (
               <Area
                 type="monotone"
                 dataKey="fy_forecast"
@@ -406,7 +528,7 @@ export function RevenueChart({ data, periodLabel, selectedDocumentId = null }: R
                 isAnimationActive={false}
               />
             )}
-            {showForecast && (
+            {forecastActive && (
               <Area
                 type="monotone"
                 dataKey="hy_forecast"
@@ -423,6 +545,7 @@ export function RevenueChart({ data, periodLabel, selectedDocumentId = null }: R
             )}
           </AreaChart>
         </ResponsiveContainer>
+        )}
       </CardContent>
     </Card>
   )
