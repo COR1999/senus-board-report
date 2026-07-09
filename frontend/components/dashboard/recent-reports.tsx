@@ -5,19 +5,8 @@ import { Card, CardHeader, CardTitle, CardDescription, CardAction, CardContent }
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { capitalize } from '@/lib/utils'
+import { REPORT_STATUS_STYLES, reportDisplayName } from '@/lib/report-display'
 import type { Report } from '@/lib/data-service'
-
-const STATUS_STYLES: Record<Report['status'], string> = {
-  completed: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400',
-  pending: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400',
-  generating: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400',
-  failed: 'bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-400',
-}
-
-function reportDisplayName(report: Report): string {
-  const name = report.summary?.company_name
-  return name && name.trim().length > 0 ? name : `Document #${report.document_id}`
-}
 
 interface RecentReportsProps {
   reports: Report[]
@@ -67,7 +56,7 @@ export function RecentReports({ reports, limit = 3 }: RecentReportsProps) {
                     })}
                   </p>
                 </div>
-                <Badge className={STATUS_STYLES[report.status]}>{capitalize(report.status)}</Badge>
+                <Badge className={REPORT_STATUS_STYLES[report.status]}>{capitalize(report.status)}</Badge>
               </div>
             ))}
           </div>

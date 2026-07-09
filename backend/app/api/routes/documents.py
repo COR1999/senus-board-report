@@ -518,14 +518,24 @@ async def reconcile_periods(db: AsyncSession = Depends(get_db)):
     an empty list means nothing needed merging.
     """
     merged_documents = await period_merge_service.reconcile_all_periods(db)
+
+    # A single batched query for extraction_confidence_tier, not one
+    # per-document lookup -- same pattern as list_documents just above,
+    # avoiding the exact N+1 that endpoint's own docstring already
+    # documents having fixed once for this table generally.
+    tiers: dict[int, Optional[str]] = {}
+    if merged_documents:
+        tier_result = await db.execute(
+            select(FinancialMetrics.document_id, FinancialMetrics.extraction_confidence_tier).where(
+                FinancialMetrics.document_id.in_([doc.id for doc in merged_documents])
+            )
+        )
+        tiers = dict(tier_result.all())
+
     responses = []
     for doc in merged_documents:
         response = DocumentResponse.model_validate(doc)
-        metrics_result = await db.execute(
-            select(FinancialMetrics).where(FinancialMetrics.document_id == doc.id)
-        )
-        metrics = metrics_result.scalars().first()
-        response.extraction_confidence_tier = metrics.extraction_confidence_tier if metrics else None
+        response.extraction_confidence_tier = tiers.get(doc.id)
         responses.append(response)
     return responses
 

@@ -54,6 +54,20 @@ export function useAsyncData<T>(fetcher: () => Promise<T>, options: UseAsyncData
   const [error, setError] = useState<string | null>(null)
   const [nonce, setNonce] = useState(0)
 
+  // Adjusting state during render -- React's own recommended pattern for
+  // "reset some state when a prop changes" (see react.dev, "You Might Not
+  // Need an Effect") -- rather than a synchronous setState call inside the
+  // effect below, which react-hooks' set-state-in-effect rule flags as a
+  // cascading-render risk. `enabled` flipping false needs `loading` reset
+  // immediately, including mid-fetch: the in-flight fetch's own `.finally`
+  // below is skipped once `cancelled` is set (see the effect's cleanup), so
+  // nothing else would ever clear a stuck `loading: true` otherwise.
+  const [prevEnabled, setPrevEnabled] = useState(enabled)
+  if (enabled !== prevEnabled) {
+    setPrevEnabled(enabled)
+    if (!enabled) setLoading(false)
+  }
+
   // Reset loading/error here, in a plain callback -- not synchronously inside
   // the effect below, which react-hooks' set-state-in-effect rule flags as a
   // cascading-render risk. The initial mount is already `loading: true` via
@@ -66,7 +80,6 @@ export function useAsyncData<T>(fetcher: () => Promise<T>, options: UseAsyncData
 
   useEffect(() => {
     if (!enabled) {
-      setLoading(false)
       return
     }
 

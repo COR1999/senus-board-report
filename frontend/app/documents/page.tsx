@@ -50,8 +50,12 @@ export default function DocumentsPage() {
   const {
     data: availableFilings,
     loading: loadingAvailableFilings,
-    error: availableFilingsError,
     refetch: refetchAvailableFilings,
+    // No `error` destructured here -- getAvailableExternalFilings (see
+    // data-service.ts) already catches its own failures and resolves to an
+    // empty list rather than rejecting, so this hook's `error` is never
+    // meaningfully set; an unreachable IR API should just mean the "new
+    // filings" banner doesn't render, not surface a page-level error.
   } = useAvailableExternalFilings()
   const { importFiling, importingId, error: importError } = useImportExternalFiling(() => {
     refetch()

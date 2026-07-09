@@ -8,7 +8,7 @@ import type { ValueType, NameType } from 'recharts/types/component/DefaultToolti
 import { type ChartDataPoint } from '@/lib/data-service'
 import { projectSeries } from '@/lib/forecast'
 import { formatCurrencyShort } from '@/lib/format'
-import { Card, CardHeader, CardTitle, CardDescription, CardAction, CardContent } from '@/components/ui/card'
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -308,43 +308,50 @@ export function RevenueChart({ data, periodLabel, selectedDocumentId = null }: R
             {periodLabel}
           </CardDescription>
         )}
-        <CardAction className="flex items-center gap-4">
-          {/* Series-swap toggle: one metric plotted at a time on a single
-              y-axis, rather than a dual-axis overlay -- see METRICS above. */}
-          <div className="flex items-center gap-1 rounded-lg bg-muted p-0.5">
-            {(Object.keys(METRICS) as MetricKey[]).map((key) => (
-              <Button
-                key={key}
-                type="button"
-                size="sm"
-                variant="ghost"
-                // `--secondary` and `--muted` are the exact same color
-                // token in this theme, so the old `variant="secondary"`
-                // active state was invisible against this row's own
-                // `bg-muted` track. An elevated bg-background/shadow pill
-                // (the standard segmented-control pattern) uses tokens
-                // that are genuinely distinct from `bg-muted` in both
-                // light and dark mode.
-                className={cn(metric === key && 'bg-background text-foreground shadow-sm')}
-                onClick={() => setMetric(key)}
-              >
-                {METRICS[key].label}
-              </Button>
-            ))}
-          </div>
-          {/* Only offered once a real 3+-point trend exists to project from
-              (see renderMode/forecastActive above) -- with 1-2 real points,
-              a trend-based forecast has nothing reliable to fit a line
-              through and would previously toggle on and silently render
-              nothing. */}
-          {renderMode === 'line' && (
-            <label className="flex items-center gap-2 text-sm text-muted-foreground">
-              Show forecast
-              <Switch checked={showForecast} onCheckedChange={setShowForecast} />
-            </label>
-          )}
-        </CardAction>
       </CardHeader>
+      {/* A plain flex row below the header, not CardHeader's own `1fr auto`
+          CSS grid `CardAction` slot -- that grid's `auto` column sizes to
+          its content's max-content width regardless of `flex-wrap` on the
+          child, so on a narrow viewport the 3-button switcher + forecast
+          toggle would overflow the card and get clipped by its
+          `overflow-hidden` instead of wrapping. A normal block-level flex
+          row wraps correctly under real width constraints. */}
+      <div className="flex flex-wrap items-center gap-4 px-(--card-spacing)">
+        {/* Series-swap toggle: one metric plotted at a time on a single
+            y-axis, rather than a dual-axis overlay -- see METRICS above. */}
+        <div className="flex items-center gap-1 rounded-lg bg-muted p-0.5">
+          {(Object.keys(METRICS) as MetricKey[]).map((key) => (
+            <Button
+              key={key}
+              type="button"
+              size="sm"
+              variant="ghost"
+              // `--secondary` and `--muted` are the exact same color
+              // token in this theme, so the old `variant="secondary"`
+              // active state was invisible against this row's own
+              // `bg-muted` track. An elevated bg-background/shadow pill
+              // (the standard segmented-control pattern) uses tokens
+              // that are genuinely distinct from `bg-muted` in both
+              // light and dark mode.
+              className={cn(metric === key && 'bg-background text-foreground shadow-sm')}
+              onClick={() => setMetric(key)}
+            >
+              {METRICS[key].label}
+            </Button>
+          ))}
+        </div>
+        {/* Only offered once a real 3+-point trend exists to project from
+            (see renderMode/forecastActive above) -- with 1-2 real points,
+            a trend-based forecast has nothing reliable to fit a line
+            through and would previously toggle on and silently render
+            nothing. */}
+        {renderMode === 'line' && (
+          <label className="flex items-center gap-2 text-sm text-muted-foreground">
+            Show forecast
+            <Switch checked={showForecast} onCheckedChange={setShowForecast} />
+          </label>
+        )}
+      </div>
       <CardContent>
         {renderMode === 'empty' && (
           <div className="flex h-[260px] items-center justify-center text-sm text-muted-foreground">
