@@ -170,6 +170,31 @@ export async function getChartData(): Promise<ChartDataPoint[]> {
   }
 }
 
+export interface CostWaterfall {
+  available: boolean
+  revenue: number | null
+  cost_of_sales: number | null
+  gross_profit: number | null
+  administrative_expenses: number | null
+  operating_result: number | null
+  depreciation_amortization: number | null
+  ebitda: number | null
+  document_id: number | null
+}
+
+/**
+ * Revenue -> Cost of Sales -> Gross Profit -> Administrative Expenses ->
+ * Operating Result -> D&A -> EBITDA, for the cost waterfall chart. Only
+ * some filing types disclose a full cost breakdown -- `available: false`
+ * (every figure `null`) is a normal, expected response, not a fetch
+ * failure, so the caller should treat it the same way as an empty ratio
+ * (hide the chart), never render a partial/fabricated waterfall.
+ */
+export async function getCostWaterfall(documentId?: number | null): Promise<CostWaterfall> {
+  const query = documentId != null ? `?document_id=${documentId}` : ''
+  return apiFetch<CostWaterfall>(`/metrics/dashboard/cost-waterfall${query}`)
+}
+
 export interface DashboardPeriod {
   document_id: number
   /** Combined bare period + calendar range, e.g. "HY2026 (Jul 2025 – Dec 2025)". */

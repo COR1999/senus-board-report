@@ -119,6 +119,29 @@ class DashboardSummaryResponse(BaseModel):
     document_id: Optional[int] = None
 
 
+# ==================== Cost Waterfall ====================
+class CostWaterfallResponse(BaseModel):
+    """
+    Response for GET /metrics/dashboard/cost-waterfall -- Revenue -> Cost of
+    Sales -> Gross Profit -> Administrative Expenses -> Operating Result
+    (EBIT) -> D&A -> EBITDA, for the "waterfall" chart described in
+    docs/dashboard-review.md. Sourced from BalanceSheetMetrics, which only
+    some filing types disclose (e.g. NOT the FY2025 Information Document,
+    a summary-table-only prospectus) -- `available` is False whenever any
+    required figure is missing, and every value is None in that case,
+    never a fabricated 0.
+    """
+    available: bool = Field(..., description="False when this period's filing doesn't disclose a full cost breakdown.")
+    revenue: Optional[float] = None
+    cost_of_sales: Optional[float] = None
+    gross_profit: Optional[float] = None
+    administrative_expenses: Optional[float] = None
+    operating_result: Optional[float] = Field(None, description="Operating result (EBIT).")
+    depreciation_amortization: Optional[float] = Field(None, description="EBITDA minus operating result (EBIT).")
+    ebitda: Optional[float] = None
+    document_id: Optional[int] = None
+
+
 # ==================== Dashboard Periods ====================
 class DashboardPeriodOption(BaseModel):
     """One entry in GET /metrics/dashboard/periods, for the period selector."""

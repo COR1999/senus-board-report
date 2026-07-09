@@ -17,6 +17,7 @@ from app.services.metrics_service import MetricsService
 from app.schemas import (
     DashboardPeriodOption,
     DashboardSummaryResponse,
+    CostWaterfallResponse,
     KPIMetric,
     RevenueTrendPoint,
     HistoricalInsightUpsert,
@@ -534,6 +535,76 @@ async def get_dashboard_metrics(
         prior_period=prior_period,
         data_extracted_at=latest.extracted_at,
         document_id=latest.document_id,
+    )
+
+
+@router.get("/dashboard/cost-waterfall", response_model=CostWaterfallResponse)
+async def get_cost_waterfall(
+    document_id: Optional[int] = Query(
+        None,
+        description="Anchor on a specific document's reporting period instead of the true latest -- "
+        "same convention as GET /dashboard/summary.",
+    ),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Revenue -> Cost of Sales -> Gross Profit -> Administrative Expenses ->
+    Operating Result (EBIT) -> D&A -> EBITDA, for the dashboard's cost
+    waterfall chart (see docs/dashboard-review.md). Only some filing types
+    disclose a full cost breakdown (BalanceSheetMetrics) -- `available` is
+    False, with every figure None, whenever any required value is missing
+    for the anchored period, rather than a waterfall with a fabricated gap.
+    """
+    stmt = (
+        select(FinancialMetrics)
+        .where(_HAS_CORE_METRICS, _IS_CONFIDENT_ENOUGH_FOR_DASHBOARD)
+        .order_by(FinancialMetrics.extracted_at.desc())
+    )
+    result = await db.execute(stmt)
+    rows = result.scalars().all()
+
+    if not rows:
+        if document_id is not None:
+            raise HTTPException(
+                status_code=404,
+                detail="Requested period is not available on the dashboard.",
+            )
+        return CostWaterfallResponse(available=False)
+
+    if document_id is None:
+        anchor = rows[0]
+    else:
+        anchor = next((r for r in rows if r.document_id == document_id), None)
+        if anchor is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Requested period is not available on the dashboard.",
+            )
+
+    bs_stmt = select(BalanceSheetMetrics).where(BalanceSheetMetrics.document_id == anchor.document_id)
+    bs_result = await db.execute(bs_stmt)
+    bs = bs_result.scalars().first()
+
+    revenue = anchor.revenue
+    ebitda = anchor.ebitda
+    cost_of_sales = bs.cost_of_sales if bs else None
+    administrative_expenses = bs.administrative_expenses if bs else None
+    operating_result = bs.operating_result if bs else None
+
+    required = (revenue, cost_of_sales, administrative_expenses, operating_result, ebitda)
+    if any(value is None for value in required):
+        return CostWaterfallResponse(available=False, document_id=anchor.document_id)
+
+    return CostWaterfallResponse(
+        available=True,
+        revenue=revenue,
+        cost_of_sales=cost_of_sales,
+        gross_profit=revenue - cost_of_sales,
+        administrative_expenses=administrative_expenses,
+        operating_result=operating_result,
+        depreciation_amortization=ebitda - operating_result,
+        ebitda=ebitda,
+        document_id=anchor.document_id,
     )
 
 
