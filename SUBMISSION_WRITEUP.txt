@@ -1,0 +1,77 @@
+SENUS BOARD REPORT — GRADUATE TECHNICAL ASSESSMENT SUBMISSION
+Assiduous Technology Graduate Programme
+
+Live app: https://senus-board-report.vercel.app
+API: https://senus-board-report-production.up.railway.app
+Repository: (add your GitHub URL here)
+
+WHAT THIS IS
+
+An AI-native board reporting platform. Upload a company's financial filing (PDF) and it extracts
+structured financial metrics, computes the ratios a board, investor, or credit provider actually
+asks about, and presents them as an executive dashboard with AI-generated commentary. The
+case-study company is Senus PLC, a real Irish natural-capital/MRV SaaS company listed on Euronext
+Access Dublin — every number on the dashboard comes from Senus's own real public filings (a
+half-year results announcement and its Euronext listing prospectus), not synthetic data. All five
+required metric categories are implemented: Growth & Revenue, Profitability, Cash & Liquidity,
+Solvency & Leverage, and Returns, plus AI-generated board commentary.
+
+CORE DESIGN DECISION
+
+Deterministic extraction first, AI as a fallback — not the primary reader. The filings are
+native-text PDFs, so a context-aware regex/table parser isolates the P&L, Balance Sheet, and Cash
+Flow sections and reads the real structure directly, specifically to prevent narrative leakage
+(e.g. a forward-looking "EBITDA positive by FY2028" sentence being misread as a real EBITDA
+figure). Gemini only runs to fill genuine gaps the deterministic pass couldn't find, or as a vision
+backup for the one filing that turned out to be a scanned PDF with no text layer at all. Every
+extraction is scored 0-100 by a transparent, source-aware confidence system (a table match counts
+for more than an LLM guess) and tiered auto_accept / needs_review / rejected — a document that
+scores too low never reaches the executive dashboard until a human reviews and approves it.
+
+ARCHITECTURE
+
+Next.js (App Router, React 19, TypeScript, Tailwind, shadcn/ui, Recharts) on Vercel, talking to a
+FastAPI + async SQLAlchemy backend on Railway backed by PostgreSQL. The frontend polls the backend
+every 60 seconds with content-hash deduplication so unchanged data never triggers a re-render or a
+wasted AI call. AI shows up in two independent places with separate API keys and quota pools:
+backend extraction/enrichment (Gemini), and a frontend-only "AI Board Insights" panel that
+generates ranked, categorized commentary from the already-computed metrics.
+
+ENGINEERING DISCIPLINE
+
+A missing value is always null, never a guessed zero — enforced everywhere after a real incident
+where a defaulted zero silently overrode genuine data on the dashboard. Two filings with different
+reporting cadences (six months vs. twelve months) are never blended into one misleading trend line
+at any layer — KPI comparisons, the revenue trend chart, or the AI prompts. The dashboard is
+adaptive: a missing metric swaps to a real fallback (e.g. EBITDA Margin when EBITDA itself isn't
+disclosed) rather than rendering an empty card, and charts choose their own presentation (stat
+callout, bar comparison, or line) based on how many real data points actually exist. Two
+independent Senus filings that turned out to report the exact same period are merged field-by-field
+rather than picked between arbitrarily, with any genuine conflict flagged for human review.
+
+VALIDATION
+
+232+ backend (pytest) and 236 frontend (Vitest) automated tests, run before every merge, alongside
+a clean tsc --noEmit and a clean production build. Extracted figures were cross-checked by hand
+against the source PDFs. Changes were verified against the real deployed backend and production
+database directly, not just mocks. The dashboard was checked end-to-end across mobile (375px),
+tablet (640/768px), and desktop (1440px) viewports against the live backend — zero horizontal
+overflow and zero console errors at any breakpoint; two real chart-legibility defects found this
+way were fixed (overlapping axis labels, an unstyled tooltip artifact).
+
+HONEST LIMITATIONS
+
+Uploaded PDF storage is not yet durable (Railway's filesystem is ephemeral — extracted data is
+unaffected, only the original file can be lost across a redeploy). No real authentication, by
+explicit design — this is a single-user boardroom presentation tool, not a multi-tenant product.
+The AI Board Insights panel can fall back to static content if its own Gemini quota is exhausted;
+a real circuit breaker and backoff were built so this fails gracefully rather than wasting calls.
+
+AI-ASSISTED WORKFLOW
+
+Built in two phases: a manually-implemented foundation (backend, extraction pipeline, initial
+dashboard), then an extended feature-development phase using Claude Code across dozens of small,
+individually tested and reviewed branches — plan before code, verify against the real system before
+merging, never fabricate missing data. Full build history and every architectural decision (with
+the alternative considered and why it lost) are documented in the repository's README and
+docs/roadmap.md.

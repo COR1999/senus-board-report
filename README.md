@@ -11,7 +11,7 @@ its Euronext listing prospectus), not synthetic data.
 
 **Live app:** https://senus-board-report.vercel.app
 **API:** https://senus-board-report-production.up.railway.app
-**Demo video:** _TODO — not yet recorded_
+**Demo video:** https://youtu.be/fpC68-ZhlA8
 
 ---
 
