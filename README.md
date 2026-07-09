@@ -268,6 +268,15 @@ large change. The working pattern, used consistently:
   deployed document and confirming the exact 404 response.
 - **Live browser verification** for UI changes, including simulated interaction states (hover,
   theme toggles, form validation), not just component-level assertions.
+- **Responsive across mobile/tablet/desktop**: every page (`/`, `/documents`, `/reports`,
+  `/settings`) was checked against the real deployed backend at 375px/640px/768px/1440px widths --
+  zero horizontal overflow and zero console errors at any breakpoint. Two real defects were found
+  this way (not assumed) and fixed: the Cost Waterfall chart's seven X-axis labels overlapped into
+  an unreadable smear on a narrow screen (now angled), and Recharts' default bar-chart tooltip drew
+  an unstyled cursor-highlight rectangle that read as a stray white box on this dashboard's dark
+  theme (now disabled, since both custom tooltips already show the hovered value). The
+  Documents/Reports tables use a card-list layout on narrow screens rather than a horizontally
+  scrolling HTML table.
 
 ## Local development
 
