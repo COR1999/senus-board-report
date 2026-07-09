@@ -1,5 +1,5 @@
 import { render, screen, fireEvent } from '@testing-library/react'
-import { RevenueChart, buildChartRows, cadenceBucket } from '@/components/dashboard/revenue-chart'
+import { RevenueChart, buildChartRows, cadenceBucket, determineRenderMode } from '@/components/dashboard/revenue-chart'
 import { describe, it, expect } from 'vitest'
 import type { ChartDataPoint } from '@/lib/data-service'
 
@@ -46,8 +46,9 @@ describe('RevenueChart', () => {
     expect(screen.getByText('Revenue Trend')).toBeInTheDocument()
   })
 
-  it('does not crash on mixed HY/FY data with a selected point and forecast on', () => {
+  it('does not crash on mixed HY/FY data (3+ FY points) with a selected point and forecast on', () => {
     const mixedData = [
+      { period: 'FY2023', revenue: 600_000, ebitda: -80_000, cash: 300_000, document_id: 9, cadence_months: 12 },
       { period: 'FY2024', revenue: 700_000, ebitda: -50_000, cash: 400_000, document_id: 10, cadence_months: 12 },
       { period: 'HY2025', revenue: 350_000, ebitda: -20_000, cash: 500_000, document_id: 11, cadence_months: 6 },
       { period: 'FY2025', revenue: 836_991, ebitda: -613_313, cash: 140_135, document_id: 12, cadence_months: 12 },
@@ -57,6 +58,77 @@ describe('RevenueChart', () => {
     fireEvent.click(screen.getByRole('switch'))
 
     expect(container.firstChild).toBeInTheDocument()
+  })
+
+  describe('point-count-aware render modes', () => {
+    it('shows a stat callout per cadence, no forecast toggle, with exactly one real point each', () => {
+      const onePerCadence = [
+        { period: 'FY2025', revenue: 836_991, ebitda: -613_313, cash: 140_135, document_id: 1, cadence_months: 12 },
+        { period: 'HY2026', revenue: 355_000, ebitda: -50_000, cash: 140_135, document_id: 2, cadence_months: 6 },
+      ]
+      render(<RevenueChart data={onePerCadence} />)
+
+      expect(screen.getByText('Full Year')).toBeInTheDocument()
+      expect(screen.getByText('Half Year')).toBeInTheDocument()
+      expect(screen.getByText('€837K')).toBeInTheDocument()
+      expect(screen.queryByRole('switch')).not.toBeInTheDocument()
+    })
+
+    it('renders without a forecast toggle, with exactly two real points in the fullest cadence', () => {
+      // ResponsiveContainer reports zero width under jsdom and never renders
+      // Recharts' actual SVG children (see buildChartRows' own docstring on
+      // why chart-shaping logic is tested as a pure function instead) -- this
+      // only asserts the surrounding chrome, the same pattern every other
+      // render-mode test in this file follows.
+      const twoFyPoints = [
+        { period: 'FY2023', revenue: 600_000, ebitda: null, cash: null, document_id: 1, cadence_months: 12 },
+        { period: 'FY2024', revenue: 700_000, ebitda: null, cash: null, document_id: 2, cadence_months: 12 },
+      ]
+      const { container } = render(<RevenueChart data={twoFyPoints} />)
+
+      expect(container.firstChild).toBeInTheDocument()
+      expect(screen.queryByRole('switch')).not.toBeInTheDocument()
+      expect(screen.queryByText(/No revenue data yet/)).not.toBeInTheDocument()
+    })
+
+    it('shows a placeholder, not an empty chart, with zero real points', () => {
+      render(<RevenueChart data={[]} />)
+
+      expect(screen.getByText(/No revenue data yet/)).toBeInTheDocument()
+      expect(screen.queryByRole('switch')).not.toBeInTheDocument()
+    })
+
+    it('still shows the forecast toggle once a cadence reaches 3+ real points', () => {
+      render(<RevenueChart data={mockData} />)
+      expect(screen.getByRole('switch')).toBeInTheDocument()
+    })
+  })
+})
+
+describe('determineRenderMode', () => {
+  it('returns "empty" for no data', () => {
+    expect(determineRenderMode([])).toBe('empty')
+  })
+
+  it('returns "stat" when the fullest cadence bucket has exactly one point', () => {
+    expect(
+      determineRenderMode([
+        { period: 'FY2025', revenue: 1, ebitda: null, cash: null, document_id: 1, cadence_months: 12 },
+      ])
+    ).toBe('stat')
+  })
+
+  it('returns "bars" when the fullest cadence bucket has exactly two points', () => {
+    expect(
+      determineRenderMode([
+        { period: 'FY2023', revenue: 1, ebitda: null, cash: null, document_id: 1, cadence_months: 12 },
+        { period: 'FY2024', revenue: 2, ebitda: null, cash: null, document_id: 2, cadence_months: 12 },
+      ])
+    ).toBe('bars')
+  })
+
+  it('returns "line" once any cadence bucket reaches three or more points', () => {
+    expect(determineRenderMode(mockData)).toBe('line')
   })
 })
 
