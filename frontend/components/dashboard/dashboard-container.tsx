@@ -8,8 +8,7 @@ import { RevenueChart } from './revenue-chart'
 import { CostWaterfallChart } from './cost-waterfall-chart'
 import { GrowthForecastCards } from './growth-forecast-cards'
 import { AiInsights } from './ai-insights'
-import { HistoricalTrendInsight } from './historical-trend-insight'
-import { ReportsTable } from './reports-table'
+import { RecentReports } from './recent-reports'
 import { ErrorBanner } from '@/components/error-banner'
 import { useMetrics, useChartData, useReports, usePeriods, useCostWaterfall } from '@/lib/hooks/use-dashboard-data'
 import { periodContextLabel } from '@/lib/period'
@@ -56,7 +55,7 @@ export function DashboardContainer() {
   const { data: chartData, loading: chartLoading, error: chartError } = useChartData({
     pollIntervalMs: DASHBOARD_POLL_INTERVAL_MS,
   })
-  const { data: reports, loading: reportsLoading, error: reportsError, refetch: refetchReports } = useReports({
+  const { data: reports, loading: reportsLoading, error: reportsError } = useReports({
     pollIntervalMs: DASHBOARD_POLL_INTERVAL_MS,
   })
   // Deliberately not part of the page's blocking `error` state below --
@@ -202,44 +201,42 @@ export function DashboardContainer() {
         ))}
       </div>
 
-      {/* AI Board Insights -- surfaced right under the headline numbers
-          (rather than beside the chart, further down) per feedback that the
-          narrative commentary should be one of the first things a board
-          reader sees, not something they scroll past the chart to find.
-          Historical Trend sits alongside it as its own distinct card
-          (answers "what's the trajectory over time", not "what does this
-          one report say") rather than folded into the same list. */}
-      <div className="grid gap-4 lg:grid-cols-3">
-        <div className="lg:col-span-2">
-          <AiInsights metrics={metrics} reportId={currentReport?.id ?? null} />
-        </div>
-        <HistoricalTrendInsight chartData={chartData ?? []} />
-      </div>
-
-      {/* Secondary metrics: Bookings, Profitability, Cash & Liquidity, Solvency & Leverage, Returns */}
-      <KpiStatStrip items={statStripConfig} periodLabel={metrics.current_period ?? undefined} />
-
-      {/* Revenue Trend chart -- always the full history, with whichever
-          period is selected above highlighted, not filtered to it alone.
-          `metrics.document_id` (not the raw `selectedDocumentId` state) --
-          the backend already resolves "nothing explicitly selected" to the
-          true latest document's own id, so the highlight lands on the
-          right point even in the default "latest" state, not nowhere. */}
+      {/* Financial Performance -- Revenue Trend (always the full history,
+          with whichever period is selected above highlighted, not filtered
+          to it alone -- `metrics.document_id`, not the raw
+          `selectedDocumentId` state, since the backend already resolves
+          "nothing explicitly selected" to the true latest document's own
+          id) plus the cost waterfall, which renders nothing at all when
+          the selected period's filing doesn't disclose a full cost
+          breakdown (e.g. the FY2025 Information Document). */}
       <RevenueChart data={chartData ?? []} periodLabel={metrics.current_period} selectedDocumentId={metrics.document_id} />
-
-      {/* Cost waterfall -- renders nothing at all when the selected
-          period's filing doesn't disclose a full cost breakdown (e.g. the
-          FY2025 Information Document), same adaptive discipline as
-          everything else on this page. */}
       {waterfall && <CostWaterfallChart data={waterfall} periodLabel={metrics.current_period} />}
+
+      {/* Financial Health -- one slot per assignment-required category
+          (Growth & Revenue, Profitability, Cash & Liquidity, Solvency &
+          Leverage, Returns), each with its own fallback chain (see
+          selectSecondaryKpis) so a category with nothing real to show is
+          omitted entirely rather than rendered empty. */}
+      <KpiStatStrip items={statStripConfig} periodLabel={metrics.current_period ?? undefined} />
 
       {/* Growth & Forecast -- Method Two (guidance-based) projection cards.
           Renders nothing without a real revenue baseline to project from,
           same adaptive discipline as everything else on this page. */}
       <GrowthForecastCards chartData={chartData ?? []} />
 
-      {/* Reports Table */}
-      <ReportsTable reports={reports ?? []} onRegenerated={refetchReports} />
+      {/* AI Executive Commentary -- the closing section, a synthesis of
+          everything above it rather than a preview shown before the reader
+          has seen the numbers (a deliberate reversal of the previous
+          "commentary should be one of the first things seen" position --
+          see docs/dashboard-review.md's "AI commentary" section for why).
+          Folds the all-reports trend narrative into the same ranked feed
+          instead of a separate adjacent card. */}
+      <AiInsights metrics={metrics} reportId={currentReport?.id ?? null} chartData={chartData ?? []} />
+
+      {/* Recent Reports -- a short pointer to what's recent, not the full
+          searchable/filterable/exportable table (that stays on /reports,
+          one click away via the sidebar). */}
+      <RecentReports reports={reports ?? []} />
     </DashboardShell>
   )
 }
