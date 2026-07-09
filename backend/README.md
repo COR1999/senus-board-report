@@ -24,15 +24,24 @@ backend/
 │   │   ├── database.py           # Async SQLAlchemy engine/session + declarative Base
 │   │   └── security.py           # Placeholder for future auth (not wired up yet)
 │   ├── api/routes/
-│   │   ├── documents.py          # Upload / list / get / delete documents
+│   │   ├── documents/             # Upload / list / get / delete documents + investor-relations sync
+│   │   │   ├── __init__.py          # Shared router + helpers (_ingest_document, build_document_response)
+│   │   │   ├── _core.py             # Upload, get, list, delete, download, approve, reconcile-periods
+│   │   │   └── _external_sync.py    # Investor-relations available/hidden/hide/unhide/import
 │   │   ├── reports.py            # Generate / regenerate / get / delete reports, dashboard payload
-│   │   └── metrics.py            # GET /metrics/dashboard/summary (read-only, internal-write-only)
+│   │   └── metrics/               # Dashboard KPIs/charts (read-only, internal-write-only)
+│   │       ├── __init__.py          # Shared router, re-exports for period_merge_service.py/tests
+│   │       ├── _shared.py           # Constants + period/cadence helpers used by all three below
+│   │       ├── dashboard_summary.py # GET /dashboard/periods, GET /dashboard/summary
+│   │       ├── charts.py            # GET /dashboard/cost-waterfall, GET /dashboard/revenue-trend
+│   │       └── historical_insight.py # GET/PUT /dashboard/historical-insight
 │   ├── models/                   # SQLAlchemy ORM models: Document, FinancialMetrics, BalanceSheetMetrics,
 │   │                             #   Report, ReportInsights, HistoricalInsight, HiddenExternalFiling
 │   ├── schemas/                  # Pydantic request/response schemas
 │   ├── services/
 │   │   ├── pdf_service.py                  # Save + extract text from uploaded PDFs
-│   │   ├── financial_metrics_extractor.py  # Deterministic P&L/balance-sheet/cash-flow parser
+│   │   ├── financial_metrics_extractor/    # Deterministic P&L/balance-sheet/cash-flow parser (package:
+│   │   │                                   #   _text_parsing/_period_detection/_field_extraction mixins)
 │   │   ├── gemini_service.py               # Gemini client: caching, quota/rate limiting, JSON parsing
 │   │   ├── report_service.py               # Orchestrates extraction + AI enrichment + persistence
 │   │   ├── metrics_service.py              # Formatting/derived-metric helpers (currency, CAGR, etc.)
