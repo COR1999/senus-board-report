@@ -1,6 +1,7 @@
 import { cn } from '@/lib/utils'
-import { getTrendStyle, getValueTextClass, type Trend } from '@/lib/format'
+import { getValueTextClass, type Trend } from '@/lib/format'
 import { Card, CardContent } from '@/components/ui/card'
+import { TrendDeltaBadge } from '@/components/dashboard/trend-delta-badge'
 import type { KpiCategory } from '@/lib/kpi-categories'
 
 export interface StatStripItem {
@@ -43,7 +44,6 @@ export function KpiStatStrip({ items, periodLabel }: KpiStatStripProps) {
           cell on the last row and cramps the category/label/value stack. */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 lg:grid-cols-5">
         {items.map(({ key, category, label, value, changePercentage, trend, hasComparison }) => {
-          const { textClass, bgClass, Icon: TrendIcon } = getTrendStyle(trend)
           return (
             <Card key={key} className="border-foreground/10">
               <CardContent className="flex flex-col gap-1">
@@ -68,16 +68,7 @@ export function KpiStatStrip({ items, periodLabel }: KpiStatStripProps) {
                     {value}
                   </span>
                   {hasComparison && (
-                    <span
-                      className={cn(
-                        'inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[11px] font-semibold',
-                        bgClass,
-                        textClass
-                      )}
-                    >
-                      <TrendIcon className="h-3 w-3" strokeWidth={2.5} />
-                      {changePercentage}%
-                    </span>
+                    <TrendDeltaBadge trend={trend} changePercentage={changePercentage} size="sm" />
                   )}
                 </div>
               </CardContent>

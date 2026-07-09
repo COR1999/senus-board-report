@@ -2,6 +2,7 @@ import * as React from "react"
 import { cn } from "@/lib/utils"
 import { getTrendStyle, getValueTextClass, type Trend } from "@/lib/format"
 import { KpiSparkline } from "@/components/dashboard/kpi-sparkline"
+import { TrendDeltaBadge } from "@/components/dashboard/trend-delta-badge"
 import {
   Card,
   CardHeader,
@@ -68,7 +69,7 @@ export function KpiCard({
   className,
   ...props
 }: KpiCardProps) {
-  const { textClass, bgClass, Icon: TrendIcon } = getTrendStyle(trend)
+  const { textClass, bgClass } = getTrendStyle(trend)
   const isHero = variant === "hero"
 
   return (
@@ -117,16 +118,7 @@ export function KpiCard({
         </div>
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-1.5 text-xs font-medium">
-            <span
-              className={cn(
-                "inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-xs font-semibold",
-                bgClass,
-                textClass
-              )}
-            >
-              <TrendIcon className="h-3.5 w-3.5" strokeWidth={2.5} />
-              {changePercentage}%
-            </span>
+            <TrendDeltaBadge trend={trend} changePercentage={changePercentage} />
             <span className="text-muted-foreground font-normal">{timeframe}</span>
           </div>
           {history && (

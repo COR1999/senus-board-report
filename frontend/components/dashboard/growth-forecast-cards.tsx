@@ -1,5 +1,6 @@
 'use client'
 
+import type { ReactNode } from 'react'
 import { Info, TrendingUp } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -11,6 +12,27 @@ interface GrowthForecastCardsProps {
   /** Same all-reports chart data the Revenue Trend chart renders -- this
    * card projects forward from the most recent REAL revenue point in it. */
   chartData: ChartDataPoint[]
+}
+
+/** One of the four indigo stat tiles below -- extracted since all four
+ * shared identical wrapper/label/value markup, differing only in content
+ * and whether a progress bar follows. */
+function ForecastStatTile({
+  label,
+  value,
+  children,
+}: {
+  label: string
+  value: string
+  children?: ReactNode
+}) {
+  return (
+    <div className="rounded-lg border border-indigo-500/20 bg-indigo-500/5 p-4">
+      <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{label}</div>
+      <div className="mt-1 text-2xl font-bold tracking-tight text-indigo-600 dark:text-indigo-400">{value}</div>
+      {children}
+    </div>
+  )
 }
 
 /**
@@ -55,37 +77,10 @@ export function GrowthForecastCards({ chartData }: GrowthForecastCardsProps) {
       </CardHeader>
       <CardContent>
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-          <div className="rounded-lg border border-indigo-500/20 bg-indigo-500/5 p-4">
-            <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Projected Revenue {summary.targetYear}
-            </div>
-            <div className="mt-1 text-2xl font-bold tracking-tight text-indigo-600 dark:text-indigo-400">
-              {formatCurrencyShort(summary.projectedTarget)}
-            </div>
-          </div>
-          <div className="rounded-lg border border-indigo-500/20 bg-indigo-500/5 p-4">
-            <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Target CAGR
-            </div>
-            <div className="mt-1 text-2xl font-bold tracking-tight text-indigo-600 dark:text-indigo-400">
-              {summary.cagrPercent.toFixed(0)}%
-            </div>
-          </div>
-          <div className="rounded-lg border border-indigo-500/20 bg-indigo-500/5 p-4">
-            <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Growth Multiple
-            </div>
-            <div className="mt-1 text-2xl font-bold tracking-tight text-indigo-600 dark:text-indigo-400">
-              {summary.growthMultiple.toFixed(1)}×
-            </div>
-          </div>
-          <div className="rounded-lg border border-indigo-500/20 bg-indigo-500/5 p-4">
-            <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Progress to Target
-            </div>
-            <div className="mt-1 text-2xl font-bold tracking-tight text-indigo-600 dark:text-indigo-400">
-              {summary.progressToTargetPercent.toFixed(0)}%
-            </div>
+          <ForecastStatTile label={`Projected Revenue ${summary.targetYear}`} value={formatCurrencyShort(summary.projectedTarget)} />
+          <ForecastStatTile label="Target CAGR" value={`${summary.cagrPercent.toFixed(0)}%`} />
+          <ForecastStatTile label="Growth Multiple" value={`${summary.growthMultiple.toFixed(1)}×`} />
+          <ForecastStatTile label="Progress to Target" value={`${summary.progressToTargetPercent.toFixed(0)}%`}>
             <div
               className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-indigo-500/15"
               role="progressbar"
@@ -96,7 +91,7 @@ export function GrowthForecastCards({ chartData }: GrowthForecastCardsProps) {
             >
               <div className="h-full rounded-full bg-indigo-500" style={{ width: `${progress}%` }} />
             </div>
-          </div>
+          </ForecastStatTile>
         </div>
       </CardContent>
     </Card>

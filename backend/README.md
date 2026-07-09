@@ -27,15 +27,18 @@ backend/
 │   │   ├── documents.py          # Upload / list / get / delete documents
 │   │   ├── reports.py            # Generate / regenerate / get / delete reports, dashboard payload
 │   │   └── metrics.py            # GET /metrics/dashboard/summary (read-only, internal-write-only)
-│   ├── models/                   # SQLAlchemy ORM models: Document, FinancialMetrics, Report
+│   ├── models/                   # SQLAlchemy ORM models: Document, FinancialMetrics, BalanceSheetMetrics,
+│   │                             #   Report, ReportInsights, HistoricalInsight, HiddenExternalFiling
 │   ├── schemas/                  # Pydantic request/response schemas
 │   ├── services/
 │   │   ├── pdf_service.py                  # Save + extract text from uploaded PDFs
 │   │   ├── financial_metrics_extractor.py  # Deterministic P&L/balance-sheet/cash-flow parser
 │   │   ├── gemini_service.py               # Gemini client: caching, quota/rate limiting, JSON parsing
 │   │   ├── report_service.py               # Orchestrates extraction + AI enrichment + persistence
-│   │   └── metrics_service.py              # Formatting/derived-metric helpers (currency, CAGR, etc.)
-│   └── utils/                    # Empty — reserved for future shared helpers
+│   │   ├── metrics_service.py              # Formatting/derived-metric helpers (currency, CAGR, etc.)
+│   │   ├── extraction_confidence.py        # Scores every extraction 0-100, tiers auto_accept/needs_review/rejected
+│   │   ├── period_merge_service.py         # Merges two documents found to report the same period
+│   │   └── investor_relations_client.py    # Client for Senus's own investor-relations JSON API
 ├── tests/                        # pytest suite (see "Testing" below)
 ├── docs/                         # Design notes and change history for past PRs
 ├── reset_db.py                   # Dev utility: drop/recreate tables via init_db()
@@ -49,9 +52,9 @@ backend/
 
 | Router | Routes |
 |---|---|
-| documents | `GET /api/documents`, `POST /api/documents/upload`, `GET/DELETE /api/documents/{id}` |
-| reports | `GET /api/reports`, `GET/POST /api/reports/document/{id}`, `GET/DELETE /api/reports/{id}`, `GET /api/reports/{id}/dashboard`, `POST /api/reports/{id}/regenerate` |
-| metrics | `GET /metrics/dashboard/summary` |
+| documents | `GET /api/documents`, `POST /api/documents/upload`, `GET/DELETE /api/documents/{id}`, `GET /api/documents/{id}/file`, `POST /api/documents/{id}/approve`, `POST /api/documents/reconcile-periods`, `GET /api/documents/external/available`, `GET /api/documents/external/hidden`, `POST /api/documents/external/{attachment_id}/import`, `POST /api/documents/external/{attachment_id}/hide`, `POST /api/documents/external/{attachment_id}/unhide` |
+| reports | `GET /api/reports`, `GET/POST /api/reports/document/{id}`, `GET/DELETE /api/reports/{id}`, `GET /api/reports/{id}/dashboard`, `POST /api/reports/{id}/regenerate`, `GET/PUT /api/reports/{id}/insights` |
+| metrics | `GET /metrics/dashboard/summary`, `GET /metrics/dashboard/periods`, `GET /metrics/dashboard/revenue-trend`, `GET /metrics/dashboard/cost-waterfall`, `GET/PUT /metrics/dashboard/historical-insight` |
 | system | `GET /`, `GET /health` |
 
 Financial metrics have no client-facing create/update endpoint by design —

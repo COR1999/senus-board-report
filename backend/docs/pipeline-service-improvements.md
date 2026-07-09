@@ -69,7 +69,8 @@ Removed duplicate/unused endpoints and dead code across `documents.py`,
 - Updated `tests/test_upload_metrics.py` to drop the test that exercised
   the now-removed `create_metrics` endpoint.
 
-Current route surface:
+Route surface at the time of this change (many routes have been added since --
+see `backend/README.md`'s "Route surface" table for the current, up-to-date list):
 
 | Router | Routes |
 |---|---|
