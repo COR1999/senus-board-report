@@ -8,6 +8,8 @@ from app.schemas.financial import (
     # Dashboard Summary
     KPIMetric,
     DashboardSummaryResponse,
+    # Cost Waterfall
+    CostWaterfallResponse,
     # Dashboard Periods
     DashboardPeriodOption,
     # Revenue Trend
@@ -37,6 +39,7 @@ __all__ = [
     "FinancialMetricsResponse",
     "KPIMetric",
     "DashboardSummaryResponse",
+    "CostWaterfallResponse",
     "DashboardPeriodOption",
     "RevenueTrendPoint",
     "HistoricalInsightPayload",

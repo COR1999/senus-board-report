@@ -5,12 +5,13 @@ import { DashboardShell } from './dashboard-shell'
 import { KpiCard } from './kpi-card'
 import { KpiStatStrip, type StatStripItem } from './kpi-stat-strip'
 import { RevenueChart } from './revenue-chart'
+import { CostWaterfallChart } from './cost-waterfall-chart'
 import { GrowthForecastCards } from './growth-forecast-cards'
 import { AiInsights } from './ai-insights'
 import { HistoricalTrendInsight } from './historical-trend-insight'
 import { ReportsTable } from './reports-table'
 import { ErrorBanner } from '@/components/error-banner'
-import { useMetrics, useChartData, useReports, usePeriods } from '@/lib/hooks/use-dashboard-data'
+import { useMetrics, useChartData, useReports, usePeriods, useCostWaterfall } from '@/lib/hooks/use-dashboard-data'
 import { periodContextLabel } from '@/lib/period'
 import { selectHeroKpis, selectSecondaryKpis } from '@/lib/kpi-selection'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -56,6 +57,14 @@ export function DashboardContainer() {
     pollIntervalMs: DASHBOARD_POLL_INTERVAL_MS,
   })
   const { data: reports, loading: reportsLoading, error: reportsError, refetch: refetchReports } = useReports({
+    pollIntervalMs: DASHBOARD_POLL_INTERVAL_MS,
+  })
+  // Deliberately not part of the page's blocking `error` state below --
+  // the cost waterfall is a supplementary chart (and, for many periods,
+  // legitimately unavailable), not core dashboard data. A fetch failure
+  // here should just mean the chart doesn't render, never take down the
+  // whole page the way a metrics/chart/reports failure does.
+  const { data: waterfall } = useCostWaterfall(selectedDocumentId, {
     pollIntervalMs: DASHBOARD_POLL_INTERVAL_MS,
   })
 
@@ -217,6 +226,12 @@ export function DashboardContainer() {
           true latest document's own id, so the highlight lands on the
           right point even in the default "latest" state, not nowhere. */}
       <RevenueChart data={chartData ?? []} periodLabel={metrics.current_period} selectedDocumentId={metrics.document_id} />
+
+      {/* Cost waterfall -- renders nothing at all when the selected
+          period's filing doesn't disclose a full cost breakdown (e.g. the
+          FY2025 Information Document), same adaptive discipline as
+          everything else on this page. */}
+      {waterfall && <CostWaterfallChart data={waterfall} periodLabel={metrics.current_period} />}
 
       {/* Growth & Forecast -- Method Two (guidance-based) projection cards.
           Renders nothing without a real revenue baseline to project from,

@@ -10,6 +10,7 @@ import {
   getAvailableExternalFilings,
   getHiddenExternalFilings,
   getDashboardPeriods,
+  getCostWaterfall,
   type Metrics,
   type ChartDataPoint,
   type Report,
@@ -17,6 +18,7 @@ import {
   type DocumentDetail,
   type ExternalFiling,
   type DashboardPeriod,
+  type CostWaterfall,
 } from '@/lib/data-service'
 
 /**
@@ -45,6 +47,15 @@ export function useChartData(options?: UseAsyncDataOptions): AsyncDataState<Char
 // shown for whichever period is selected.
 export function usePeriods(options?: UseAsyncDataOptions): AsyncDataState<DashboardPeriod[]> {
   return useAsyncData(getDashboardPeriods, options)
+}
+
+// Same anchor convention as useMetrics -- `documentId` selects which
+// period's cost breakdown to show; `null` means "latest".
+export function useCostWaterfall(documentId: number | null, options?: UseAsyncDataOptions): AsyncDataState<CostWaterfall> {
+  return useAsyncData(() => getCostWaterfall(documentId), {
+    ...options,
+    deps: [documentId, ...(options?.deps ?? [])],
+  })
 }
 
 export function useReports(options?: UseAsyncDataOptions): AsyncDataState<Report[]> {
