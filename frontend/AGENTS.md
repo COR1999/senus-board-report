@@ -92,6 +92,11 @@ decks. Working principles from that brief, still in force:
   at a time (a series-swap toggle, not a dual-axis overlay — KPIs are on very different scales and
   can have different signs). Projected/forecast data points get a distinct visual treatment
   (dashed line, indigo `#6366f1`, italic axis labels) so they never look like real historical data.
+  A line chart is not the default presentation — `revenue-chart.tsx`'s `determineRenderMode` picks
+  a stat callout, a bar comparison, or a line chart based on how many real points actually exist per
+  cadence bucket (1 / 2 / 3+ respectively); a 1-2-dot "trend" communicates nothing real, so it isn't
+  drawn as one. The forecast toggle only appears once a real trend exists to project from (line mode)
+  — see `docs/dashboard-review.md`'s "Fixing the charts" section for the incident this replaced.
 - **Single-user chrome, not multi-tenant chrome**: this is a boardroom presentation tool for one
   fixed presenter identity, not an account-management product — no login/logout, no editable
   profile, no notifications system. Don't add UI that implies otherwise (see `docs/roadmap.md`'s
@@ -112,19 +117,44 @@ decks. Working principles from that brief, still in force:
 
 ## Current dashboard components
 
-`components/dashboard/`:
-- `dashboard-container.tsx` — top-level client component, fetches metrics/
-  chart/report data and composes the page
-- `kpi-card.tsx` — KPI card (value, delta, trend, optional sparkline)
-- `kpi-sparkline.tsx` — minimal inline Recharts chart used by `kpi-card.tsx`
-- `revenue-chart.tsx` — full revenue trend chart
-- `ai-insights.tsx` — AI-generated executive commentary panel
-- `reports-table.tsx` — recent reports list
-- `sidebar.tsx`, `top-nav.tsx` — navigation shell
+`components/dashboard/`, roughly in the order they appear on the executive
+dashboard (`/`) -- see `docs/dashboard-review.md` for why this order and the
+adaptive-visibility rules behind several of them:
+- `dashboard-container.tsx` — top-level client component; fetches
+  metrics/chart/reports/cost-waterfall data via `lib/hooks/` and composes
+  the page. Data-shaping (which KPIs to show, which chart mode to render)
+  is delegated to pure functions in `lib/` rather than done inline here.
+- `kpi-card.tsx` / `kpi-sparkline.tsx` — hero KPI card (value, delta,
+  trend, optional sparkline).
+- `kpi-stat-strip.tsx` — the secondary "Financial Health" row. Which slots
+  render comes from `lib/kpi-selection.ts`'s adaptive fallback cascade, not
+  a fixed list — a category with nothing real to show is omitted, never
+  rendered empty.
+- `revenue-chart.tsx` — Revenue/EBITDA/Cash trend. Presentation (stat
+  callout / bar comparison / line chart) follows real point count per
+  cadence bucket, see `determineRenderMode`.
+- `cost-waterfall-chart.tsx` — Revenue → … → EBITDA waterfall; renders
+  nothing when the selected period's filing doesn't disclose a full cost
+  breakdown.
+- `growth-forecast-cards.tsx` — Method Two (guidance-based) forecast stat
+  cards, see `lib/forecast.ts`.
+- `ai-insights.tsx` — the closing "AI Board Insights" panel; composes
+  `lib/hooks/use-ai-insights.ts` (per-report) and
+  `lib/hooks/use-historical-trend-insight.ts` (all-reports trend) into one
+  ranked feed rather than two separate cards.
+- `recent-reports.tsx` — a short pointer to the latest few reports, linking
+  to the full `/reports` page. `reports-table.tsx` is the full
+  searchable/filterable/exportable table used there (and only there).
+- `sidebar.tsx`, `top-nav.tsx` — navigation shell.
 
 Shared logic lives in `lib/`: `data-service.ts` (API calls + types),
-`format.ts` (trend/percent formatting), `metrics.ts` (delta calculations),
-`mock-data.ts` (fallback data when the backend is unreachable).
+`format.ts` (trend/percent formatting), `kpi-selection.ts` (adaptive KPI
+fallback cascade), `forecast.ts` (trend-based and guidance-based
+projections), `mock-data.ts` (fallback data when the backend is
+unreachable). Data-fetching hooks live in `lib/hooks/`
+(`use-dashboard-data.ts`, `use-ai-insights.ts`,
+`use-historical-trend-insight.ts`, `use-async-data.ts` as the shared
+loading/error/data/refetch primitive underneath all of them).
 
 Extend these existing components/utilities rather than replacing them
 unless a change genuinely requires it.
