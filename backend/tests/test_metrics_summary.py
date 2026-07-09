@@ -20,6 +20,8 @@ async def _add_metrics_row(
     revenue_prior=None,
     cash_prior=None,
     ebitda_prior=None,
+    gross_margin=None,
+    operating_margin=None,
     bookings_value=None,
     extracted_at=None,
     fm_reporting_period=None,
@@ -50,6 +52,8 @@ async def _add_metrics_row(
         revenue_prior=revenue_prior,
         cash_prior=cash_prior,
         ebitda_prior=ebitda_prior,
+        gross_margin=gross_margin,
+        operating_margin=operating_margin,
         bookings_value=bookings_value,
         reporting_period=fm_reporting_period,
         reporting_period_prior=fm_reporting_period_prior,
@@ -372,6 +376,68 @@ async def test_dashboard_summary_bookings_shows_formatted_value(async_client, as
     # never a fabricated delta.
     assert body["trend"] == "neutral"
     assert body["change"] == 0
+
+
+@pytest.mark.anyio
+async def test_dashboard_summary_available_flag_distinguishes_real_from_missing(async_client, async_session):
+    """`available` is the explicit machine-readable signal the frontend's
+    adaptive KPI cascade (lib/kpi-selection.ts) reads -- it must be True for
+    every real figure and False for every missing-value message, regardless
+    of which helper (build/ratio_kpi/bookings_kpi) produced it."""
+    await _add_metrics_row(async_session, revenue=100_000.0, ebitda=None)  # no bookings, no balance sheet row
+
+    response = await async_client.get("/metrics/dashboard/summary")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["revenue"]["available"] is True
+    assert body["ebitda"]["available"] is False
+    assert body["bookings"]["available"] is False
+    assert body["ebitda_margin"]["available"] is False
+    assert body["cash_runway"]["available"] is False
+    assert body["interest_cover"]["available"] is False
+    assert body["roce"]["available"] is False
+    assert body["gross_margin"]["available"] is False
+    assert body["operating_margin"]["available"] is False
+
+
+@pytest.mark.anyio
+async def test_dashboard_summary_cash_flow_positive_is_marked_available(async_client, async_session):
+    """"Cash flow +" is a real, meaningful signal (not missing data) --
+    the adaptive cascade must not treat it as a gap to fall back away from."""
+    metrics = await _add_metrics_row(async_session, revenue=100_000.0, cash=50_000.0)
+    await _add_balance_sheet_row(async_session, metrics.document_id, net_cash_used_operating=-20_000.0)
+
+    response = await async_client.get("/metrics/dashboard/summary")
+
+    assert response.json()["cash_runway"]["available"] is True
+
+
+@pytest.mark.anyio
+async def test_dashboard_summary_exposes_gross_and_operating_margin(async_client, async_session):
+    await _add_metrics_row(async_session, revenue=100_000.0, gross_margin=61.4, operating_margin=18.2)
+
+    response = await async_client.get("/metrics/dashboard/summary")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["gross_margin"]["value"] == "61.4%"
+    assert body["gross_margin"]["available"] is True
+    assert body["operating_margin"]["value"] == "18.2%"
+    assert body["operating_margin"]["available"] is True
+
+
+@pytest.mark.anyio
+async def test_dashboard_summary_zero_rows_marks_every_ratio_unavailable(async_client, async_session):
+    response = await async_client.get("/metrics/dashboard/summary")
+
+    assert response.status_code == 200
+    body = response.json()
+    for key in (
+        "revenue", "customers", "cash", "ebitda", "ebitda_margin", "cash_runway",
+        "interest_cover", "roce", "bookings", "gross_margin", "operating_margin",
+    ):
+        assert body[key]["available"] is False
 
 
 @pytest.mark.anyio

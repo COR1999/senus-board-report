@@ -79,7 +79,7 @@ _IS_CONFIDENT_ENOUGH_FOR_DASHBOARD = and_(
     FinancialMetrics.superseded_by_document_id.is_(None),
 )
 
-_EMPTY_RATIO = KPIMetric(value="No data yet", change=0, trend="neutral", history=[])
+_EMPTY_RATIO = KPIMetric(value="No data yet", change=0, trend="neutral", history=[], available=False)
 
 # Field-specific missing-value copy, shown instead of a bare "N/A" -- a real
 # user-facing readability request: "N/A" doesn't say *what's* missing, and a
@@ -98,6 +98,8 @@ _MISSING_VALUE_MESSAGES = {
     "interest_cover": "Interest cover not available (no interest expense reported)",
     "roce": "ROCE not available (insufficient balance sheet data)",
     "bookings": "No bookings reported in this filing",
+    "gross_margin": "Gross margin not reported in this filing",
+    "operating_margin": "Operating margin not reported in this filing",
 }
 
 _MONTH_LOOKUP = {
@@ -313,6 +315,7 @@ async def get_dashboard_metrics(
             revenue=_EMPTY_RATIO, customers=_EMPTY_RATIO, cash=_EMPTY_RATIO, ebitda=_EMPTY_RATIO,
             ebitda_margin=_EMPTY_RATIO, cash_runway=_EMPTY_RATIO,
             interest_cover=_EMPTY_RATIO, roce=_EMPTY_RATIO, bookings=_EMPTY_RATIO,
+            gross_margin=_EMPTY_RATIO, operating_margin=_EMPTY_RATIO,
             current_period=None, prior_period=None, document_id=None,
         )
 
@@ -400,7 +403,8 @@ async def get_dashboard_metrics(
         # docs/roadmap.md).
         if curr_val is None:
             return KPIMetric(
-                value=_MISSING_VALUE_MESSAGES.get(field, "N/A"), change=0, trend="neutral", history=history(field)
+                value=_MISSING_VALUE_MESSAGES.get(field, "N/A"), change=0, trend="neutral",
+                history=history(field), available=False,
             )
         pct_change = round(MetricsService.calculate_change(curr_val, prev_val), 1)
         return KPIMetric(
@@ -443,7 +447,10 @@ async def get_dashboard_metrics(
         formatter: Callable[[float], str],
     ) -> KPIMetric:
         if current is None:
-            return KPIMetric(value=_MISSING_VALUE_MESSAGES.get(field, "N/A"), change=0, trend="neutral", history=[])
+            return KPIMetric(
+                value=_MISSING_VALUE_MESSAGES.get(field, "N/A"), change=0, trend="neutral",
+                history=[], available=False,
+            )
         pct_change = round(MetricsService.calculate_change(current, prior), 1) if prior is not None else 0
         trend = MetricsService.get_trend(pct_change) if prior is not None else "neutral"
         history_points = [v for v in (prior, current) if v is not None]
@@ -470,6 +477,11 @@ async def get_dashboard_metrics(
                 change=0,
                 trend="neutral",
                 history=[],
+                # "Cash flow +" is a real, meaningful signal (operations
+                # aren't burning cash, so "runway" isn't a relevant concept)
+                # -- not missing data, so it should never trigger the
+                # adaptive-cascade fallback the way a genuine gap does.
+                available=is_cash_flow_positive,
             )
 
         pct_change = round(MetricsService.calculate_change(current, prior), 1) if prior is not None else 0
@@ -495,7 +507,10 @@ async def get_dashboard_metrics(
         # zero-value bookings figure.
         value = latest.bookings_value
         if value is None:
-            return KPIMetric(value=_MISSING_VALUE_MESSAGES["bookings"], change=0, trend="neutral", history=[])
+            return KPIMetric(
+                value=_MISSING_VALUE_MESSAGES["bookings"], change=0, trend="neutral",
+                history=[], available=False,
+            )
         return KPIMetric(
             value=MetricsService.format_currency(value),
             change=0,
@@ -513,6 +528,8 @@ async def get_dashboard_metrics(
         interest_cover=ratio_kpi("interest_cover", interest_cover_current, interest_cover_prior_val, lambda v: f"{v:.1f}x"),
         roce=ratio_kpi("roce", roce_current, roce_prior_val, lambda v: f"{v:.1f}%"),
         bookings=bookings_kpi(),
+        gross_margin=build("gross_margin", lambda v: f"{v:.1f}%"),
+        operating_margin=build("operating_margin", lambda v: f"{v:.1f}%"),
         current_period=current_period,
         prior_period=prior_period,
         data_extracted_at=latest.extracted_at,

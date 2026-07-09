@@ -42,6 +42,13 @@ export interface MetricValue {
   /** Raw values, oldest -> newest, for sparkline rendering. `null` means that
    * document didn't report the field (missing, not zero). */
   history: (number | null)[]
+  /** False when `value` is a human-readable missing-data message (e.g.
+   * "EBITDA not reported in this filing"), not a real figure -- an explicit
+   * signal instead of string-sniffing `value`, so the adaptive KPI cascade
+   * (see lib/kpi-selection.ts) can reliably tell "real" from "missing"
+   * without guessing at message wording. Defaults `true` on every real
+   * value; only backend's missing-value branches set it `false`. */
+  available: boolean
 }
 
 export interface Metrics {
@@ -66,6 +73,11 @@ export interface Metrics {
   /** Narrative-extracted (same reliability class as `customers`) -- no
    * prior-period comparative exists, so change/trend are always 0/neutral. */
   bookings: MetricValue
+  /** Profitability fallbacks for the adaptive KPI cascade (see
+   * lib/kpi-selection.ts) -- sourced from the same FinancialMetrics row as
+   * `ebitda`, previously computed but not exposed on this response. */
+  gross_margin: MetricValue
+  operating_margin: MetricValue
   /** AI-extracted free-text reporting period for the latest document (e.g.
    * "H1 2025"), and a best-effort derived prior-period label (e.g.
    * "H1 2024"). Both null when no report/summary exists yet, or the period
