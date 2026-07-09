@@ -2,6 +2,117 @@ import type { ChartDataPoint } from '@/lib/data-service'
 
 export type ForecastMetric = 'revenue' | 'ebitda' | 'cash'
 
+// ==================== Method Two: management guidance ====================
+//
+// Method One (projectSeries below) needs 3+ real points in a cadence to fit
+// a trend through -- see revenue-chart.tsx's determineRenderMode. With only
+// two real reporting periods on file today, that bar isn't cleared for
+// either the Full-Year or Half-Year series. Rather than show no forecast at
+// all, Method Two projects forward from the latest real revenue figure
+// using Senus's own publicly stated growth target instead of an invented
+// trend -- "forecast the future from real guidance," never "fabricate the
+// past" (see docs/dashboard-review.md's "Forecast, redesigned" section).
+
+/**
+ * Senus's own stated growth guidance. VERIFY before relying on this in a
+ * real board presentation: the exact wording, base year, and target year
+ * should be confirmed against the Information Document's own text (the
+ * same sourcing discipline financial_metrics_extractor.py applies to every
+ * regex it trusts) -- this constant is a best-effort citation from the
+ * assignment brief, not independently re-derived from the source PDF text
+ * in this branch.
+ */
+export const SENUS_GROWTH_GUIDANCE = {
+  cagr: 0.5,
+  targetYear: 2030,
+  label: 'Senus 2030 strategy (minimum 50% CAGR)',
+} as const
+
+export interface GuidanceForecastPoint {
+  period: string
+  revenue: number
+}
+
+/**
+ * Projects revenue forward from `baseRevenue`/`baseYear` at a compound
+ * annual growth rate to `targetYear` -- one point per year, current year
+ * excluded (the first point is `baseYear + 1`). Forecasts ONLY the future:
+ * unlike Method One, this never touches historical data at all, so there's
+ * no risk of it implying a fabricated past trend. Returns an empty array
+ * when there's nothing to project (`baseRevenue` non-positive, or
+ * `targetYear` not after `baseYear`).
+ */
+export function projectFromGuidance(
+  baseRevenue: number,
+  baseYear: number,
+  targetYear: number = SENUS_GROWTH_GUIDANCE.targetYear,
+  cagr: number = SENUS_GROWTH_GUIDANCE.cagr
+): GuidanceForecastPoint[] {
+  const years = targetYear - baseYear
+  if (baseRevenue <= 0 || years <= 0) return []
+  return Array.from({ length: years }, (_, i) => {
+    const yearsOut = i + 1
+    return {
+      period: `FY${baseYear + yearsOut}`,
+      revenue: Math.round(baseRevenue * Math.pow(1 + cagr, yearsOut)),
+    }
+  })
+}
+
+export interface GuidanceForecastSummary {
+  /** Projected revenue in the target year (e.g. 2030). */
+  projectedTarget: number
+  targetYear: number
+  /** As a percentage, e.g. 50 for 50%. */
+  cagrPercent: number
+  /** Projected-target ÷ current revenue, e.g. 7.6 for a 7.6x multiple. */
+  growthMultiple: number
+  /** Current revenue as a percentage of the projected target, 0-100. */
+  progressToTargetPercent: number
+}
+
+/**
+ * The "forecast cards" summary (Projected Revenue, CAGR, Growth Multiple,
+ * Progress to Target) -- often more informative than another chart, per
+ * the same reasoning progress/gauge components are preferred elsewhere on
+ * this dashboard for a single data point. `null` when there's no real
+ * baseline revenue to project from at all.
+ */
+export function summarizeGuidanceForecast(
+  baseRevenue: number,
+  baseYear: number,
+  targetYear: number = SENUS_GROWTH_GUIDANCE.targetYear,
+  cagr: number = SENUS_GROWTH_GUIDANCE.cagr
+): GuidanceForecastSummary | null {
+  const points = projectFromGuidance(baseRevenue, baseYear, targetYear, cagr)
+  if (points.length === 0) return null
+  const projectedTarget = points[points.length - 1].revenue
+  return {
+    projectedTarget,
+    targetYear,
+    cagrPercent: cagr * 100,
+    growthMultiple: projectedTarget / baseRevenue,
+    progressToTargetPercent: (baseRevenue / projectedTarget) * 100,
+  }
+}
+
+/**
+ * The most recent real (non-null) revenue point in the chart's whole
+ * history, plus the calendar year parsed out of its own period label --
+ * the baseline Method Two projects forward from. `null` when no chart
+ * point has both a real revenue figure and a parseable 4-digit year.
+ */
+export function latestRevenueBaseline(history: ChartDataPoint[]): { revenue: number; year: number } | null {
+  for (let i = history.length - 1; i >= 0; i--) {
+    const point = history[i]
+    if (point.revenue == null) continue
+    const match = point.period.match(/(\d{4})/)
+    if (!match) continue
+    return { revenue: point.revenue, year: Number(match[1]) }
+  }
+  return null
+}
+
 /**
  * Projects future points for the given metric using ordinary least-squares
  * linear regression over the known (non-null) points of that metric. This is

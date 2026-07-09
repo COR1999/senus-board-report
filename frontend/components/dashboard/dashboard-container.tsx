@@ -5,6 +5,7 @@ import { DashboardShell } from './dashboard-shell'
 import { KpiCard } from './kpi-card'
 import { KpiStatStrip, type StatStripItem } from './kpi-stat-strip'
 import { RevenueChart } from './revenue-chart'
+import { GrowthForecastCards } from './growth-forecast-cards'
 import { AiInsights } from './ai-insights'
 import { HistoricalTrendInsight } from './historical-trend-insight'
 import { ReportsTable } from './reports-table'
@@ -216,6 +217,11 @@ export function DashboardContainer() {
           true latest document's own id, so the highlight lands on the
           right point even in the default "latest" state, not nowhere. */}
       <RevenueChart data={chartData ?? []} periodLabel={metrics.current_period} selectedDocumentId={metrics.document_id} />
+
+      {/* Growth & Forecast -- Method Two (guidance-based) projection cards.
+          Renders nothing without a real revenue baseline to project from,
+          same adaptive discipline as everything else on this page. */}
+      <GrowthForecastCards chartData={chartData ?? []} />
 
       {/* Reports Table */}
       <ReportsTable reports={reports ?? []} onRegenerated={refetchReports} />
