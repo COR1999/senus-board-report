@@ -59,6 +59,15 @@ class KPIMetric(BaseModel):
             "not zero) -- never coerce missing data to 0."
         ),
     )
+    # Explicit missing-data signal for the frontend's adaptive KPI cascade
+    # (see frontend/lib/kpi-selection.ts, docs/dashboard-review.md) -- before
+    # this field existed, the only way to tell "this is a real value" from
+    # "this is a human-readable missing-value message" (e.g. "EBITDA not
+    # reported in this filing") was to string-sniff `value`, which is fragile
+    # and was never meant to be machine-readable. Defaults True so every
+    # existing real value stays unaffected; only the missing-value branches
+    # in metrics.py explicitly set this False.
+    available: bool = Field(True, description="False when `value` is a missing-data message, not a real figure.")
 
 
 class DashboardSummaryResponse(BaseModel):
@@ -76,6 +85,12 @@ class DashboardSummaryResponse(BaseModel):
     cash_runway: KPIMetric
     interest_cover: KPIMetric
     roce: KPIMetric
+    # Profitability fallbacks -- see docs/dashboard-review.md's adaptive-data
+    # cascade. Sourced directly from FinancialMetrics.gross_margin/
+    # operating_margin (already extracted, previously computed but never
+    # exposed on this response) rather than a new extraction path.
+    gross_margin: KPIMetric
+    operating_margin: KPIMetric
     # Growth & Revenue -- narrative-extracted, no prior-period comparative
     # exists for this field (same as `customers`), so change/trend are
     # always 0/neutral rather than a real computed delta.

@@ -11,9 +11,10 @@ import { ReportsTable } from './reports-table'
 import { ErrorBanner } from '@/components/error-banner'
 import { useMetrics, useChartData, useReports, usePeriods } from '@/lib/hooks/use-dashboard-data'
 import { periodContextLabel } from '@/lib/period'
-import { KPI_CATEGORIES } from '@/lib/kpi-categories'
+import { selectHeroKpis, selectSecondaryKpis } from '@/lib/kpi-selection'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { DollarSign, Users, Wallet, TrendingUp } from 'lucide-react'
+import { DollarSign, Users, Wallet, TrendingUp, Percent } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 
 // Background poll interval for the main dashboard's data -- lets the page
 // pick up a newly generated report (new KPIs, chart point, AI commentary)
@@ -21,6 +22,19 @@ import { DollarSign, Users, Wallet, TrendingUp } from 'lucide-react'
 // be frequent enough to feel "live" without hammering the backend/Gemini
 // for a personal dashboard that isn't updated more than a few times a year.
 const DASHBOARD_POLL_INTERVAL_MS = 60_000
+
+// Icon per possible hero-row slot key -- keyed by whichever metric
+// selectHeroKpis actually resolved to (e.g. 'ebitda_margin' when 'ebitda'
+// itself isn't disclosed by the selected filing), not a fixed 4-key list.
+const HERO_ICONS: Record<string, LucideIcon> = {
+  revenue: DollarSign,
+  ebitda: TrendingUp,
+  ebitda_margin: Percent,
+  operating_margin: Percent,
+  gross_margin: Percent,
+  cash: Wallet,
+  customers: Users,
+}
 
 export function DashboardContainer() {
   // `null` = latest (today's default behavior, no query param sent) --
@@ -87,51 +101,29 @@ export function DashboardContainer() {
   // "prior vs current" comparison string.
   const currentPeriodLabel = (fallback: string) => metrics.current_period || fallback
 
-  // Hero tier -- the 4 metrics a CEO/CFO looks at first, given the large,
-  // presentation-slide treatment (see KpiCard's `variant="hero"`). Every other
-  // graded metric (Bookings, EBITDA Margin, Cash Runway, Interest Cover,
-  // ROCE) stays fully visible below in the compact KpiStatStrip -- nothing
-  // required by the assignment brief is cut, only visually de-prioritized.
-  const heroMetricConfig = [
-    { key: 'revenue' as const, title: 'Total Revenue', icon: DollarSign, timeframe: currentPeriodLabel('vs prior period') },
-    { key: 'ebitda' as const, title: 'EBITDA', icon: TrendingUp, timeframe: currentPeriodLabel('vs prior period') },
-    { key: 'cash' as const, title: 'Cash Position', icon: Wallet, timeframe: currentPeriodLabel('vs prior period') },
-    // No real prior-period comparative exists for customers (same
-    // reliability class as Bookings) -- state the period as context rather
-    // than implying a quarter-over-quarter comparison that isn't real.
-    { key: 'customers' as const, title: 'Active Customers', icon: Users, timeframe: periodContextLabel(metrics.current_period, 'current customer count') },
-  ]
+  // Hero tier -- the metrics a CEO/CFO looks at first, given the large,
+  // presentation-slide treatment (see KpiCard's `variant="hero"`). Adaptive,
+  // not a fixed 4-key list: selectHeroKpis (lib/kpi-selection.ts) swaps the
+  // Profitability slot's own metric (EBITDA -> EBITDA Margin -> Operating
+  // Margin -> Gross Margin) when EBITDA itself isn't disclosed by the
+  // selected filing, rather than rendering a missing-value sentence in
+  // giant hero type -- see docs/dashboard-review.md's adaptive-data section.
+  const heroSlots = selectHeroKpis(metrics)
 
-  // "Bookings" = new contract value signed/closed in the period (distinct
-  // from Revenue, which is recognised over time as work is delivered) --
-  // spelled out here since it's finance/SaaS jargon that isn't self-evident
-  // from the number alone. Category captions below map each stat to the
-  // assignment brief's own required categories (Growth & Revenue,
-  // Profitability, Cash & Liquidity, Solvency & Leverage, Returns).
-  const [GROWTH_REVENUE, PROFITABILITY, CASH_LIQUIDITY, SOLVENCY_LEVERAGE, RETURNS] = KPI_CATEGORIES
-
-  const statStripSource = [
-    {
-      key: 'bookings' as const,
-      category: GROWTH_REVENUE,
-      label: 'Bookings (new business closed)',
-    },
-    { key: 'ebitda_margin' as const, category: PROFITABILITY, label: 'EBITDA Margin' },
-    { key: 'cash_runway' as const, category: CASH_LIQUIDITY, label: 'Cash Runway' },
-    { key: 'interest_cover' as const, category: SOLVENCY_LEVERAGE, label: 'Interest Cover' },
-    { key: 'roce' as const, category: RETURNS, label: 'ROCE' },
-  ]
-  const statStripConfig: StatStripItem[] = statStripSource.map(({ key, category, label }) => ({
+  // Secondary tier: one slot per assignment-required category (Growth &
+  // Revenue, Profitability, Cash & Liquidity, Solvency & Leverage, Returns),
+  // each with its own fallback chain -- see selectSecondaryKpis. A category
+  // with nothing real to show is omitted from the row entirely rather than
+  // rendered as an empty card; this is what replaced the old fixed 5-card
+  // strip that could (and did, for the FY2025 period) go empty all at once.
+  const statStripConfig: StatStripItem[] = selectSecondaryKpis(metrics).map(({ key, category, label, metric }) => ({
     key,
     category,
     label,
-    value: metrics[key].value,
-    changePercentage: metrics[key].change,
-    trend: metrics[key].trend,
-    // Only Bookings lacks a real prior-period comparative today (its
-    // history is a single point, see Metrics.bookings) -- the other four
-    // stat-strip ratios have a real prior value whenever N/A isn't shown.
-    hasComparison: metrics[key].history.length >= 2,
+    value: metric.value,
+    changePercentage: metric.change,
+    trend: metric.trend,
+    hasComparison: metric.history.length >= 2,
   }))
 
   // Every figure on this dashboard is EUR-only (Senus is an Irish company;
@@ -177,19 +169,25 @@ export function DashboardContainer() {
           )}
         </div>
       )}
-      {/* Hero KPI row */}
+      {/* Hero KPI row -- see selectHeroKpis for how the Profitability slot's
+          icon/timeframe are resolved consistently with whichever metric it
+          actually resolved to. */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {heroMetricConfig.map(({ key, title, icon: Icon, timeframe }) => (
+        {heroSlots.map(({ key, title, metric }) => (
           <KpiCard
             key={key}
             variant="hero"
             title={title}
-            value={metrics[key].value}
-            changePercentage={metrics[key].change}
-            trend={metrics[key].trend}
-            history={metrics[key].history}
-            icon={Icon}
-            timeframe={timeframe}
+            value={metric.value}
+            changePercentage={metric.change}
+            trend={metric.trend}
+            history={metric.history}
+            icon={HERO_ICONS[key] ?? TrendingUp}
+            timeframe={
+              key === 'customers'
+                ? periodContextLabel(metrics.current_period, 'current customer count')
+                : currentPeriodLabel('vs prior period')
+            }
           />
         ))}
       </div>
