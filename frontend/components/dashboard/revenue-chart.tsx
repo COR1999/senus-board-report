@@ -414,7 +414,13 @@ export function RevenueChart({ data, periodLabel, selectedDocumentId = null }: R
                 tickFormatter={formatCurrencyShort}
                 width={68}
               />
-              <Tooltip offset={24} content={(props) => <RevenueTooltip {...props} />} />
+              {/* `cursor={false}` -- same fix as CostWaterfallChart: Recharts'
+                  default Bar tooltip cursor draws a full-height, unstyled
+                  gray/white rectangle behind the hovered/tapped column,
+                  which read as a stray white box over this card's dark
+                  theme. RevenueTooltip's own content already identifies
+                  the hovered bar. */}
+              <Tooltip offset={24} cursor={false} content={(props) => <RevenueTooltip {...props} />} />
               <Legend />
               <Bar dataKey="fy" name="Full Year" fill={color} radius={[4, 4, 0, 0]} maxBarSize={64} />
               <Bar dataKey="hy" name="Half Year" fill={hyColor} radius={[4, 4, 0, 0]} maxBarSize={64} />

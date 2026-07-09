@@ -111,8 +111,8 @@ export function CostWaterfallChart({ data, periodLabel }: CostWaterfallChartProp
         {periodLabel && <CardDescription>{periodLabel}</CardDescription>}
       </CardHeader>
       <CardContent>
-        <ResponsiveContainer width="100%" height={280}>
-          <BarChart data={rows} accessibilityLayer={false} margin={{ left: 4, right: 12, top: 8 }}>
+        <ResponsiveContainer width="100%" height={300}>
+          <BarChart data={rows} accessibilityLayer={false} margin={{ left: 4, right: 12, top: 8, bottom: 8 }}>
             <CartesianGrid vertical={false} stroke="currentColor" className="text-foreground/10" />
             <XAxis
               dataKey="label"
@@ -120,7 +120,14 @@ export function CostWaterfallChart({ data, periodLabel }: CostWaterfallChartProp
               tickLine={false}
               tickMargin={10}
               interval={0}
-              tick={{ fill: 'currentColor', fontSize: 11 }}
+              // Angled, not horizontal -- seven category labels (some as
+              // long as "Operating Result"/"Administrative Expenses") never
+              // fit un-rotated on a narrow chart without overlapping into
+              // an unreadable smear (confirmed on a real 375px-wide phone).
+              angle={-40}
+              textAnchor="end"
+              height={54}
+              tick={{ fill: 'currentColor', fontSize: 10 }}
               className="text-muted-foreground"
             />
             <YAxis
@@ -132,7 +139,14 @@ export function CostWaterfallChart({ data, periodLabel }: CostWaterfallChartProp
               tickFormatter={formatCurrencyShort}
               width={68}
             />
-            <Tooltip content={(props) => <WaterfallTooltip {...props} />} />
+            {/* `cursor={false}` -- Recharts' default Bar tooltip cursor
+                draws a full-height, unstyled gray/white rectangle behind
+                the hovered/tapped column, which read as a stray white box
+                over this card's dark theme (confirmed on a real phone).
+                WaterfallTooltip's own content already identifies the
+                hovered bar, so the extra highlight rectangle was pure
+                chart junk, not information. */}
+            <Tooltip cursor={false} content={(props) => <WaterfallTooltip {...props} />} />
             {/* Invisible spacer bar (the "floating" part of the waterfall
                 effect) stacked under the real, colored delta/subtotal bar. */}
             <Bar dataKey="base" stackId="waterfall" fill="transparent" isAnimationActive={false} />
