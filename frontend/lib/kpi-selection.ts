@@ -36,13 +36,25 @@ function lastReal(history: (number | null)[]): number | null {
 }
 
 /**
+ * True only for a real, present, available metric -- never throws on a
+ * missing/undefined field. The frontend and backend deploy independently
+ * (Vercel/Railway), so a version-skew window where the frontend briefly
+ * talks to an older backend response (missing a newer field like
+ * `gross_margin`) is a real, if narrow, possibility -- this cascade must
+ * degrade to "not available" in that case, never crash the dashboard.
+ */
+function isAvailable(metric: MetricValue | null | undefined): metric is MetricValue {
+  return metric != null && metric.available === true
+}
+
+/**
  * Revenue ÷ active customers -- always computable when both are real,
  * regardless of which reporting period is selected, so it resolves for
  * every real filing this project has ingested so far. The fallback your
  * own review examples name for a missing ROCE.
  */
 export function revenuePerCustomerMetric(metrics: Metrics): MetricValue | null {
-  if (!metrics.revenue.available || !metrics.customers.available) return null
+  if (!isAvailable(metrics.revenue) || !isAvailable(metrics.customers)) return null
   const revenue = lastReal(metrics.revenue.history)
   const customers = lastReal(metrics.customers.history)
   if (revenue == null || customers == null || customers <= 0) return null
@@ -63,7 +75,7 @@ export function revenuePerCustomerMetric(metrics: Metrics): MetricValue | null {
  * disclosed operating cash-burn figure for the selected period).
  */
 export function netCashMovementMetric(metrics: Metrics): MetricValue | null {
-  if (!metrics.cash.available) return null
+  if (!isAvailable(metrics.cash)) return null
   const real = metrics.cash.history.filter((v): v is number => v != null)
   if (real.length < 2) return null
   const current = real[real.length - 1]
@@ -92,7 +104,7 @@ export function netCashMovementMetric(metrics: Metrics): MetricValue | null {
  * which would misrepresent "no comparison" as "no growth".
  */
 export function revenueGrowthMetric(metrics: Metrics): MetricValue | null {
-  if (!metrics.revenue.available) return null
+  if (!isAvailable(metrics.revenue)) return null
   if (metrics.revenue.history.filter((v) => v != null).length < 2) return null
   const sign = metrics.revenue.change > 0 ? '+' : ''
   return {
@@ -122,7 +134,7 @@ export function selectHeroKpis(metrics: Metrics): HeroSlot[] {
     { key: 'operating_margin', title: 'Operating Margin', metric: metrics.operating_margin },
     { key: 'gross_margin', title: 'Gross Margin', metric: metrics.gross_margin },
   ]
-  const bestProfitability = profitability.find((c) => c.metric.available)
+  const bestProfitability = profitability.find((c) => isAvailable(c.metric))
   if (bestProfitability) slots.push(bestProfitability)
 
   slots.push({ key: 'cash', title: 'Cash Position', metric: metrics.cash })
@@ -190,7 +202,7 @@ export function selectSecondaryKpis(metrics: Metrics): SecondarySlot[] {
   const used = new Set<string>()
   const slots: SecondarySlot[] = []
   for (const { category, candidates } of groups) {
-    const pick = candidates.find((c) => c.metric?.available && !used.has(c.key))
+    const pick = candidates.find((c) => isAvailable(c.metric) && !used.has(c.key))
     if (pick?.metric) {
       used.add(pick.key)
       slots.push({ key: pick.key, category, label: pick.label, metric: pick.metric })
