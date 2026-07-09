@@ -59,6 +59,30 @@ describe('useAsyncData', () => {
       await waitFor(() => expect(result.current.data).toBe('ANY_VALUE'))
       expect(fetcher).toHaveBeenCalledTimes(1)
     })
+
+    it('resets loading back to false when disabled mid-fetch, instead of leaving it stuck true', async () => {
+      // A real scenario for useDocumentDetail: a user opens a review sheet
+      // (enabled: true, fetch starts) and closes it again (enabled: false)
+      // before the fetch resolves -- the in-flight fetch's own `.finally`
+      // is skipped once cancelled, so nothing else would ever clear
+      // `loading` without this.
+      let resolveFetch: (value: string) => void = () => {}
+      const fetcher = vi.fn().mockReturnValue(new Promise<string>((resolve) => { resolveFetch = resolve }))
+      const { result, rerender } = renderHook(({ enabled }) => useAsyncData(fetcher, { enabled }), {
+        initialProps: { enabled: true },
+      })
+      expect(result.current.loading).toBe(true)
+
+      rerender({ enabled: false })
+      expect(result.current.loading).toBe(false)
+
+      // Resolving the now-cancelled fetch afterward must not resurrect a
+      // loading/data state for a request nothing is waiting on anymore.
+      act(() => resolveFetch('LATE_VALUE'))
+      await Promise.resolve()
+      expect(result.current.loading).toBe(false)
+      expect(result.current.data).toBeNull()
+    })
   })
 
   describe('pollIntervalMs', () => {

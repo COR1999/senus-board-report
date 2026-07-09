@@ -42,26 +42,33 @@ class PDFExtractionService:
         if not os.path.exists(file_path):
             raise FileNotFoundError(f"PDF file not found: {file_path}")
         
+        pdf_document = None
         try:
             pdf_document = fitz.open(file_path)
             extracted_text: str = ""
-            
+
             for page_num in range(len(pdf_document)):
                 page = pdf_document[page_num]
                 page_text = page.get_text()
-                
+
                 if isinstance(page_text, str):
                     extracted_text += f"\n--- Page {page_num + 1} ---\n"
                     extracted_text += page_text
                 else:
                     extracted_text += f"\n--- Page {page_num + 1} ---\n"
                     extracted_text += str(page_text)
-            
-            pdf_document.close()
+
             return extracted_text.strip()
-        
+
         except Exception as e:
             raise Exception(f"Error extracting PDF text: {str(e)}")
+        finally:
+            # Without this, an exception raised while iterating pages (e.g.
+            # a malformed page) would skip the close() call this try block
+            # used to only reach on the success path, leaking the file
+            # handle -- render_page_images() below already gets this right.
+            if pdf_document is not None:
+                pdf_document.close()
     
     @classmethod
     def has_extractable_text(cls, extracted_text: str) -> bool:

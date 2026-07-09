@@ -196,13 +196,20 @@ async def get_dashboard_data(report_id: int, db: AsyncSession = Depends(get_db))
                 "id": report.document_id,
                 "name": report.document.filename if report.document else "Unknown",
             },
+            # `None` (not `0`) when no FinancialMetrics row exists at all --
+            # same missing-vs-zero discipline enforced everywhere else in
+            # this project (see docs/roadmap.md's PRs #40-42). A fabricated
+            # "€0" here would misrepresent "not extracted" as a real zero
+            # value, exactly the incident that discipline was built to
+            # prevent. `ReportMetricsSummary`'s fields are all
+            # `Optional[float] = None`, so this is a valid response either way.
             "financial_metrics": {
-                "revenue": metrics.revenue if metrics else 0,
-                "customers": metrics.customers if metrics else 0,
-                "cash": metrics.cash if metrics else 0,
-                "ebitda": metrics.ebitda if metrics else 0,
-                "gross_margin": metrics.gross_margin if metrics else 0,
-                "operating_margin": metrics.operating_margin if metrics else 0,
+                "revenue": metrics.revenue if metrics else None,
+                "customers": metrics.customers if metrics else None,
+                "cash": metrics.cash if metrics else None,
+                "ebitda": metrics.ebitda if metrics else None,
+                "gross_margin": metrics.gross_margin if metrics else None,
+                "operating_margin": metrics.operating_margin if metrics else None,
             },
             "key_findings": report.key_findings or [],
             "ai_commentary": report.ai_commentary,

@@ -36,6 +36,33 @@ function baseMetrics(overrides: Partial<Metrics> = {}): Metrics {
   }
 }
 
+describe('resilience to a stale/partial backend response', () => {
+  // Vercel (frontend) and Railway (backend) deploy independently and
+  // asynchronously -- a narrow window can exist where the frontend talks
+  // to a backend response that predates a newer field (e.g. gross_margin/
+  // operating_margin, added alongside this cascade). This must degrade to
+  // "not available" and keep working, never throw -- a real crash this
+  // exact scenario caused once (`c.metric.available` reading `available`
+  // off an `undefined` metric) before `isAvailable()` was hardened.
+  function metricsWithMissingFields(missingKeys: (keyof Metrics)[]): Metrics {
+    const metrics = baseMetrics() as unknown as Record<string, unknown>
+    for (const key of missingKeys) delete metrics[key as string]
+    return metrics as unknown as Metrics
+  }
+
+  it('selectHeroKpis does not throw when gross_margin/operating_margin are entirely absent', () => {
+    const metrics = metricsWithMissingFields(['ebitda', 'ebitda_margin', 'operating_margin', 'gross_margin'])
+    expect(() => selectHeroKpis(metrics)).not.toThrow()
+    // Every profitability candidate is gone -- the slot is correctly omitted.
+    expect(selectHeroKpis(metrics).map((s) => s.key)).toEqual(['revenue', 'cash', 'customers'])
+  })
+
+  it('selectSecondaryKpis does not throw when newer fields are entirely absent', () => {
+    const metrics = metricsWithMissingFields(['operating_margin', 'gross_margin'])
+    expect(() => selectSecondaryKpis(metrics)).not.toThrow()
+  })
+})
+
 describe('selectHeroKpis', () => {
   it('uses EBITDA directly when it is available', () => {
     const slots = selectHeroKpis(baseMetrics())

@@ -20,6 +20,7 @@ import { exportReportsToCsv } from '@/lib/export-csv'
 import { capitalize } from '@/lib/utils'
 import { useRegenerateReport } from '@/lib/hooks/use-mutations'
 import { buildPeriodOptions, matchesPeriod } from '@/lib/period-filter'
+import { REPORT_STATUS_STYLES, reportDisplayName } from '@/lib/report-display'
 
 interface ReportsTableProps {
   reports?: Report[]
@@ -27,19 +28,7 @@ interface ReportsTableProps {
   onRegenerated?: () => void
 }
 
-const STATUS_STYLES: Record<Report['status'], string> = {
-  completed: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400',
-  pending: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400',
-  generating: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400',
-  failed: 'bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-400',
-}
-
 const STATUS_OPTIONS: Array<Report['status'] | 'all'> = ['all', 'completed', 'generating', 'pending', 'failed']
-
-function reportDisplayName(report: Report): string {
-  const name = report.summary?.company_name
-  return name && name.trim().length > 0 ? name : `Document #${report.document_id}`
-}
 
 export function ReportsTable({ reports = [], onRegenerated }: ReportsTableProps) {
   const [search, setSearch] = useState('')
@@ -145,7 +134,7 @@ export function ReportsTable({ reports = [], onRegenerated }: ReportsTableProps)
                     })}
                   </TableCell>
                   <TableCell>
-                    <Badge className={STATUS_STYLES[report.status]}>{capitalize(report.status)}</Badge>
+                    <Badge className={REPORT_STATUS_STYLES[report.status]}>{capitalize(report.status)}</Badge>
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end">

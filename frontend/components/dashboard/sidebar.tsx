@@ -19,7 +19,7 @@ import {
   SheetTrigger,
 } from '@/components/ui/sheet'
 
-export interface SidebarProps extends React.HTMLAttributes<HTMLDivElement> {}
+export type SidebarProps = React.HTMLAttributes<HTMLDivElement>
 
 const menuItems = [
   { label: 'Dashboard', href: '/', icon: LayoutDashboard },
