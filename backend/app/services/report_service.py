@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional, cast, overload
 
-from sqlalchemy import select, or_
+from sqlalchemy import CursorResult, select, or_
 from sqlalchemy import delete as sql_delete
 from sqlalchemy import update as sql_update
 from sqlalchemy.exc import IntegrityError
@@ -37,6 +37,15 @@ class ReportService:
     # =========================================================
     # NORMALISATION (AI + fallback safe)
     # =========================================================
+    # Overloads so a `force_int=True` call site (e.g. `metrics.customers`,
+    # an `Optional[int]` column) narrows to `Optional[int]` instead of the
+    # broader `float | int | None` union the un-overloaded signature gave --
+    # that broader union was never assignable to an `Optional[int]` column.
+    @overload
+    def _normalize_metric(self, value: Any, force_int: Literal[True]) -> Optional[int]: ...
+    @overload
+    def _normalize_metric(self, value: Any, force_int: Literal[False] = False) -> Optional[float]: ...
+
     def _normalize_metric(self, value: Any, force_int: bool = False) -> float | int | None:
         """
         Coerces to a real number, preserving `None` for a genuinely missing
@@ -507,6 +516,15 @@ class ReportService:
                 result = await self.db.execute(stmt)
                 report = result.scalars().first()
 
+            if report is None:
+                # Only reachable if the concurrent request's row vanished
+                # again between our IntegrityError and the re-fetch above
+                # (e.g. it was deleted mid-race) -- practically never, but
+                # narrows `report` to non-Optional for every branch below
+                # and gives a clear error instead of an AttributeError on
+                # `report.status` if it ever did happen.
+                raise ValueError("Report not found or could not be created")
+
         stale_generating = (
             report.status == "generating"
             and datetime.utcnow() - report.updated_at > self.GENERATION_STALE_AFTER
@@ -534,7 +552,13 @@ class ReportService:
         # forever -- this applies regardless of `force`, since force is
         # about bypassing "already completed/failed", not about
         # interrupting a genuinely active generation.
-        claim = await self.db.execute(
+        # AsyncSession.execute()'s declared return type is the generic
+        # `Result[Any]`, which has no `rowcount` -- but a Core UPDATE
+        # statement always executes through a `CursorResult` at runtime,
+        # which does. A known SQLAlchemy async-typing gap, not a real
+        # runtime risk; the cast documents the actual type instead of
+        # suppressing the check entirely.
+        claim = cast(CursorResult, await self.db.execute(
             sql_update(Report)
             .where(
                 Report.id == report.id,
@@ -544,7 +568,7 @@ class ReportService:
                 ),
             )
             .values(status="generating", updated_at=datetime.utcnow())
-        )
+        ))
         await self.db.commit()
 
         if claim.rowcount == 0:
