@@ -687,6 +687,17 @@ not default back to "latest." Not yet scoped in detail (routing structure, wheth
 share the existing `getAiInsights`/`insights-cache.ts` machinery or need their own cache key per
 category) — a real next feature, not started.
 
+**Upload button copy — "Upload PDF" should say what's actually accepted (idea, not built).** The
+Documents page's upload button (`frontend/app/documents/page.tsx`) is currently just labeled
+"Upload PDF" — accurate but generic, and it doesn't hint at *what kind* of PDF is useful here (a
+financial statement, not any PDF that happens to be one — the confidence gate will reject a
+non-financial one regardless, but the button copy itself gives no clue why before someone tries).
+Worth revisiting alongside the per-category drill-down pages above: if a drill-down page ever shows
+"here's what feeds this category's numbers," the same language could inform button copy like "Upload
+a financial statement" or "Upload accepted documents" instead of the generic "PDF" — tying document
+guidance to the same categories the rest of the dashboard already organizes around, rather than
+inventing a separate microcopy pass later.
+
 **Sector/competitor benchmarking in the AI insights prompt (idea, not built).** Right now
 `buildInsightsPrompt` (`frontend/lib/insights.ts`) only ever gives Gemini this company's own KPI
 values — an insight like "Bookings grew X%" has no external reference point for whether that's a
