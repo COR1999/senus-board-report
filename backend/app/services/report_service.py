@@ -612,7 +612,32 @@ class ReportService:
         query = select(Report)
 
         if document_id:
+            # An explicit single-document lookup (e.g. the Documents page's
+            # own review panel) must still resolve a superseded document's
+            # own report -- excluding it here would break "view the
+            # original source report" for a document the merge feature is
+            # specifically designed to leave untouched and independently
+            # visible (see period_merge_service.py's own docstring).
             query = query.where(Report.document_id == document_id)
+        else:
+            # The "list every report" case (GET /api/reports, and the
+            # dashboard's own "Recent Reports" panel) excludes a
+            # superseded document's report -- confirmed as a real, live
+            # bug: uploading two documents that merge into one new period
+            # left the two ORIGINAL reports still listed here too, so
+            # "ADF Farm Solutions Limited" appeared twice in Recent
+            # Reports with no indication either was superseded (unlike the
+            # Documents table, which has its own "Merged" badge for
+            # exactly this). The merged document's own report is what
+            # actually represents that period going forward.
+            query = query.outerjoin(
+                FinancialMetrics, FinancialMetrics.document_id == Report.document_id
+            ).where(
+                or_(
+                    FinancialMetrics.superseded_by_document_id.is_(None),
+                    FinancialMetrics.document_id.is_(None),
+                )
+            )
 
         result = await self.db.execute(query.order_by(Report.created_at.desc()))
         return list(result.scalars().all())

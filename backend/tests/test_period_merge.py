@@ -148,6 +148,43 @@ async def test_ingest_merges_a_clean_gap_fill_with_no_conflicts(async_session, m
 
 
 @pytest.mark.anyio
+async def test_list_reports_excludes_superseded_originals_after_a_merge(async_session, monkeypatch):
+    # Real bug, found live: GET /api/reports (and the dashboard's own
+    # "Recent Reports" panel, which shares this same list) kept showing
+    # BOTH original documents' reports after they'd merged into a new
+    # period -- e.g. "ADF Farm Solutions Limited" appearing twice, with no
+    # indication either was superseded (unlike the Documents table, which
+    # has its own "Merged" badge for exactly this). The merged document's
+    # report is what actually represents that period going forward.
+    doc_a = await _upload(
+        async_session, monkeypatch,
+        filename="doc-a.pdf",
+        baseline={**_SAME_PERIOD, "revenue": 836_991.0, "cash": 140_135.0, "ebitda": -613_313.0, "customers": None},
+    )
+    doc_b = await _upload(
+        async_session, monkeypatch,
+        filename="doc-b.pdf",
+        baseline={**_SAME_PERIOD, "revenue": 836_991.0, "cash": 140_135.0, "ebitda": None, "customers": 36},
+    )
+
+    reports = await report_service_module.ReportService(async_session).list_reports()
+    reported_document_ids = {r.document_id for r in reports}
+
+    assert doc_a.id not in reported_document_ids
+    assert doc_b.id not in reported_document_ids
+    # Exactly one report remains for this period -- the merged one.
+    assert len(reports) == 1
+
+    # An explicit single-document lookup (e.g. the Documents page's own
+    # review panel opening a specific, now-superseded document) must still
+    # resolve that document's own original report -- only the "list
+    # everything" case excludes superseded rows.
+    doc_a_reports = await report_service_module.ReportService(async_session).list_reports(document_id=doc_a.id)
+    assert len(doc_a_reports) == 1
+    assert doc_a_reports[0].document_id == doc_a.id
+
+
+@pytest.mark.anyio
 async def test_merged_report_uses_a_real_company_name_not_a_raw_filename(async_session, monkeypatch):
     # Real production bug: the merged Report's summary.company_name was set
     # to a raw source filename ("ADF Farm Solutions Consolidated Financial
