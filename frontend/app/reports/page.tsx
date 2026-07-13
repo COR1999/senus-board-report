@@ -14,7 +14,9 @@ export default function ReportsPage() {
       {loading ? (
         <div className="animate-pulse h-64 bg-muted rounded" />
       ) : (
-        <ReportsTable reports={reports ?? []} onRegenerated={refetch} />
+        <div id="presentation-step-reports-archive" className="scroll-mt-24">
+          <ReportsTable reports={reports ?? []} onRegenerated={refetch} />
+        </div>
       )}
     </DashboardShell>
   )

@@ -12,6 +12,12 @@ interface GrowthForecastCardsProps {
   /** Same all-reports chart data the Revenue Trend chart renders -- this
    * card projects forward from the most recent REAL revenue point in it. */
   chartData: ChartDataPoint[]
+  /** Applied to the root Card only when it actually renders (never on the
+   * `null` no-baseline path) -- lets a caller (Presentation Mode) target
+   * this section without that id ever existing in the DOM when there's
+   * genuinely nothing here to show. Optional: every other caller is
+   * unaffected. */
+  sectionId?: string
 }
 
 /** One of the four indigo stat tiles below -- extracted since all four
@@ -45,7 +51,7 @@ function ForecastStatTile({
  * nothing at all when there's no real revenue baseline to project from --
  * never a placeholder implying a forecast exists when it doesn't.
  */
-export function GrowthForecastCards({ chartData }: GrowthForecastCardsProps) {
+export function GrowthForecastCards({ chartData, sectionId }: GrowthForecastCardsProps) {
   const baseline = latestRevenueBaseline(chartData)
   const summary = baseline ? summarizeGuidanceForecast(baseline.revenue, baseline.year) : null
 
@@ -54,7 +60,17 @@ export function GrowthForecastCards({ chartData }: GrowthForecastCardsProps) {
   const progress = Math.min(100, Math.max(0, summary.progressToTargetPercent))
 
   return (
-    <Card className="border-indigo-500/20">
+    // The highlight id lives on this plain wrapper, not the Card itself --
+    // Card's own base styling already includes `ring-1 ring-foreground/10`
+    // and `overflow-hidden` (see components/ui/card.tsx), both of which
+    // fight a highlight ring added directly to it (competing ring classes
+    // at equal specificity, and overflow-hidden can clip an outline/ring
+    // painted at the element's own edge). Confirmed directly: the ring
+    // never appeared here despite the exact same class-add mechanism
+    // working on every OTHER step's plain-div wrapper. A wrapper with no
+    // competing styles of its own sidesteps both problems.
+    <div id={sectionId} className="scroll-mt-24 rounded-2xl">
+      <Card className="border-indigo-500/20">
       <CardHeader>
         <div className="flex items-center gap-2">
           <TrendingUp className="h-6 w-6 text-indigo-600 dark:text-indigo-400" />
@@ -94,6 +110,7 @@ export function GrowthForecastCards({ chartData }: GrowthForecastCardsProps) {
           </ForecastStatTile>
         </div>
       </CardContent>
-    </Card>
+      </Card>
+    </div>
   )
 }

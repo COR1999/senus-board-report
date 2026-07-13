@@ -14,6 +14,7 @@ import { useMetrics, useChartData, useReports, usePeriods, useCostWaterfall } fr
 import { periodContextLabel } from '@/lib/period'
 import { selectHeroKpis, selectSecondaryKpis } from '@/lib/kpi-selection'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { PresentationTrigger } from '@/components/presentation/presentation-trigger'
 import { DollarSign, Users, Wallet, TrendingUp, Percent } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 
@@ -155,13 +156,17 @@ export function DashboardContainer() {
 
   return (
     <DashboardShell title="Executive Dashboard" description="How the business is performing, at a glance">
-      {(dataAsOfLabel || hasPeriodChoice) && (
-        <div className="-mt-2 flex flex-wrap items-center justify-between gap-2">
-          {dataAsOfLabel ? (
-            <p className="text-xs text-muted-foreground">All figures in EUR · Data as of {dataAsOfLabel}</p>
-          ) : (
-            <span />
-          )}
+      <div className="-mt-2 flex flex-wrap items-center justify-between gap-2">
+        {dataAsOfLabel ? (
+          <p className="text-xs text-muted-foreground">All figures in EUR · Data as of {dataAsOfLabel}</p>
+        ) : (
+          <span />
+        )}
+        {/* Period selector kept right-aligned (matches production) --
+            grouped with Presentation Mode's only entry point (see
+            presentation-context.tsx), which is always rendered here
+            regardless of whether a period choice exists. */}
+        <div className="flex flex-wrap items-center gap-2">
           {hasPeriodChoice && (
             <Select value={selectedPeriodValue} onValueChange={(value) => setSelectedDocumentId(Number(value))}>
               <SelectTrigger aria-label="Select reporting period" className="h-8 w-auto whitespace-nowrap text-xs">
@@ -176,12 +181,13 @@ export function DashboardContainer() {
               </SelectContent>
             </Select>
           )}
+          <PresentationTrigger />
         </div>
-      )}
+      </div>
       {/* Hero KPI row -- see selectHeroKpis for how the Profitability slot's
           icon/timeframe are resolved consistently with whichever metric it
           actually resolved to. */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div id="presentation-step-hero" className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 scroll-mt-24">
         {heroSlots.map(({ key, title, metric }) => (
           <KpiCard
             key={key}
@@ -209,20 +215,34 @@ export function DashboardContainer() {
           id) plus the cost waterfall, which renders nothing at all when
           the selected period's filing doesn't disclose a full cost
           breakdown (e.g. the FY2025 Information Document). */}
-      <RevenueChart data={chartData ?? []} periodLabel={metrics.current_period} selectedDocumentId={metrics.document_id} />
-      {waterfall && <CostWaterfallChart data={waterfall} periodLabel={metrics.current_period} />}
+      <div id="presentation-step-revenue-trend" className="scroll-mt-24">
+        <RevenueChart data={chartData ?? []} periodLabel={metrics.current_period} selectedDocumentId={metrics.document_id} />
+      </div>
+      {waterfall && (
+        <div id="presentation-step-cost-waterfall" className="scroll-mt-24">
+          <CostWaterfallChart data={waterfall} periodLabel={metrics.current_period} />
+        </div>
+      )}
 
       {/* Financial Health -- one slot per assignment-required category
           (Growth & Revenue, Profitability, Cash & Liquidity, Solvency &
           Leverage, Returns), each with its own fallback chain (see
           selectSecondaryKpis) so a category with nothing real to show is
           omitted entirely rather than rendered empty. */}
-      <KpiStatStrip items={statStripConfig} periodLabel={metrics.current_period ?? undefined} />
+      <div id="presentation-step-financial-health" className="scroll-mt-24">
+        <KpiStatStrip items={statStripConfig} periodLabel={metrics.current_period ?? undefined} />
+      </div>
 
       {/* Growth & Forecast -- Method Two (guidance-based) projection cards.
           Renders nothing without a real revenue baseline to project from,
-          same adaptive discipline as everything else on this page. */}
-      <GrowthForecastCards chartData={chartData ?? []} />
+          same adaptive discipline as everything else on this page. The
+          presentation-step id lives on GrowthForecastCards' own root Card
+          (not a wrapper here) specifically so it's genuinely absent from
+          the DOM -- not just present-but-empty -- whenever the component
+          itself renders null; that's what lets Presentation Mode's
+          `start()` existence-check (presentation-context.tsx) correctly
+          skip this step when there's really nothing to show. */}
+      <GrowthForecastCards chartData={chartData ?? []} sectionId="presentation-step-growth-forecast" />
 
       {/* AI Executive Commentary -- the closing section, a synthesis of
           everything above it rather than a preview shown before the reader
@@ -231,12 +251,16 @@ export function DashboardContainer() {
           see docs/dashboard-review.md's "AI commentary" section for why).
           Folds the all-reports trend narrative into the same ranked feed
           instead of a separate adjacent card. */}
-      <AiInsights metrics={metrics} reportId={currentReport?.id ?? null} chartData={chartData ?? []} />
+      <div id="presentation-step-ai-insights" className="scroll-mt-24">
+        <AiInsights metrics={metrics} reportId={currentReport?.id ?? null} chartData={chartData ?? []} />
+      </div>
 
       {/* Recent Reports -- a short pointer to what's recent, not the full
           searchable/filterable/exportable table (that stays on /reports,
           one click away via the sidebar). */}
-      <RecentReports reports={reports ?? []} />
+      <div id="presentation-step-recent-reports" className="scroll-mt-24">
+        <RecentReports reports={reports ?? []} />
+      </div>
     </DashboardShell>
   )
 }

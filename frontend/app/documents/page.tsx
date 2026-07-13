@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { DashboardShell } from '@/components/dashboard/dashboard-shell'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -32,6 +32,7 @@ import {
 import { ErrorBanner } from '@/components/error-banner'
 import { buildPeriodOptions, matchesPeriod } from '@/lib/period-filter'
 import { MAX_UPLOAD_SIZE_BYTES, MAX_UPLOAD_SIZE_LABEL } from '@/lib/upload-constraints'
+import { PRESENTATION_DOCUMENTS_CHANGED_EVENT } from '@/lib/presentation/steps'
 
 // Same status-color convention as reports-table.tsx's STATUS_STYLES.
 // DocumentItem.status is a plain string (not a fixed union like Report's),
@@ -80,6 +81,16 @@ export default function DocumentsPage() {
   const [sizeError, setSizeError] = useState<string | null>(null)
 
   const error = loadError || uploadError || deleteError || downloadError || sizeError || importError || hideError || unhideError
+
+  // Presentation Mode uploads documents live via the same POST
+  // /api/documents/upload flow as the button below, but from
+  // PresentationProvider (mounted at the root layout, with no direct
+  // handle on this page's own `refetch`) -- picks up that upload via a
+  // plain DOM event instead. See lib/presentation/steps.ts.
+  useEffect(() => {
+    window.addEventListener(PRESENTATION_DOCUMENTS_CHANGED_EVENT, refetch)
+    return () => window.removeEventListener(PRESENTATION_DOCUMENTS_CHANGED_EVENT, refetch)
+  }, [refetch])
 
   // Only created_at (upload date) exists on a document -- there's no
   // reporting-period concept at this level (that only exists on the
@@ -241,7 +252,7 @@ export default function DocumentsPage() {
           </CardContent>
         </Card>
       )}
-      <Card>
+      <Card id="presentation-step-documents-table" className="scroll-mt-24">
         <CardHeader>
           <div className="flex items-center justify-between">
             <div>

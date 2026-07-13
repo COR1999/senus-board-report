@@ -7,6 +7,14 @@ vi.mock('next/navigation', () => ({
   usePathname: () => '/',
 }))
 
+// Presentation Mode is its own concern (see presentation/__tests__/) --
+// stubbed out here so this file doesn't need to wrap 10+ render() call
+// sites in a PresentationProvider just to satisfy PresentationTrigger's
+// usePresentation() call.
+vi.mock('@/components/presentation/presentation-trigger', () => ({
+  PresentationTrigger: () => null,
+}))
+
 describe('DashboardContainer', () => {
   beforeEach(() => {
     vi.spyOn(dataService, 'getDashboardPeriods').mockResolvedValue([])

@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { ThemeProvider } from "@/components/theme-provider";
+import { PresentationProvider } from "@/components/presentation/presentation-context";
+import { PresentationOverlay } from "@/components/presentation/presentation-overlay";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -38,7 +40,10 @@ export default function RootLayout({
             selector, so this is a two-line fix that activates a lot of
             already-written (but previously inert) styling. */}
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
-          {children}
+          <PresentationProvider>
+            {children}
+            <PresentationOverlay />
+          </PresentationProvider>
         </ThemeProvider>
       </body>
     </html>
