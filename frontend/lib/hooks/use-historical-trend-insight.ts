@@ -57,10 +57,19 @@ export function useHistoricalTrendInsight(chartData: ChartDataPoint[]): UseHisto
 
       const { insights: result, isFallback, model } = await getHistoricalTrendInsight(chartData)
       if (cancelled) return
-      const generated = result[0] ?? null
+      // A fallback result (Gemini unavailable/quota-exhausted/malformed
+      // response) is static placeholder text, not a real insight -- same
+      // "never render a fake/broken state" discipline as every other
+      // adaptive section on this dashboard (cost waterfall, growth
+      // forecast, etc. all render nothing rather than a placeholder).
+      // Leaving `insight` at its previous value (never set to the
+      // fallback) means the panel's ranked feed simply omits this entry
+      // instead of showing "Historical trend commentary is temporarily
+      // unavailable" as if it were real commentary.
+      const generated = !isFallback ? result[0] ?? null : null
       setInsight(generated)
       setLoading(false)
-      if (generated && !isFallback) {
+      if (generated) {
         saveHistoricalInsight(generated, model).catch(() => {
           // Persistence is a durability optimization -- the panel already
           // shows the real result either way.

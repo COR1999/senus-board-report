@@ -199,5 +199,33 @@ describe('AiInsights', () => {
       expect(screen.queryByText('Trend')).not.toBeInTheDocument()
       expect(getStoredTrendSpy).not.toHaveBeenCalled()
     })
+
+    it('omits the trend entry entirely on a fallback result, rather than showing placeholder text as if it were real', async () => {
+      // Regression test: a Gemini-unavailable/quota-exhausted trend
+      // generation used to still render "Historical trend commentary is
+      // temporarily unavailable" as a normal-looking Trend entry -- reads
+      // as a broken feature live, not as "nothing to show yet" (every
+      // other adaptive section on this dashboard omits itself instead).
+      vi.spyOn(dataService, 'getStoredInsights').mockResolvedValue({
+        report_id: 7,
+        insights: [{ text: 'This report says X', type: 'positive', action: '', category: undefined }],
+        model_version: 'gemini-2.5-flash',
+        generated_at: '2026-01-01T00:00:00Z',
+      })
+      vi.spyOn(dataService, 'getStoredHistoricalInsight').mockResolvedValue(null)
+      vi.spyOn(dataService, 'getHistoricalTrendInsight').mockResolvedValue({
+        insights: [{ text: 'Historical trend commentary is temporarily unavailable.', type: 'trend', action: '' }],
+        isFallback: true,
+        model: null,
+      })
+      const saveTrendSpy = vi.spyOn(dataService, 'saveHistoricalInsight')
+
+      render(<AiInsights metrics={mockMetrics} reportId={7} chartData={chartData} />)
+
+      expect(await screen.findByText('This report says X')).toBeInTheDocument()
+      expect(screen.queryByText('Trend')).not.toBeInTheDocument()
+      expect(screen.queryByText(/temporarily unavailable/i)).not.toBeInTheDocument()
+      expect(saveTrendSpy).not.toHaveBeenCalled()
+    })
   })
 })
