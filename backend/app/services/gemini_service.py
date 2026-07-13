@@ -28,6 +28,18 @@ statement wherever they appear across these pages, and extract the
 figures. If a figure is genuinely not disclosed anywhere in these pages,
 leave it null -- never guess or estimate a value.
 
+For "reporting_period": state it using EXACTLY this phrasing, so it can be
+parsed programmatically -- "<twelve months|six months> ended <DD Month
+YYYY>", e.g. "twelve months ended 30 June 2025" or "six months ended 31
+December 2025". Read the cadence (twelve months vs six months) and the end
+date directly off the statement's own heading (e.g. "for the year ended..."
+or "for the six months ended...") -- never guess either one. If neither the
+cadence nor the exact end date can be determined from the pages, leave
+"reporting_period" null rather than writing a differently-phrased guess --
+a value in a format this exact phrasing doesn't match is worse than no
+value, since it fails silently downstream instead of leaving the period
+fields honestly unknown.
+
 Return JSON ONLY, in exactly this shape:
 
 {
@@ -227,9 +239,9 @@ class GeminiAnalysisService:
         if not self._within_rate_limit():
             return self._empty_response()
 
-        try:
+        def _generate() -> Any:
             self._record_call()
-            response = client.models.generate_content(
+            return client.models.generate_content(
                 model=self.MODEL,
                 contents=contents,
                 config=types.GenerateContentConfig(
@@ -247,42 +259,63 @@ class GeminiAnalysisService:
                 ),
             )
 
-            result = self._parse(response.text or "")
+        try:
+            response = _generate()
+        except Exception as first_error:
+            # A 503/UNAVAILABLE ("high demand") is a transient, request-
+            # level failure, not a quota/billing problem -- confirmed
+            # directly against the real API, hitting this exact error on an
+            # otherwise-healthy key with quota to spare, and confirmed to
+            # succeed on an immediate retry. Retried exactly once here (not
+            # looped -- this must never become a source of unbounded
+            # latency). A 429/RESOURCE_EXHAUSTED is deliberately NOT retried
+            # this way -- an immediate retry would just hit the same
+            # exhausted quota again, which is exactly what the backoff
+            # below exists to prevent instead.
+            error_str = str(first_error)
+            if "503" in error_str or "UNAVAILABLE" in error_str:
+                logger.warning(f"Gemini 503 (high demand), retrying once immediately: {first_error}")
+                try:
+                    response = _generate()
+                except Exception as retry_error:
+                    return self._handle_gemini_error(retry_error)
+            else:
+                return self._handle_gemini_error(first_error)
 
-            self._set_cache(cache_key, result)
-            return result
+        result = self._parse(response.text or "")
+        self._set_cache(cache_key, result)
+        return result
 
-        except Exception as e:
-            logger.warning(f"Gemini error: {e}")
+    def _handle_gemini_error(self, e: Exception) -> Dict[str, Any]:
+        logger.warning(f"Gemini error: {e}")
 
-            error_str = str(e)
-            # Only the specific "prepayment credits are depleted" phrasing
-            # indicates a real billing outage. A bare `"billing" in
-            # error_str.lower()` used to also match here -- but a routine
-            # RESOURCE_EXHAUSTED quota message's own boilerplate ("please
-            # check your plan and billing details") contains that
-            # substring too, so an ordinary free-tier daily-cap 429 was
-            # misclassified as a billing outage and given a 24h backoff
-            # instead of the intended 60s one. Confirmed directly against
-            # the real API: a `generate_content_free_tier_requests` /
-            # `GenerateRequestsPerDayPerProjectPerModel-FreeTier`
-            # RESOURCE_EXHAUSTED response has no "prepayment credits"
-            # phrase at all, so checking for that exact phrase (not the
-            # generic word "billing") is what actually distinguishes the
-            # two cases.
-            if "prepayment credits are depleted" in error_str:
-                logger.error(
-                    "Gemini API prepayment credits are depleted -- this needs manual "
-                    "billing action at https://ai.studio/projects, not a transient rate "
-                    f"limit. Backing off {self.BILLING_EXHAUSTED_BACKOFF_SECONDS}s "
-                    "instead of the usual 60s so we don't keep re-hitting a quota that "
-                    "won't recover on its own."
-                )
-                self._disable_ai_temporarily(self.BILLING_EXHAUSTED_BACKOFF_SECONDS)
-            elif "429" in error_str or "RESOURCE_EXHAUSTED" in error_str:
-                self._disable_ai_temporarily(self.RATE_LIMIT_BACKOFF_SECONDS)
+        error_str = str(e)
+        # Only the specific "prepayment credits are depleted" phrasing
+        # indicates a real billing outage. A bare `"billing" in
+        # error_str.lower()` used to also match here -- but a routine
+        # RESOURCE_EXHAUSTED quota message's own boilerplate ("please
+        # check your plan and billing details") contains that substring
+        # too, so an ordinary free-tier daily-cap 429 was misclassified as
+        # a billing outage and given a 24h backoff instead of the intended
+        # 60s one. Confirmed directly against the real API: a
+        # `generate_content_free_tier_requests` /
+        # `GenerateRequestsPerDayPerProjectPerModel-FreeTier`
+        # RESOURCE_EXHAUSTED response has no "prepayment credits" phrase at
+        # all, so checking for that exact phrase (not the generic word
+        # "billing") is what actually distinguishes the two cases.
+        if "prepayment credits are depleted" in error_str:
+            logger.error(
+                "Gemini API prepayment credits are depleted -- this needs manual "
+                "billing action at https://ai.studio/projects, not a transient rate "
+                f"limit. Backing off {self.BILLING_EXHAUSTED_BACKOFF_SECONDS}s "
+                "instead of the usual 60s so we don't keep re-hitting a quota that "
+                "won't recover on its own."
+            )
+            self._disable_ai_temporarily(self.BILLING_EXHAUSTED_BACKOFF_SECONDS)
+        elif "429" in error_str or "RESOURCE_EXHAUSTED" in error_str:
+            self._disable_ai_temporarily(self.RATE_LIMIT_BACKOFF_SECONDS)
 
-            return self._empty_response()
+        return self._empty_response()
 
     # =========================================================
     # PARSING

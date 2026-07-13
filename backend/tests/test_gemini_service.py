@@ -127,6 +127,51 @@ class TestBillingExhaustedBackoff:
         svc.generate_report("some prompt")
 
         assert GeminiAnalysisService._ai_disabled_until == 0
+
+    def test_503_high_demand_is_retried_once_immediately_and_can_succeed(self):
+        # Real behavior confirmed directly against the live API: a
+        # transient 503 ("This model is currently experiencing high
+        # demand") on one call, then a clean success on the very next
+        # attempt against the exact same request. Previously any exception
+        # -- transient or not -- fell straight through to the safe
+        # fallback, meaning a single passing 503 threw away a real,
+        # otherwise-successful extraction.
+        call_count = {"n": 0}
+
+        class _FlakyModels:
+            def generate_content(self, **kwargs):
+                call_count["n"] += 1
+                if call_count["n"] == 1:
+                    raise Exception("503 UNAVAILABLE. {'error': {'code': 503, 'message': 'high demand'}}")
+                return _FakeResponse('{"reporting_period": "twelve months ended 30 June 2025", "financial_metrics": {}}')
+
+        svc = GeminiAnalysisService(api_key="fake-key-for-test")
+        svc.client = type("FakeClient", (), {"models": _FlakyModels()})()
+
+        result = svc.generate_report("some prompt")
+
+        assert call_count["n"] == 2
+        assert result["reporting_period"] == "twelve months ended 30 June 2025"
+        assert svc.is_available()  # a transient 503 must not trigger any backoff
+
+    def test_503_high_demand_on_both_attempts_falls_back_after_exactly_one_retry(self):
+        call_count = {"n": 0}
+
+        class _AlwaysUnavailableModels:
+            def generate_content(self, **kwargs):
+                call_count["n"] += 1
+                raise Exception("503 UNAVAILABLE. {'error': {'code': 503, 'message': 'high demand'}}")
+
+        svc = GeminiAnalysisService(api_key="fake-key-for-test")
+        svc.client = type("FakeClient", (), {"models": _AlwaysUnavailableModels()})()
+
+        result = svc.generate_report("some prompt")
+
+        # Exactly 2 -- one original attempt plus exactly one retry, never
+        # looped further (a repeatedly-unavailable model must not become a
+        # source of unbounded latency).
+        assert call_count["n"] == 2
+        assert result["model_version"] == "gemini-unavailable"
         assert svc.is_available()
 
     def test_returns_safe_fallback_shape_on_any_error(self):
