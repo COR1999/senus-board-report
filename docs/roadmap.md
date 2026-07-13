@@ -646,6 +646,112 @@ project's test harness (any test combining a raw `flush()`-only fixture with a c
 is exposed to it) that hadn't previously been tripped over because no earlier test file's leaked rows
 happened to collide with another file's exact-count assertions.
 
+### An ordinary Gemini quota bump misclassified as a billing outage (`fix/gemini-quota-error-classification`)
+
+Found while manually driving the app end-to-end for an unrelated task (a local, production-isolated
+demo environment — see below), not from a bug report. Both circuit breakers built in PR #45 (backend
+and frontend) classified *any* 429 error whose message contained the word "billing" as a full,
+unrecoverable billing outage, applying a 24h backoff. Google's own boilerplate for an ordinary,
+quickly-clearing free-tier daily-quota 429 happens to include the phrase "please check your plan and
+billing details" — so a routine quota bump was being misclassified and self-inflicting a 24-hour AI
+Board Insights outage instead of the intended 60-second one. Fixed in both
+`backend/app/services/gemini_service.py` and `frontend/app/api/insights/route.ts`: only the specific
+"prepayment credits are depleted" phrasing (the actual wording confirmed for a genuine billing
+problem) triggers the long backoff now; every other 429/RESOURCE_EXHAUSTED gets the short one. Two
+new regression tests use the real captured error message shape (including its "billing details"
+boilerplate) to lock this in.
+
+### Presentation Mode: a live, guided boardroom demo (`feature/demo`)
+
+Built for the actual graded presentation: a cross-page guided walkthrough of the live app (`/` →
+`/documents` → `/reports` → back to `/`), triggered by a "Present" button on the executive dashboard,
+navigated with Next/Back or arrow keys, each step highlighting the relevant section with a scroll +
+ring and a short discussion question grounded in a real design decision or bug fix from this project
+(never a generic "any questions?"). Two of the steps go further than narration — they live-upload two
+real filings (ADF Farm Solutions and the Information Document) through the actual upload endpoint,
+which genuinely triggers `period_merge_service` (PR #54) to merge them into a new period in front of
+the audience, with the Documents table's "Merged"/"Pending Review" badges updating live.
+
+**Never opens on an empty or fake-looking dashboard.** A new `backend/scripts/local_demo_seed.py`
+pre-seeds one reliable, deterministically-extracted filing (the HY2026 half-year PR) before the tour
+starts, so every slide — including the Cost Waterfall, which needs a full P&L breakdown only a
+deterministic extraction reliably provides — shows real, complete data from the first click. The two
+riskier, vision-extracted uploads are purely additive on top of that baseline, never load-bearing for
+it, precisely because Gemini vision's reliability on this project's one scanned real filing has been
+directly observed to vary call-to-call throughout this session.
+
+**Local-only, fully isolated from production.** `scripts/local-demo/run.ps1` (and `run.sh`, plus
+double-clickable `Start Demo.bat`/`Stop Demo.bat` wrappers at the repo root) boot a fresh SQLite
+database, a local backend, and a local frontend — `DATABASE_URL`/`NEXT_PUBLIC_API_URL` are overridden
+only as process-level environment variables for the two processes the script itself starts;
+`backend/.env` and `frontend/.env.local` (the real Railway/Vercel credentials) are never read or
+written. Self-cleaning: every run kills whatever's already listening on its ports and wipes
+`local_demo.db` first, so rehearsing is just re-running the same script. `app/main.py`'s real startup
+path has no compiler shim for `historical_insights.insight` (a Postgres `JSONB` column) against
+SQLite outside pytest — `backend/scripts/local_demo_server.py` registers the same shim
+`tests/conftest.py` uses, rather than adding SQLite-specific code to the production startup path.
+
+**Real bugs found and fixed while building and rehearsing this, each confirmed against the live app,
+not assumed:**
+
+1. **Gemini vision never returned a parseable `reporting_period` for the scanned ADF filing.** The
+   vision prompt (`gemini_service.py`) asked for it as an unconstrained free-text field with zero
+   formatting guidance — sometimes Gemini phrased it usably, mostly not. Fixed by asking explicitly
+   for the same "ended DD Month YYYY" phrasing the deterministic parser already knows how to read
+   (`"twelve months ended 30 June 2025"`), rather than rewriting the parsing side — confirmed directly
+   against the real API that this alone was enough to make ADF's period reliably derivable, unlocking
+   the live-merge step.
+2. **Gemini vision results are cached by file hash, so a same-session "retry" was silently hollow.**
+   Deleting and re-uploading the identical file against the same running backend process returned the
+   exact same cached result every time (`GeminiAnalysisService`'s 24h TTL cache) — three consecutive
+   "retries" during this session's own debugging turned out to be one real API call plus two cache
+   hits. `backend/scripts/local_demo_seed.py`'s retry loop was rewritten to make exactly one real
+   attempt per process (a genuinely fresh attempt needs a fresh backend process, i.e. re-running the
+   launcher), rather than looping pointlessly within one.
+3. **A transient Gemini `503 UNAVAILABLE` ("high demand") was treated identically to a hard failure.**
+   Confirmed directly against the real API: the exact same request succeeds on an immediate retry.
+   `_call_gemini` now retries exactly once (never looped further) specifically for a 503, leaving
+   429/quota handling untouched — a genuine reliability improvement independent of this demo feature.
+4. **The Reports archive (and the dashboard's own "Recent Reports" panel, which shares the same list)
+   kept showing a superseded document's report after a merge**, as an unexplained duplicate with no
+   "Merged" context (unlike the Documents table, which already has that badge). `ReportService.
+   list_reports()` now excludes a superseded document's report from the "list everything" case only —
+   an explicit single-document lookup (e.g. the review panel) still resolves a superseded document's
+   own original report correctly.
+5. **A failed/quota-exhausted historical-trend generation rendered its static fallback text
+   ("Historical trend commentary is temporarily unavailable.") as if it were a real insight**,
+   inconsistent with every other adaptive section on this dashboard (Cost Waterfall, Growth
+   Forecast, etc. all render nothing rather than a placeholder). `useHistoricalTrendInsight` now
+   leaves the insight unset on a fallback result instead of displaying it, so the panel simply omits
+   that entry.
+6. **A highlight ring added directly to `GrowthForecastCards`' root `Card` never appeared.** `Card`'s
+   own base styling already includes `ring-1 ring-foreground/10` and `overflow-hidden` (unlike a
+   plain wrapper `<div>`, which every other step already used), both of which fight a second ring
+   added on top. Fixed by moving the highlight target to a plain wrapper, matching every other step.
+7. **The floating step panel's position, based on a fixed height estimate, could end up partly
+   off-screen** once a step's content grew taller than expected (e.g. mid-upload), pushing the
+   Next/Back controls out of reach with no way to advance the tour. Fixed with the panel's own
+   *measured* height (not a guess), a hard viewport clamp guaranteeing at least the header/footer stay
+   reachable, a pinned (never-scrolled-away) footer, and continuous polling (not just scroll/resize
+   listeners) so a React-driven layout shift — a table gaining a row after a live upload, which fires
+   neither native event — still triggers a reposition.
+
+Verified end-to-end by actually driving the full ten-step tour via a headless-browser script against
+a freshly seeded local instance (not just the unit/component test suite) — every step's Next/Back
+button reachable, the live merge landing correctly, before handing it back for the user's own manual
+rehearsal. `docs/presentation-talking-points.md` compiles additional discussion material for the
+graded presentation itself, pulled from this project's real commit history rather than written fresh.
+
+### Presentation Mode's talking points, tightened after direct feedback
+
+The first pass of discussion questions used an "Ask me: ..." imperative framing and ran to two
+sentences each (including inline presenter instructions) — read as pushy and over-long once actually
+seen live. Rewritten to one short question each, five to eight words, no command framing (the small
+question-mark icon next to it already signals what it is); a presenter instruction that had been
+crammed into one talking point ("click into it and hit Approve...") moved to that step's own subtitle
+instead. The panel's visual treatment for the talking point was similarly lightened — a small
+unboxed line instead of a bordered, tinted callout.
+
 ## Working discipline throughout Phase 2
 
 A few rules were established early and enforced consistently across all 48 branches:
@@ -738,11 +844,20 @@ revenue breakdown, and no budget figures anywhere in the source filings. Buildin
 doesn't exist would mean fabricating it, which this project has avoided everywhere else.
 
 **Other open items** (see the audit referenced in the README's "How outputs were validated"
-section): PDF-download storage durability (no persistent/object storage yet), a few remaining
+section): PDF-download storage durability (no persistent/object storage yet), and a few remaining
 Documents/Reports-area gaps (bulk actions, document preview, the separate AI-generated-report PDF
 export, a "Pending Review" confidence tag on the Reports table to match the one already on
-Documents — same batched-query pattern, just not done in PR #42 given time), and a demo video
-recording. The frontend's separate AI Board Insights Gemini integration's wasted-retry problem was
-fixed in PR #45 (a real circuit breaker, same design as the backend's own); if it's still returning
-fallback content after that, the remaining cause is a genuine billing/quota issue needing someone
-with Vercel/Google AI Studio access to check `GEMINI_INSIGHTS_API_KEY` directly — not a code fix.
+Documents — same batched-query pattern, just not done in PR #42 given time).
+
+**~~A demo video recording~~ — superseded by Presentation Mode (`feature/demo`, see above).** A live,
+in-app guided walkthrough covers the same need directly against the real running app rather than a
+pre-recorded video, and doubles as a rehearsal tool.
+
+The frontend's separate AI Board Insights Gemini integration's wasted-retry problem was fixed in PR
+#45 (a real circuit breaker, same design as the backend's own), and its billing/quota-vs-ordinary-429
+misclassification was fixed in `fix/gemini-quota-error-classification` (see above) — a `Historical
+trend commentary is temporarily unavailable` fallback result is now hidden entirely rather than shown
+as if it were real (see Presentation Mode's bug list above). If the panel is still empty after all of
+that, the remaining cause is a genuine, exhausted free-tier quota on `GEMINI_INSIGHTS_API_KEY` itself
+(confirmed directly this session — a routine daily cap, not a code bug) — needing either the daily
+reset or a different/paid key, not a further code fix.
