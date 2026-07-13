@@ -98,6 +98,28 @@ class TestBillingExhaustedBackoff:
         remaining = GeminiAnalysisService._ai_disabled_until - time.time()
         assert 0 < remaining <= GeminiAnalysisService.RATE_LIMIT_BACKOFF_SECONDS
 
+    def test_ordinary_quota_429_mentioning_billing_boilerplate_still_uses_short_backoff(self):
+        # Regression test: a routine RESOURCE_EXHAUSTED daily-quota message
+        # includes "please check your plan and billing details" as
+        # standard Google API boilerplate -- a bare `"billing" in
+        # error_str.lower()` check used to match this and misclassify it
+        # as a billing-exhausted outage (24h backoff) instead of an
+        # ordinary rate limit (60s backoff). This is the real message
+        # captured from the live API for a free-tier daily cap hit.
+        error = Exception(
+            "429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': "
+            "'You exceeded your current quota, please check your plan and "
+            "billing details. Quota exceeded for metric: "
+            "generativelanguage.googleapis.com/generate_content_free_tier_requests, "
+            "limit: 20.', 'status': 'RESOURCE_EXHAUSTED'}}"
+        )
+        svc = _service_with_client_raising(error)
+
+        svc.generate_report("some prompt")
+
+        remaining = GeminiAnalysisService._ai_disabled_until - time.time()
+        assert 0 < remaining <= GeminiAnalysisService.RATE_LIMIT_BACKOFF_SECONDS
+
     def test_non_429_error_does_not_trigger_any_backoff(self):
         error = Exception("500 Internal Server Error")
         svc = _service_with_client_raising(error)

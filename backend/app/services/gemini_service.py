@@ -256,7 +256,21 @@ class GeminiAnalysisService:
             logger.warning(f"Gemini error: {e}")
 
             error_str = str(e)
-            if "prepayment credits are depleted" in error_str or "billing" in error_str.lower():
+            # Only the specific "prepayment credits are depleted" phrasing
+            # indicates a real billing outage. A bare `"billing" in
+            # error_str.lower()` used to also match here -- but a routine
+            # RESOURCE_EXHAUSTED quota message's own boilerplate ("please
+            # check your plan and billing details") contains that
+            # substring too, so an ordinary free-tier daily-cap 429 was
+            # misclassified as a billing outage and given a 24h backoff
+            # instead of the intended 60s one. Confirmed directly against
+            # the real API: a `generate_content_free_tier_requests` /
+            # `GenerateRequestsPerDayPerProjectPerModel-FreeTier`
+            # RESOURCE_EXHAUSTED response has no "prepayment credits"
+            # phrase at all, so checking for that exact phrase (not the
+            # generic word "billing") is what actually distinguishes the
+            # two cases.
+            if "prepayment credits are depleted" in error_str:
                 logger.error(
                     "Gemini API prepayment credits are depleted -- this needs manual "
                     "billing action at https://ai.studio/projects, not a transient rate "

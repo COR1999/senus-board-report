@@ -98,6 +98,34 @@ describe('POST /api/insights', () => {
     expect(generateContent).toHaveBeenCalledTimes(2)
   })
 
+  it('uses the short 60s backoff for an ordinary quota 429 even though its own boilerplate text mentions "billing"', async () => {
+    // Regression test: this is the real message shape returned for a
+    // routine free-tier daily-quota hit. Its boilerplate ("please check
+    // your plan and billing details") used to trip a bare
+    // `/billing/i.test(message)` check and get misclassified as a 24h
+    // billing outage instead of a normal 60s rate limit.
+    vi.useFakeTimers()
+    generateContent.mockRejectedValue(
+      new Error(
+        '429 RESOURCE_EXHAUSTED. {"error":{"code":429,"message":"You exceeded your current quota, ' +
+          'please check your plan and billing details. Quota exceeded for metric: ' +
+          'generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 20.",' +
+          '"status":"RESOURCE_EXHAUSTED"}}'
+      )
+    )
+    const { POST } = await import('@/app/api/insights/route')
+
+    await POST(makeRequest())
+    expect(generateContent).toHaveBeenCalledTimes(1)
+
+    // Backoff has cleared after the short window -- the next call should
+    // try Gemini again, proving this did NOT get the 24h billing backoff.
+    vi.advanceTimersByTime(61_000)
+    generateContent.mockResolvedValue({ text: JSON.stringify({ insights: [{ text: 'Back', type: 'positive' }] }) })
+    await POST(makeRequest())
+    expect(generateContent).toHaveBeenCalledTimes(2)
+  })
+
   it('backs off for 24h after a billing/prepayment-exhausted error, not the short 60s window', async () => {
     vi.useFakeTimers()
     generateContent.mockRejectedValue(

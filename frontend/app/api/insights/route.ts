@@ -53,7 +53,16 @@ function disableGeminiTemporarily(ms: number): void {
 
 function backoffForError(error: unknown): void {
   const message = error instanceof Error ? error.message : String(error)
-  if (message.includes('prepayment credits are depleted') || /billing/i.test(message)) {
+  // Only the specific "prepayment credits are depleted" phrasing indicates
+  // a real billing outage. A bare `/billing/i.test(message)` used to also
+  // match here -- but a routine RESOURCE_EXHAUSTED quota message's own
+  // boilerplate ("please check your plan and billing details") contains
+  // that substring too, so an ordinary free-tier daily-cap 429 was
+  // misclassified as a billing outage and given a 24h backoff instead of
+  // the intended 60s one (confirmed directly against the real API: a
+  // `generate_content_free_tier_requests` quota response has no
+  // "prepayment credits" phrase at all).
+  if (message.includes('prepayment credits are depleted')) {
     console.error(
       'Gemini API prepayment credits are depleted -- this needs manual billing action at ' +
         'https://ai.studio/projects, not a transient rate limit. Backing off ' +
