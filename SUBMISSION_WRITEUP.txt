@@ -3,7 +3,7 @@ Assiduous Technology Graduate Programme
 
 Live app: https://senus-board-report.vercel.app
 API: https://senus-board-report-production.up.railway.app
-Repository: (add your GitHub URL here)
+Repository: https://github.com/COR1999/senus-board-report
 
 WHAT THIS IS
 
