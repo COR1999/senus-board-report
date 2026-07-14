@@ -8,10 +8,34 @@ This is the domain-specific layer -- it knows what "revenue"/"EBITDA"/
 """
 
 import re
-from typing import Any, Dict
+from typing import TYPE_CHECKING, Any, Dict
+
+# Pylance/Pyright analyzes this mixin in isolation and can't see that
+# __init__.py's FinancialMetricsExtractor combines it with
+# TextParsingMixin/PeriodDetectionMixin via multiple inheritance -- every
+# cls._helper(...) call below that's actually defined on one of those two
+# sibling mixins otherwise reads as an unknown attribute. Erased at
+# runtime (the `else` branch is what actually runs); exists purely so the
+# type checker resolves these calls correctly, per Pyright's own
+# documented pattern for this exact mixin scenario:
+# https://microsoft.github.io/pyright/#/mixins
+if TYPE_CHECKING:
+    from ._period_detection import PeriodDetectionMixin
+
+    # PeriodDetectionMixin (not TextParsingMixin) is the base here,
+    # deliberately matching __init__.py's real base order
+    # (FieldExtractionMixin, PeriodDetectionMixin, TextParsingMixin) --
+    # PeriodDetectionMixin already type-inherits TextParsingMixin itself
+    # (see _period_detection.py), so basing this on TextParsingMixin
+    # directly instead would contradict that ordering and make C3
+    # linearization impossible ("Cannot create consistent method
+    # ordering"), confirmed directly via pyright.
+    _FieldExtractionBase = PeriodDetectionMixin
+else:
+    _FieldExtractionBase = object
 
 
-class FieldExtractionMixin:
+class FieldExtractionMixin(_FieldExtractionBase):
     """Requires `TextParsingMixin` and `PeriodDetectionMixin` to also be mixed in."""
 
     # =========================================================

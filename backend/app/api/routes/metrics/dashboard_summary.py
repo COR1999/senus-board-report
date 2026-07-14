@@ -251,7 +251,12 @@ async def get_dashboard_metrics(
             )
         pct_change = round(MetricsService.calculate_change(current, prior), 1) if prior is not None else 0
         trend = MetricsService.get_trend(pct_change) if prior is not None else "neutral"
-        history_points = [v for v in (prior, current) if v is not None]
+        # Explicit List[Optional[float]] annotation -- KPIMetric.history is
+        # invariant in its element type, so a bare list comprehension over
+        # (prior, current) infers as list[float] once `is not None`
+        # filters None out, which a plain assignment then rejects as
+        # incompatible with the wider Optional[float] the field expects.
+        history_points: List[Optional[float]] = [v for v in (prior, current) if v is not None]
         return KPIMetric(
             value=formatter(current),
             change=pct_change,

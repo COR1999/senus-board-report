@@ -105,6 +105,15 @@ async def merge_documents(
     """
     existing_doc = await db.get(Document, existing_row.document_id)
     new_doc = await db.get(Document, new_row.document_id)
+    # Both are guaranteed to exist by the data model's own FK integrity --
+    # a FinancialMetrics row can't exist without its parent Document
+    # (existing_row/new_row are only ever found via a query against
+    # FinancialMetrics itself, see find_same_period_match above). Asserted
+    # explicitly, not just assumed, so the type checker can narrow
+    # existing_doc/new_doc to non-Optional for every .filename access
+    # below, rather than each call site re-checking a state that can't
+    # actually occur.
+    assert existing_doc is not None and new_doc is not None
     existing_report = (
         await db.execute(select(Report).where(Report.document_id == existing_row.document_id))
     ).scalars().first()

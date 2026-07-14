@@ -1,7 +1,9 @@
 from io import BytesIO
+from typing import cast
 
 import pytest
 from fastapi import UploadFile
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.routes import documents as documents_routes
 from app.models.financial_metrics import FinancialMetrics
@@ -76,7 +78,7 @@ async def test_upload_document_returns_financial_metrics(monkeypatch):
 
     upload_file = UploadFile(filename="test.pdf", file=BytesIO(b"%PDF-1.4"))
 
-    response = await documents_routes.upload_document(upload_file, fake_db)
+    response = await documents_routes.upload_document(upload_file, cast(AsyncSession, fake_db))
 
     assert response.financial_metrics is not None
     assert response.financial_metrics.revenue == 1000000.0
