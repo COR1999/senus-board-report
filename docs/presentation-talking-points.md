@@ -66,8 +66,9 @@ the real API.
 
 ## 4. Confidence gating & human-in-the-loop
 
-Every extraction gets a 0–100 score and a tier: `auto_accept` (≥85%), `needs_review` (55–84%),
-`rejected` (<85% *and* the document doesn't even look like a financial statement). A `needs_review`
+Every extraction gets a 0–100 score and a tier: `auto_accept` (≥95%), `needs_review` (85–94%),
+`rejected` (<85%) — a document that doesn't match a known financial-statement format at all scores 0
+outright, regardless of any narrative-regex hits elsewhere, so it's always `rejected` too. A `needs_review`
 row is excluded from every dashboard endpoint until a human explicitly approves it via the Documents
 page's review panel — the score/tier itself is never rewritten on approval (it's a permanent, honest
 record of what the extractor actually found); approval is tracked as a separate `human_approved_at`
