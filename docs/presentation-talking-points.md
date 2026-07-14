@@ -1,9 +1,9 @@
 # Presentation talking points
 
 Prep material for discussing this project with interviewers — organized by theme, each with a
-short real story and a discussion question. Drawn from the actual commit history and this session's
-own debugging, not generic claims. PR numbers refer to commits on `main`; branch names refer to
-`frontend/docs/ai-usage/<branch>.md` if you want the full writeup on any of them.
+short real story and a discussion question. Drawn from the actual commit history and hands-on
+debugging on this project, not generic claims. PR numbers refer to commits on `main`; branch names
+refer to `frontend/docs/ai-usage/<branch>.md` if you want the full writeup on any of them.
 
 ## 1. Missing vs. fabricated data
 
@@ -23,16 +23,20 @@ production directly before the fix even landed.
 
 **Deterministic-first, AI as enrichment, never source of truth**: the extractor tries regex/table-
 based parsing first; Gemini is only called when that baseline is incomplete, and even then the
-baseline's own values always win a merge conflict. Confirmed today, live: a filing whose baseline
+baseline's own values always win a merge conflict. Confirmed directly, live: a filing whose baseline
 extraction was already complete (`_baseline_is_complete`) never calls Gemini at all.
 
 **Vision extraction is measurably less reliable than text extraction — and the product design
-accounts for that, not just the messaging.** Confirmed directly across this session: identical
-scanned-file vision calls sometimes recognize the reporting period, sometimes don't. That's why it's
-gated behind the confidence-tier system (`needs_review`/`rejected`) rather than trusted at face
-value.
+accounts for that, not just the messaging.** Confirmed directly, hands-on: identical scanned-file
+vision calls sometimes recognize the reporting period, sometimes don't. Root cause: the deterministic
+path has a text layer to run a regex cadence check against (a literal `(HYxx)` label or an "ended DD
+Month YYYY" date plus half-year/full-year phrasing — see `_period_detection.py`); vision extraction
+has no text layer at all, only Gemini's own freeform reading of the page images, so there's no
+structural anchor to lock onto until the prompt itself is made to demand exact, regex-matchable
+phrasing (see the period-merge fix below). That's why it's gated behind the confidence-tier system
+(`needs_review`/`rejected`) rather than trusted at face value.
 
-**A real cost/reliability bug fixed today**: the circuit breaker that backs off Gemini calls after a
+**A real cost/reliability bug, caught and fixed on this project**: the circuit breaker that backs off Gemini calls after a
 429 was classifying an ordinary daily-quota message as a full billing outage — because Google's
 routine quota-exceeded message happens to contain the word "billing" in its own boilerplate, and the
 original check just did a substring match on that word. Self-inflicted a 24-hour AI-insights outage
@@ -57,7 +61,7 @@ periods; worse, ADF's revenue was being diffed against the Information Document'
 figure instead of a real prior year, because nothing could tell two full-year filings apart from a
 half-year one (vision extraction had no cadence signal at all).
 
-**Found again, live, this session**: exactly this — vision extraction not returning a parseable
+**Found again, live, on this project**: exactly this — vision extraction not returning a parseable
 reporting period, blocking the merge from triggering. Fixed by making the vision prompt request an
 exact, regex-matchable phrasing instead of a freeform description, then verified directly against
 the real API.
@@ -80,6 +84,11 @@ extracted figures or promote it. *"I have no way to review the document"* was th
 complaint that drove this.
 
 *Ask me: why is the confidence score never overwritten, even after a human approves the document?*
+(If pushed on "isn't that confusing UX": the score and the approval are two different facts —
+score is a permanent record of what the extractor found, approval is a separate `human_approved_at`
+timestamp of what a human signed off on. Collapsing them would erase the ability to ever again tell
+"this cleared 95% on its own" from "this was an 87% a human corrected" — the UI shows both
+distinctly, e.g. a "Pending Review" badge before approval, rather than silently rewriting the number.)
 
 ## 5. Schema evolution against a live database, no migration framework
 
