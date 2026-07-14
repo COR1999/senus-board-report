@@ -1,4 +1,5 @@
 import re
+from typing import Literal
 
 
 class MetricsService:
@@ -75,7 +76,7 @@ class MetricsService:
         return ((current - previous) / abs(previous)) * 100
 
     @staticmethod
-    def get_trend(change: float) -> str:
+    def get_trend(change: float) -> Literal["up", "down", "neutral"]:
         """Return trend direction."""
         if change > 0:
             return "up"

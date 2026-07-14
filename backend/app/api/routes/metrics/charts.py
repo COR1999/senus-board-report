@@ -78,8 +78,18 @@ async def get_cost_waterfall(
     administrative_expenses = bs.administrative_expenses if bs else None
     operating_result = bs.operating_result if bs else None
 
-    required = (revenue, cost_of_sales, administrative_expenses, operating_result, ebitda)
-    if any(value is None for value in required):
+    # Checked as individual variables (not a `required` tuple + `any()`)
+    # specifically so the type checker can narrow each one to non-Optional
+    # below -- narrowing via membership in a collection doesn't propagate
+    # back to the original variables the way a direct `is None` check on
+    # each one does.
+    if (
+        revenue is None
+        or cost_of_sales is None
+        or administrative_expenses is None
+        or operating_result is None
+        or ebitda is None
+    ):
         return CostWaterfallResponse(available=False, document_id=anchor.document_id)
 
     return CostWaterfallResponse(

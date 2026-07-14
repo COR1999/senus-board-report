@@ -5,13 +5,28 @@ which document format actually matched.
 """
 
 import re
-from typing import Dict, Optional
+from typing import TYPE_CHECKING, Dict, Optional
 
 _MONTH_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
                "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
+# Pylance/Pyright analyzes this mixin in isolation and can't see that
+# __init__.py's FinancialMetricsExtractor combines it with TextParsingMixin
+# via multiple inheritance -- every cls._extract_section/_get_pnl call
+# below (both actually defined on TextParsingMixin) otherwise reads as an
+# unknown attribute. Erased at runtime (the `else` branch is what actually
+# runs); exists purely so the type checker resolves these calls correctly,
+# per Pyright's own documented pattern for this exact mixin scenario:
+# https://microsoft.github.io/pyright/#/mixins
+if TYPE_CHECKING:
+    from ._text_parsing import TextParsingMixin
 
-class PeriodDetectionMixin:
+    _PeriodDetectionBase = TextParsingMixin
+else:
+    _PeriodDetectionBase = object
+
+
+class PeriodDetectionMixin(_PeriodDetectionBase):
     """Requires `TextParsingMixin` to also be mixed in (uses `_extract_section`/`_get_pnl`)."""
 
     # =========================================================

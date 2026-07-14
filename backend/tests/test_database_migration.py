@@ -7,9 +7,11 @@ creates missing *tables* -- it never alters an existing table's columns.
 that already existed in production before new nullable columns were added
 to its model (financial_metrics, live on Railway since feature/kpi-system).
 """
+from typing import cast
+
 import pytest
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.ext.asyncio import AsyncConnection, create_async_engine
 from sqlalchemy.pool import StaticPool
 
 from app.core.database import Base, _add_missing_columns
@@ -182,7 +184,12 @@ class TestNullableColumnBackfill:
             async def execute(self, clause):
                 executed_sql.append(str(clause))
 
-        await _add_missing_columns(_FakeConn())
+        # A structural (duck-typed) stand-in for AsyncConnection, not a
+        # real one -- cast() tells the type checker to trust that this
+        # satisfies the two methods _add_missing_columns actually calls
+        # (run_sync/execute), same as every other fake-session test double
+        # in this suite.
+        await _add_missing_columns(cast(AsyncConnection, _FakeConn()))
 
         for column in ("revenue", "customers", "cash", "ebitda", "gross_margin", "operating_margin"):
             assert any(
