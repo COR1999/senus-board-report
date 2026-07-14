@@ -105,7 +105,7 @@ async def test_upload_rejects_a_governance_document_with_422_but_keeps_it_for_re
         await documents_routes.upload_document(upload_file, async_session)
 
     assert getattr(exc_info.value, "status_code", None) == 422
-    assert "confidence" in exc_info.value.detail.lower()
+    assert "confidence" in str(getattr(exc_info.value, "detail", "")).lower()
 
     # The document is kept (reversed from this project's original PR #42
     # "persist nothing" policy) -- a human reviewing why an extraction
@@ -118,7 +118,7 @@ async def test_upload_rejects_a_governance_document_with_422_but_keeps_it_for_re
         await async_session.execute(
             FinancialMetrics.__table__.select().where(FinancialMetrics.document_id == documents[0].id)
         )
-    ).first()
+    ).one()
     assert metrics_row.extraction_confidence_tier == "rejected"
     assert metrics_row.extraction_confidence_reasons  # non-empty -- the actual point breakdown
 
@@ -126,7 +126,7 @@ async def test_upload_rejects_a_governance_document_with_422_but_keeps_it_for_re
         await async_session.execute(
             Report.__table__.select().where(Report.document_id == documents[0].id)
         )
-    ).first()
+    ).one()
     assert report_row.status == "rejected"
 
 
@@ -159,6 +159,7 @@ async def test_upload_of_a_real_filing_auto_accepts_and_stores_confidence(async_
     upload_file = UploadFile(filename="half-year.pdf", file=BytesIO(b"%PDF-1.4 fake"))
     response = await documents_routes.upload_document(upload_file, async_session)
 
+    assert response.financial_metrics is not None
     assert response.financial_metrics.extraction_confidence == 100.0
     assert response.financial_metrics.extraction_confidence_tier == "auto_accept"
 
@@ -179,6 +180,7 @@ async def test_upload_with_partial_deterministic_match_persists_as_needs_review(
     response = await documents_routes.upload_document(upload_file, async_session)
 
     # 40 (format) + 30 (revenue) + 15 (secondary) + 0 (no period) = 85
+    assert response.financial_metrics is not None
     assert response.financial_metrics.extraction_confidence == 85.0
     assert response.financial_metrics.extraction_confidence_tier == "needs_review"
 
@@ -201,7 +203,7 @@ async def test_report_name_falls_back_to_filename_when_gemini_returns_no_company
     response = await documents_routes.upload_document(upload_file, async_session)
 
     report_result = await async_session.execute(Report.__table__.select().where(Report.id == response.report_id))
-    report_row = report_result.first()
+    report_row = report_result.one()
     assert report_row.summary["company_name"] == "Senus PLC Information Document.pdf"
 
 
@@ -211,6 +213,8 @@ async def test_regenerate_with_low_confidence_leaves_existing_report_untouched(a
     _mock_extraction(monkeypatch, format_recognized=True, baseline=_REAL_FILING_BASELINE)
     upload_file = UploadFile(filename="half-year.pdf", file=BytesIO(b"%PDF-1.4 fake"))
     first_response = await documents_routes.upload_document(upload_file, async_session)
+    assert first_response.financial_metrics is not None
+    assert first_response.report_id is not None
     original_revenue = first_response.financial_metrics.revenue
     assert original_revenue == 354_813.0
 
@@ -227,7 +231,7 @@ async def test_regenerate_with_low_confidence_leaves_existing_report_untouched(a
     metrics_result = await async_session.execute(
         FinancialMetrics.__table__.select().where(FinancialMetrics.document_id == first_response.id)
     )
-    metrics_row = metrics_result.first()
+    metrics_row = metrics_result.one()
     assert metrics_row.revenue == 354_813.0
     assert metrics_row.extraction_confidence_tier == "auto_accept"
 
@@ -238,7 +242,7 @@ async def test_regenerate_with_low_confidence_leaves_existing_report_untouched(a
     # reports.py's own previous_status restore.
     report_row = (
         await async_session.execute(Report.__table__.select().where(Report.id == first_response.report_id))
-    ).first()
+    ).one()
     assert report_row.status == "completed"
 
 
@@ -264,7 +268,7 @@ async def test_first_time_rejected_generation_via_generate_or_get_report_persist
 
     report_row = (
         await async_session.execute(Report.__table__.select().where(Report.document_id == document.id))
-    ).first()
+    ).one()
     assert report_row is not None
     assert report_row.status == "rejected"
 
@@ -272,7 +276,7 @@ async def test_first_time_rejected_generation_via_generate_or_get_report_persist
         await async_session.execute(
             FinancialMetrics.__table__.select().where(FinancialMetrics.document_id == document.id)
         )
-    ).first()
+    ).one()
     assert metrics_row.extraction_confidence_tier == "rejected"
 
 
@@ -290,10 +294,12 @@ async def _upload_needs_review_document(async_session, monkeypatch, filename: st
 @pytest.mark.anyio
 async def test_approve_promotes_a_needs_review_document_without_rewriting_its_score(async_session, monkeypatch):
     uploaded = await _upload_needs_review_document(async_session, monkeypatch)
+    assert uploaded.financial_metrics is not None
     assert uploaded.financial_metrics.extraction_confidence_tier == "needs_review"
 
     approved = await documents_routes.approve_document(uploaded.id, async_session)
 
+    assert approved.financial_metrics is not None
     # The API-facing tier now reads as auto_accept (no more "Pending
     # Review" tag anywhere it's shown)...
     assert approved.financial_metrics.extraction_confidence_tier == "auto_accept"
@@ -306,7 +312,7 @@ async def test_approve_promotes_a_needs_review_document_without_rewriting_its_sc
         await async_session.execute(
             FinancialMetrics.__table__.select().where(FinancialMetrics.document_id == uploaded.id)
         )
-    ).first()
+    ).one()
     # The *raw* DB column is untouched -- still literally "needs_review",
     # a permanent, honest record of the algorithmic result. Only
     # human_approved_at changes.
@@ -319,6 +325,7 @@ async def test_approve_rejects_an_already_auto_accept_document_with_400(async_se
     _mock_extraction(monkeypatch, format_recognized=True, baseline=_REAL_FILING_BASELINE)
     upload_file = UploadFile(filename="half-year.pdf", file=BytesIO(b"%PDF-1.4 fake"))
     uploaded = await documents_routes.upload_document(upload_file, async_session)
+    assert uploaded.financial_metrics is not None
     assert uploaded.financial_metrics.extraction_confidence_tier == "auto_accept"
 
     with pytest.raises(Exception) as exc_info:
@@ -346,4 +353,5 @@ async def test_approve_is_not_silently_idempotent_on_a_second_call(async_session
 
     approved_again = await documents_routes.approve_document(uploaded.id, async_session)
 
+    assert approved_again.financial_metrics is not None
     assert approved_again.financial_metrics.extraction_confidence_tier == "auto_accept"

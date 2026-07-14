@@ -10,12 +10,12 @@ from pydantic import BaseModel, Field, ConfigDict
 # ==================== Financial Metrics ====================
 class FinancialMetricsBase(BaseModel):
     """Base financial metrics schema."""
-    revenue: Optional[float] = Field(None, description="Annual revenue in thousands")
-    customers: Optional[int] = Field(None, description="Number of customers")
-    cash: Optional[float] = Field(None, description="Cash on hand in thousands")
-    ebitda: Optional[float] = Field(None, description="EBITDA in thousands")
-    gross_margin: Optional[float] = Field(None, description="Gross margin percentage (0-100)")
-    operating_margin: Optional[float] = Field(None, description="Operating margin percentage (0-100)")
+    revenue: Optional[float] = Field(default=None, description="Annual revenue in thousands")
+    customers: Optional[int] = Field(default=None, description="Number of customers")
+    cash: Optional[float] = Field(default=None, description="Cash on hand in thousands")
+    ebitda: Optional[float] = Field(default=None, description="EBITDA in thousands")
+    gross_margin: Optional[float] = Field(default=None, description="Gross margin percentage (0-100)")
+    operating_margin: Optional[float] = Field(default=None, description="Operating margin percentage (0-100)")
 
 
 class FinancialMetricsCreate(FinancialMetricsBase):
@@ -67,7 +67,7 @@ class KPIMetric(BaseModel):
     # and was never meant to be machine-readable. Defaults True so every
     # existing real value stays unaffected; only the missing-value branches
     # in metrics.py explicitly set this False.
-    available: bool = Field(True, description="False when `value` is a missing-data message, not a real figure.")
+    available: bool = Field(default=True, description="False when `value` is a missing-data message, not a real figure.")
 
 
 class DashboardSummaryResponse(BaseModel):
@@ -136,8 +136,8 @@ class CostWaterfallResponse(BaseModel):
     cost_of_sales: Optional[float] = None
     gross_profit: Optional[float] = None
     administrative_expenses: Optional[float] = None
-    operating_result: Optional[float] = Field(None, description="Operating result (EBIT).")
-    depreciation_amortization: Optional[float] = Field(None, description="EBITDA minus operating result (EBIT).")
+    operating_result: Optional[float] = Field(default=None, description="Operating result (EBIT).")
+    depreciation_amortization: Optional[float] = Field(default=None, description="EBITDA minus operating result (EBIT).")
     ebitda: Optional[float] = None
     document_id: Optional[int] = None
 
@@ -253,7 +253,7 @@ class DocumentWithText(DocumentResponse):
     extracted_text: Optional[str] = None
     extracted_at: Optional[datetime] = None
     financial_metrics: Optional[FinancialMetricsResponse] = None
-    report_id: Optional[int] = Field(None, description="Associated report ID if available")
+    report_id: Optional[int] = Field(default=None, description="Associated report ID if available")
 
 
 class ExternalFilingSummary(BaseModel):

@@ -10,7 +10,7 @@ test_extraction_confidence_routes.py) so the actual merge-detection wiring
 in _ingest_document is exercised, not just the service function in isolation.
 """
 from datetime import datetime
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Optional
 from io import BytesIO
 
 import pytest
@@ -45,7 +45,7 @@ class _FakeGemini:
     found a real company name -- reset to None afterward so it doesn't leak
     into later uploads/tests."""
 
-    company_name = None
+    company_name: Optional[str] = None
 
     def __init__(self, *args, **kwargs):
         pass

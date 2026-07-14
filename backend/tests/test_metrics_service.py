@@ -49,7 +49,9 @@ class TestCalculateChange:
 
 class TestEbitdaMargin:
     def test_computes_percentage(self):
-        assert round(MetricsService.ebitda_margin(100, 1000), 2) == 10.0
+        result = MetricsService.ebitda_margin(100, 1000)
+        assert result is not None
+        assert round(result, 2) == 10.0
 
     def test_none_ebitda_returns_none(self):
         assert MetricsService.ebitda_margin(None, 1000) is None
@@ -59,12 +61,16 @@ class TestEbitdaMargin:
         assert MetricsService.ebitda_margin(100, None) is None
 
     def test_negative_ebitda_allowed(self):
-        assert MetricsService.ebitda_margin(-473_739, 354_813) < 0
+        result = MetricsService.ebitda_margin(-473_739, 354_813)
+        assert result is not None
+        assert result < 0
 
 
 class TestInterestCover:
     def test_computes_ratio(self):
-        assert round(MetricsService.interest_cover(10_000, 1_000), 2) == 10.0
+        result = MetricsService.interest_cover(10_000, 1_000)
+        assert result is not None
+        assert round(result, 2) == 10.0
 
     def test_none_ebitda_returns_none(self):
         assert MetricsService.interest_cover(None, 1_000) is None
@@ -76,7 +82,9 @@ class TestInterestCover:
 
 class TestRoce:
     def test_computes_percentage(self):
-        assert round(MetricsService.roce(100_000, 500_000), 2) == 20.0
+        result = MetricsService.roce(100_000, 500_000)
+        assert result is not None
+        assert round(result, 2) == 20.0
 
     def test_none_operating_result_returns_none(self):
         assert MetricsService.roce(None, 500_000) is None

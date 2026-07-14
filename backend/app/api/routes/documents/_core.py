@@ -156,7 +156,13 @@ async def approve_document(document_id: int, db: AsyncSession = Depends(get_db))
         select(Document).where(Document.id == document_id).options(selectinload(Document.reports))
     )
     doc = doc_result.scalars().first()
-    report = doc.reports[0] if doc and doc.reports else None
+    if doc is None:
+        # Practically unreachable (this document_id's own FinancialMetrics
+        # row was just confirmed to exist above) -- but a real race is
+        # conceivable (a concurrent delete between the two queries), and
+        # build_document_response requires a real Document, not None.
+        raise HTTPException(status_code=404, detail="Document not found")
+    report = doc.reports[0] if doc.reports else None
 
     return build_document_response(doc, report, metrics)
 
@@ -191,7 +197,7 @@ async def reconcile_periods(db: AsyncSession = Depends(get_db)):
                 FinancialMetrics.document_id.in_([doc.id for doc in merged_documents])
             )
         )
-        tiers = dict(tier_result.all())
+        tiers = {doc_id: tier for doc_id, tier in tier_result.all()}
 
     responses = []
     for doc in merged_documents:
