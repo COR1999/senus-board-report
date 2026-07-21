@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.security import require_admin
 from app.models.financial_metrics import FinancialMetrics
 from app.models.report import Report
 from app.models.report_insights import ReportInsights
@@ -53,7 +54,7 @@ async def list_reports_for_document(document_id: int, db: AsyncSession = Depends
     return await service.list_reports(document_id=document_id)
 
 
-@router.post("/document/{document_id}", response_model=ReportResponse)
+@router.post("/document/{document_id}", response_model=ReportResponse, dependencies=[Depends(require_admin)])
 async def generate_or_get_report(document_id: int, db: AsyncSession = Depends(get_db)):
     """Generate or retrieve a report for a document."""
     try:
@@ -73,7 +74,7 @@ async def generate_or_get_report(document_id: int, db: AsyncSession = Depends(ge
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
-@router.post("/{report_id}/regenerate", response_model=ReportResponse)
+@router.post("/{report_id}/regenerate", response_model=ReportResponse, dependencies=[Depends(require_admin)])
 async def regenerate_report(report_id: int, db: AsyncSession = Depends(get_db)):
     """Force regenerate an existing report."""
     service = ReportService(db)
@@ -107,7 +108,7 @@ async def regenerate_report(report_id: int, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
-@router.delete("/{report_id}", response_model=ReportDeleteResponse)
+@router.delete("/{report_id}", response_model=ReportDeleteResponse, dependencies=[Depends(require_admin)])
 async def delete_report(report_id: int, db: AsyncSession = Depends(get_db)):
     """Delete a report by ID."""
     service = ReportService(db)

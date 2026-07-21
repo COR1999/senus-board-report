@@ -16,7 +16,7 @@ import {
 } from '@/components/ui/table'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Trash2, Upload, Download, DownloadCloud, RefreshCw, EyeOff, RotateCcw } from 'lucide-react'
-import { type DocumentItem } from '@/lib/data-service'
+import { type DocumentItem, ADMIN_UI_ENABLED } from '@/lib/data-service'
 import { DocumentReviewSheet } from '@/components/documents/document-review-sheet'
 import { formatFileSize } from '@/lib/format'
 import { capitalize } from '@/lib/utils'
@@ -140,7 +140,7 @@ export default function DocumentsPage() {
   return (
     <DashboardShell title="Documents" description="Uploaded financial reports and filings">
       {error && <ErrorBanner error={error} />}
-      {!loadingAvailableFilings && (availableFilings ?? []).length > 0 && (
+      {ADMIN_UI_ENABLED && !loadingAvailableFilings && (availableFilings ?? []).length > 0 && (
         <Card className="border-emerald-500/30 bg-emerald-500/5">
           <CardHeader>
             <div className="flex items-center justify-between gap-3">
@@ -210,7 +210,7 @@ export default function DocumentsPage() {
           </CardContent>
         </Card>
       )}
-      {!loadingAvailableFilings && (availableFilings ?? []).length === 0 && (
+      {ADMIN_UI_ENABLED && !loadingAvailableFilings && (availableFilings ?? []).length === 0 && (
         <div className="flex items-center justify-between gap-3 px-1 text-sm text-muted-foreground">
           <span>No new filings from Senus&apos;s investor relations page.</span>
           <Button variant="ghost" size="sm" onClick={refetchAvailableFilings}>
@@ -219,7 +219,7 @@ export default function DocumentsPage() {
           </Button>
         </div>
       )}
-      {!loadingHiddenFilings && (hiddenFilings ?? []).length > 0 && (
+      {ADMIN_UI_ENABLED && !loadingHiddenFilings && (hiddenFilings ?? []).length > 0 && (
         <Card className="border-border/40">
           <CardHeader>
             <CardTitle className="text-base">Out of scope ({hiddenFilings!.length})</CardTitle>
@@ -259,22 +259,26 @@ export default function DocumentsPage() {
               <CardTitle>Uploaded Documents</CardTitle>
               <CardDescription>PDF financial reports processed by Senus</CardDescription>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={uploading}
-            >
-              <Upload className="h-4 w-4" />
-              {uploading ? 'Uploading...' : 'Upload PDF'}
-            </Button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="application/pdf"
-              className="hidden"
-              onChange={handleFileChange}
-            />
+            {ADMIN_UI_ENABLED && (
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploading}
+                >
+                  <Upload className="h-4 w-4" />
+                  {uploading ? 'Uploading...' : 'Upload PDF'}
+                </Button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="application/pdf"
+                  className="hidden"
+                  onChange={handleFileChange}
+                />
+              </>
+            )}
           </div>
         </CardHeader>
         <CardContent>
@@ -387,16 +391,18 @@ export default function DocumentsPage() {
                               <Download className="h-5 w-5" />
                               <span className="sr-only">Download {doc.filename}</span>
                             </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-8 w-8 p-0 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                              onClick={() => handleDelete(doc)}
-                              disabled={deletingId === doc.id}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                              <span className="sr-only">Delete {doc.filename}</span>
-                            </Button>
+                            {ADMIN_UI_ENABLED && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-8 w-8 p-0 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                                onClick={() => handleDelete(doc)}
+                                disabled={deletingId === doc.id}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                                <span className="sr-only">Delete {doc.filename}</span>
+                              </Button>
+                            )}
                           </div>
                         </TableCell>
                       </TableRow>

@@ -12,7 +12,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { ClipboardCheck, Eye, CheckCircle2 } from 'lucide-react'
-import { type DocumentItem, type DocumentFinancialMetrics } from '@/lib/data-service'
+import { type DocumentItem, type DocumentFinancialMetrics, ADMIN_UI_ENABLED } from '@/lib/data-service'
 import { formatCurrencyShort } from '@/lib/format'
 import { useDocumentDetail } from '@/lib/hooks/use-dashboard-data'
 import { useApproveDocument } from '@/lib/hooks/use-mutations'
@@ -131,7 +131,7 @@ export function DocumentReviewSheet({ document, onApproved }: DocumentReviewShee
             <p className="text-sm text-muted-foreground">No extracted figures found for this document.</p>
           )}
         </div>
-        {!isRejected && (
+        {!isRejected && ADMIN_UI_ENABLED && (
           <SheetFooter>
             <Button onClick={() => approve(document.id)} disabled={isApproving || loading || !metrics}>
               <CheckCircle2 className="h-4 w-4" />

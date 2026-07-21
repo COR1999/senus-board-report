@@ -15,7 +15,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Download, RefreshCw } from 'lucide-react'
-import { type Report } from '@/lib/data-service'
+import { type Report, ADMIN_UI_ENABLED } from '@/lib/data-service'
 import { exportReportsToCsv } from '@/lib/export-csv'
 import { capitalize } from '@/lib/utils'
 import { useRegenerateReport } from '@/lib/hooks/use-mutations'
@@ -138,17 +138,19 @@ export function ReportsTable({ reports = [], onRegenerated }: ReportsTableProps)
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-8 w-8 p-0 hover:bg-muted/50"
-                        onClick={() => regenerate(report.id)}
-                        disabled={regeneratingId === report.id}
-                        title="Regenerate report"
-                      >
-                        <RefreshCw className={`h-5 w-5 ${regeneratingId === report.id ? 'animate-spin' : ''}`} />
-                        <span className="sr-only">Regenerate report for {reportDisplayName(report)}</span>
-                      </Button>
+                      {ADMIN_UI_ENABLED && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 w-8 p-0 hover:bg-muted/50"
+                          onClick={() => regenerate(report.id)}
+                          disabled={regeneratingId === report.id}
+                          title="Regenerate report"
+                        >
+                          <RefreshCw className={`h-5 w-5 ${regeneratingId === report.id ? 'animate-spin' : ''}`} />
+                          <span className="sr-only">Regenerate report for {reportDisplayName(report)}</span>
+                        </Button>
+                      )}
                       <Button
                         variant="ghost"
                         size="sm"

@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.core.database import get_db
+from app.core.security import require_admin
 from app.models.document import Document
 from app.models.hidden_external_filing import HiddenExternalFiling
 from app.schemas.financial import DocumentWithText, ExternalFilingSummary
@@ -88,7 +89,7 @@ async def list_hidden_external_filings(db: AsyncSession = Depends(get_db)):
     ]
 
 
-@router.post("/external/{attachment_id}/hide", response_model=ExternalFilingSummary)
+@router.post("/external/{attachment_id}/hide", response_model=ExternalFilingSummary, dependencies=[Depends(require_admin)])
 async def hide_external_filing(attachment_id: str, db: AsyncSession = Depends(get_db)):
     """
     Marks a filing as out of scope so it stops cluttering "available
@@ -126,7 +127,7 @@ async def hide_external_filing(attachment_id: str, db: AsyncSession = Depends(ge
     )
 
 
-@router.post("/external/{attachment_id}/unhide", status_code=204)
+@router.post("/external/{attachment_id}/unhide", status_code=204, dependencies=[Depends(require_admin)])
 async def unhide_external_filing(attachment_id: str, db: AsyncSession = Depends(get_db)):
     """Restores a hidden filing back to the "available" list. Idempotent."""
     existing = await db.execute(
@@ -138,7 +139,7 @@ async def unhide_external_filing(attachment_id: str, db: AsyncSession = Depends(
         await db.commit()
 
 
-@router.post("/external/{attachment_id}/import", response_model=DocumentWithText)
+@router.post("/external/{attachment_id}/import", response_model=DocumentWithText, dependencies=[Depends(require_admin)])
 async def import_external_filing(attachment_id: str, db: AsyncSession = Depends(get_db)):
     try:
         filing = await investor_relations_client.find_filing(attachment_id)

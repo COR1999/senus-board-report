@@ -4,6 +4,20 @@ import { FALLBACK_INSIGHTS, type Insight } from '@/lib/insights'
 
 const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '')
 
+// Matches the backend's require_admin dependency (app/core/security.py) --
+// unset in the deployed Vercel project on purpose, so the public site never
+// ships a working key in its JS bundle. Only ever set in a local .env.local
+// for whoever (owner or someone they've handed the key to) is running the
+// frontend locally against the live backend to manage its data. See
+// ADMIN_UI_ENABLED below for the matching UI-visibility gate.
+const ADMIN_API_KEY = process.env.NEXT_PUBLIC_ADMIN_API_KEY
+
+// Same signal as ADMIN_API_KEY above -- whether to even render the
+// upload/delete/approve/hide/unhide/import controls at all. Kept as its own
+// export (rather than every component importing ADMIN_API_KEY directly) so
+// the UI-visibility decision reads as intentional at each call site.
+export const ADMIN_UI_ENABLED = Boolean(ADMIN_API_KEY)
+
 /**
  * Shared JSON fetch + error-shape helper for the backend API. Throws a
  * consistent `Error` on a non-2xx response instead of each call site
@@ -15,7 +29,11 @@ const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').rep
 async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
     ...options,
-    headers: { 'Content-Type': 'application/json', ...(options.headers ?? {}) },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(ADMIN_API_KEY ? { 'X-Admin-Key': ADMIN_API_KEY } : {}),
+      ...(options.headers ?? {}),
+    },
   })
   if (!res.ok) {
     // FastAPI's HTTPException body is `{"detail": "..."}` -- e.g. the
@@ -507,6 +525,7 @@ export async function downloadDocument(documentId: number, filename: string): Pr
 export async function deleteDocument(documentId: number): Promise<void> {
   const res = await fetch(`${API_URL}/api/documents/${documentId}`, {
     method: 'DELETE',
+    headers: ADMIN_API_KEY ? { 'X-Admin-Key': ADMIN_API_KEY } : undefined,
   })
   if (!res.ok) throw new Error(`Failed to delete document: ${res.statusText}`)
 }
@@ -524,6 +543,7 @@ export async function uploadPDF(file: File): Promise<{ id: string; message: stri
     const res = await fetch(`${API_URL}/api/documents/upload`, {
       method: 'POST',
       body: formData,
+      headers: ADMIN_API_KEY ? { 'X-Admin-Key': ADMIN_API_KEY } : undefined,
     })
     if (!res.ok) {
       // FastAPI's HTTPException body is `{"detail": "..."}` -- e.g. the
@@ -618,6 +638,9 @@ export async function hideExternalFiling(attachmentId: string): Promise<void> {
  * which has the same 204-response shape).
  */
 export async function unhideExternalFiling(attachmentId: string): Promise<void> {
-  const res = await fetch(`${API_URL}/api/documents/external/${attachmentId}/unhide`, { method: 'POST' })
+  const res = await fetch(`${API_URL}/api/documents/external/${attachmentId}/unhide`, {
+    method: 'POST',
+    headers: ADMIN_API_KEY ? { 'X-Admin-Key': ADMIN_API_KEY } : undefined,
+  })
   if (!res.ok) throw new Error(`Failed to unhide filing: ${res.statusText}`)
 }

@@ -64,6 +64,13 @@ class Settings(BaseSettings):
         description="Application environment"
     )
 
+    # Shared secret required (via X-Admin-Key header) on mutating endpoints
+    # once ENVIRONMENT is not "development" -- see app/core/security.py.
+    ADMIN_API_KEY: Optional[str] = Field(
+        default=None,
+        description="Shared secret gating upload/delete/regenerate endpoints outside local development"
+    )
+
     # Application
     APP_NAME: str = "Senus Board Intelligence Platform"
     APP_VERSION: str = "1.0.0"

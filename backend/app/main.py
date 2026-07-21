@@ -55,12 +55,20 @@ def create_app() -> FastAPI:
     """Create and configure FastAPI application."""
     
     settings = get_settings()
-    
+
+    # Swagger/ReDoc/openapi.json ship a "Try it out" console for every route,
+    # including the mutating ones -- fine for local development, but not
+    # something to leave open on a public deployment that gets real traffic.
+    is_dev = settings.ENVIRONMENT.strip().lower() == "development"
+
     app = FastAPI(
         title=settings.APP_NAME,
         version=settings.APP_VERSION,
         description="AI-powered financial document analysis platform with Gemini AI integration",
         lifespan=lifespan,
+        docs_url="/docs" if is_dev else None,
+        redoc_url="/redoc" if is_dev else None,
+        openapi_url="/openapi.json" if is_dev else None,
     )
 
     # CORS middleware
@@ -109,7 +117,7 @@ def create_app() -> FastAPI:
             "name": settings.APP_NAME,
             "version": settings.APP_VERSION,
             "description": "Financial document analysis platform with AI",
-            "docs": "/docs",
+            "docs": "/docs" if is_dev else None,
             "health": "/health"
         }
 

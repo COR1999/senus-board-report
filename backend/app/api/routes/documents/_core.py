@@ -15,6 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
+from app.core.security import require_admin
 from app.models.document import Document
 from app.models.financial_metrics import FinancialMetrics
 from app.schemas.financial import DocumentResponse, DocumentWithText
@@ -29,7 +30,7 @@ logger = logging.getLogger(__name__)
 # Upload
 # ============================================================
 
-@router.post("/upload", response_model=DocumentWithText)
+@router.post("/upload", response_model=DocumentWithText, dependencies=[Depends(require_admin)])
 async def upload_document(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
@@ -116,7 +117,7 @@ async def download_document_file(document_id: int, db: AsyncSession = Depends(ge
 # Human review (needs_review -> dashboard-eligible)
 # ============================================================
 
-@router.post("/{document_id}/approve", response_model=DocumentWithText)
+@router.post("/{document_id}/approve", response_model=DocumentWithText, dependencies=[Depends(require_admin)])
 async def approve_document(document_id: int, db: AsyncSession = Depends(get_db)):
     """
     A human has reviewed a `needs_review` document's actual extracted
@@ -171,7 +172,7 @@ async def approve_document(document_id: int, db: AsyncSession = Depends(get_db))
 # Period reconciliation (same-period duplicate documents)
 # ============================================================
 
-@router.post("/reconcile-periods", response_model=List[DocumentResponse])
+@router.post("/reconcile-periods", response_model=List[DocumentResponse], dependencies=[Depends(require_admin)])
 async def reconcile_periods(db: AsyncSession = Depends(get_db)):
     """
     One-off (but safe to call repeatedly -- see period_merge_service's
@@ -281,7 +282,7 @@ async def list_documents(
 # Delete
 # ============================================================
 
-@router.delete("/{document_id}")
+@router.delete("/{document_id}", dependencies=[Depends(require_admin)])
 async def delete_document(document_id: int, db: AsyncSession = Depends(get_db)):
     # A bulk `delete(Document).where(...)` statement issues a direct SQL
     # DELETE that bypasses the ORM-level `cascade="all, delete-orphan"` on
